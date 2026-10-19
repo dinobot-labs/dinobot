@@ -9,7 +9,7 @@ describe("public CI contract",()=>{
  test("all jobs hosted, read only and actions pinned",()=>{
  expect(ci.permissions).toEqual({contents:"read"});expect(ci.on.pull_request_target).toBeUndefined();
  expect(ci.on.push.branches).toEqual(["main"]);expect(ci.on.pull_request.branches).toEqual(["main"]);
- for(const job of Object.values(ci.jobs) as any[]){expect(job["runs-on"]).toBe("ubuntu-24.04");for(const step of job.steps??[]){if(step.uses)expect(step.uses).toMatch(/^[\w-]+\/[\w-]+@[a-f0-9]{40}$/);if(step.uses?.startsWith("actions/checkout@"))expect(step.with["persist-credentials"]).toBe(false);}}
+ for(const job of Object.values(ci.jobs) as any[]){expect(job["runs-on"]).toBe(job === ci.jobs.test ? "ubuntu-22.04" : "ubuntu-24.04");for(const step of job.steps??[]){if(step.uses)expect(step.uses).toMatch(/^[\w-]+\/[\w-]+@[a-f0-9]{40}$/);if(step.uses?.startsWith("actions/checkout@"))expect(step.with["persist-credentials"]).toBe(false);}}
  expect(JSON.stringify(ci)).not.toMatch(/secrets\.|npm publish|id-token|self-hosted/);expect(existsSync(join(root,".github/workflows/release.yml"))).toBe(false);
  });
  test("stable aggregate requires full tests, audited package and performance",()=>{

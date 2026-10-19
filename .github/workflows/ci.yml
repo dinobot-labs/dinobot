@@ -19,8 +19,10 @@ concurrency:
 jobs:
   test:
     name: Tests and types
-    # Hosted Linux: sandbox probe must pass, never bypass containment.
-    runs-on: ubuntu-24.04
+    # Ubuntu 24.04 denied bwrap loopback RTM_NEWADDR in run 39245401168.
+    # Use hosted 22.04 for this job; retain the real fail-closed namespace probe.
+    # Do not disable AppArmor or user/network namespace isolation.
+    runs-on: ubuntu-22.04
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0

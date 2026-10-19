@@ -1,0 +1,6 @@
+# Preserve snapshot bytes unless explicitly normalized below.
+* -text
+*.sh text eol=lf
+# Third-party patches and vendored payloads must remain byte-for-byte.
+patches/** -text -eol
+vendor/** -text -eol
