@@ -13,7 +13,7 @@ import { editManifestEntry, ManifestEditError, type ManifestSection } from "../s
 
 const HOME = "/home/someone";
 const DEFAULT = defaultManifest(HOME);
-const EXAMPLE = readFileSync(fileURLToPath(new URL("../dinobot.example.yaml", import.meta.url)), "utf8");
+const EXAMPLE = readFileSync(fileURLToPath(new URL("./fixtures/manifest-edit.example.yaml", import.meta.url)), "utf8");
 const TELEGRAM = { mode: "polling", botTokenFile: "/x/t.token", pairingPath: "/x/p.json", databasePath: "/x/i.sqlite", port: 0 };
 const catalogs = { channels: channelCatalog, plugins: pluginCatalog };
 
@@ -106,6 +106,14 @@ describe("default manifest", () => {
 	test("removing an absent entry is a no-op", () => {
 		expect(editManifestEntry(DEFAULT, "channels", "telegram", undefined)).toBe(DEFAULT);
 	});
+});
+
+test("public deployment example remains LF and supports lossless plugin edits", () => {
+	const example = readFileSync(fileURLToPath(new URL("../dinobot.example.yaml", import.meta.url)), "utf8");
+	expect(example).not.toContain("\r");
+	const added = editManifestEntry(example, "plugins", "computer", {});
+	expect(parse(added)).toEqual(withEntry(example, "plugins", "computer", {}));
+	expect(editManifestEntry(added, "plugins", "computer", undefined)).toBe(example);
 });
 
 describe("example manifest", () => {

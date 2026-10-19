@@ -1,6 +1,9 @@
 # Preserve snapshot bytes unless explicitly normalized below.
 * -text
 *.sh text eol=lf
+# Manifest editor explicitly accepts LF only; keep its examples portable.
+dinobot.example.yaml text eol=lf
+test/fixtures/manifest-edit.example.yaml text eol=lf
 # Third-party patches and vendored payloads must remain byte-for-byte.
 patches/** -text -eol
 vendor/** -text -eol

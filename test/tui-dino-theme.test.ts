@@ -98,8 +98,8 @@ test("every theme keeps its accents readable on every Signal Night surface", () 
 	}
 });
 
-test("the TUI themes mirror the landing species stops", () => {
-	const species = readFileSync(join(import.meta.dir, "..", "services", "landing", "src", "brand", "species.ts"), "utf8");
+test("the TUI themes mirror the independent brand species fixture stops", () => {
+	const species = readFileSync(join(import.meta.dir, "fixtures", "brand-species.ts"), "utf8");
 	for (const name of THEME_NAMES) {
 		const at = species.indexOf(`\t${name}: {`);
 		expect(at).toBeGreaterThan(-1);

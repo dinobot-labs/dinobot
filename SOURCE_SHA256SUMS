@@ -1,4 +1,4 @@
-d23275ba0857228ab966ec9c71b4731c1d3aef6680242b3aa19aef05e9490cc2 *./.gitattributes
+146a63c28a4fe22463bc0b35a7a4c233d7e70b0511c4701083e8693f3cbe5450 *./.gitattributes
 0159bc710042b3ad189ac9adcd5befe16c1ab986ecaf5a7e691e78541367dcb4 *./.github/ISSUE_TEMPLATE/bug.md
 307a47bbecfba57e0e51c3e56655daa32b53b0ab392ff3fa3f418833baa7c899 *./.github/ISSUE_TEMPLATE/feature.md
 047ceb92279f9ab5369403673778e671f89b57cd1ece439c2f5036f119de5358 *./.github/PULL_REQUEST_TEMPLATE.md
@@ -7,14 +7,14 @@ d72ade701348923a70a22a70979135ccfa4e1266d6b834ad3c950ffa2a35aae9 *./.gitignore
 df9b77deab0b6866feaf3d998c8da54b63d01ff1d7e8cdcce003959024c322a1 *./CODE_OF_CONDUCT.md
 bcf42a55e32bde841f52134f43fd92d4e1b7174302721c2e6c0da3387e2d2ea0 *./CONTRIBUTING.md
 ffcca38841adb694b6f380647e15f17c446a4d1656fed51a1e2041d064c94cc8 *./LICENSE
-df956989ec5e7c1d0825aa524538cdc1aad996d223fb39199ea8f449f055cc13 *./PUBLIC_SNAPSHOT.md
+35a37c8deed104dda17e07e3a74e49c1940e211a215bb29d2e250627ce5fd15c *./PUBLIC_SNAPSHOT.md
 0e9a41c524188e4e375bd6b3ff2eb94f234a1d9f07c3f5c41ae3a8098efe0739 *./README.md
 a2005415b29bf90bbf9f0125c81fed61ba2b0dd2a5c39ad40883ebc1d7e54c5e *./SECURITY.md
 19c0e4180c1a9cd9e24072d735f9ce8834bdd8a2affb6108ef0b6012bf768d7d *./SOUL.md
 b13f68ed513adee7068046acd0f5a7205f5f7f50a63ceae84b5a95be60021df2 *./THIRD_PARTY_NOTICES.md
 cf8bf25d1b10d2a61429189bb9cd70cb9e419f496a938541bcb76b86e112440e *./bun.lock
 34a8228a6287cca63c77dc21e13ea1f11818701283e92278cd82adfaf92e8660 *./bunfig.toml
-b9b112522002c182fd49c33b4c38be266b90d05d373babb2b4a678d8a8ff1e8c *./dinobot.example.yaml
+6a8e27b3191ecabbcb72dbd85e4a7ae8c49be744cc65584ebddb947294d13043 *./dinobot.example.yaml
 6704bfe7ec21b21fd24606e15073f2677b0043ec3e132772bf530f5da231070e *./docs/PUBLIC_CLIENT_TESTS.md
 ee727bc60a0cd3f56b0b7b5bdaf73b392b41ce9c109216e5a1fbc8c5e1aa6f43 *./docs/wiki/Development.md
 706e5b64f775d4bbcc9fb5fce7f91d34a9da431789951b1601387a8edcb11aa7 *./docs/wiki/Home.md
@@ -439,6 +439,7 @@ d4bd8afe73464cac7867d16037077feabf5303442d560f43577740407e8e7f22 *./test/draft-p
 d320779f78a0994b9874512e18e07ecace5789fc81c96b0b246cedf95aaf97c1 *./test/english-tool-index.test.ts
 6ceb35abb740da561b332c3e30c98a4cd9804633263723a5706a8534445a9c3d *./test/enhanced-paste.test.ts
 ca10da97a0bf6bc62523b7713a1dd45b07e435c2aef8d6f85ba3d88643ddf30f *./test/fast.test.ts
+40fe86b180917a6dfba6841522f47db044a318dee813d90911b436c90eea50cc *./test/fixtures/brand-species.ts
 f0cdc96d28caf4e460dd2748a8b83241d2cee976a6fdf67fb5265613646ab613 *./test/fixtures/browser-fake-host.ts
 6c42f6b9f37ee41e666fb95b0eecd60e5b2058327f3aab9cfb4230e4192d4222 *./test/fixtures/channel-e2e-child.ts
 9cf992719b9bfd245aa315ea15c0ea99220e52adbb5d56598b7f8fb36ca10e83 *./test/fixtures/codemode-crash.ts
@@ -453,6 +454,7 @@ fc2cdaab31c26f3815994857211dc14159bf2657891ae48565b55cf7630569c9 *./test/fixture
 a044aa7fefbbb3c7b3e2df407f8807f9f7ed00fec623e684ad3af951456b92d4 *./test/fixtures/korean-tool-queries.json
 3fc82ec422228e3c656f1453ca85999975f8b8809f70dfbb620682294f1eb601 *./test/fixtures/legacy-messaging-v0.ts
 348edcfc906d010477e8a84987def246cbfd9001aafcf27206dfbeac98e6a249 *./test/fixtures/lsp-server.ts
+3887d82ec1f1c91d5f2410c075bee41bdc172eaea3dd4c86386740cbf48e6707 *./test/fixtures/manifest-edit.example.yaml
 48d67fd9a16a7491f8e43f0454f9da9527b1b4abb7f87131cbe60aefe5fb213a *./test/fixtures/mcp-server.ts
 ce05cd6bebb205106b7e4c028005c94b8ebd57ecee4ce7d609f96ed60b18896a *./test/fixtures/native-process-crash.ts
 a036d5c9a7977efaddd773efbaa297aa8d67da81790aeb4c08b314854ed48696 *./test/fixtures/protocol-http.ts
@@ -561,7 +563,7 @@ ea677d3c71200bde68eae73998ae8931906e555d7efdb6307a720f18605c7667 *./test/researc
 9ad20853a6a7e7b1af01103b2fcdffb08ad8e6cce74ec995fcef7fbb96ae827f *./test/setup-apply-process.test.ts
 b75f1ed96babfac06e230e35646a952f482369f2fc04f5a1fea12c1faca1e568 *./test/setup-apply.test.ts
 b70f51316c4fe550adbb48fe922b7f1eda380a6df615a458ac4957f9c03c085b *./test/setup-command.test.ts
-0650553e2260a02f8fa5562292c7c93e67ff347741371f5824917609659d30ba *./test/setup-manifest-edit.test.ts
+379fb45e1e60d12686cf5e1606f4f0ec3c1bf96c5e378992aa3c2f918081d7aa *./test/setup-manifest-edit.test.ts
 d9fcb90ded6a048171c38f1537a8508b618ef3f98228b259f3904f76917dd970 *./test/setup-manifest-file.test.ts
 147cccb456c41262e0e7cc2ebb90f0def17a8835c595692e542d18e7cf9b5985 *./test/signed-in.test.ts
 dc5a3c8a64a268545235e00e0f8f2a7609cf3b9860aae0bdfe5bb041b7fab1d7 *./test/skill-author.test.ts
@@ -651,7 +653,7 @@ ca43ffad2ce8acef95098d04497094510a2f2eb23ba102ab546ff7942fc8d801 *./test/traject
 8d54248869edc7bc796633c33609c68362ab47b0f768a80a918ae39f675ea8f6 *./test/tui-context-refs.test.ts
 7bd12e6f74ece8b06b88dccc7386348097c111c698b9483874a41c0d51ef544e *./test/tui-dag-screen.test.ts
 2a0e642afbdaf1677b13010f3303a9faa1f9cc3de8cdae689d1250ef1ca4fd4a *./test/tui-dag.test.ts
-fabd687cc72a61fe336103a02651dab3476226e0ef4d714fec123ef058c92134 *./test/tui-dino-theme.test.ts
+188d23d4fb5b8404e143945a25b7e7f033bb0dfeae6365b70c54df2f5f348beb *./test/tui-dino-theme.test.ts
 4a807fa7dd39e5418c42f5eb8cc9975d9f22049035661b6a30f5642fa4f8949e *./test/tui-fullscreen.test.ts
 d9c03bcbf593afc21c4f20811f33e7e8448bc37bb30002a1774e3bf8864436f0 *./test/tui-login-card-narrow.test.ts
 e0c24e55da62b84d33727858414bd72913f1e7b4e35e6d264479f8835bc41090 *./test/tui-mascot.test.ts

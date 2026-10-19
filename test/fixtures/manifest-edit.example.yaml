@@ -1,0 +1,18 @@
+# Synthetic editor fixture, not a deployment configuration.
+bot:
+  enabled: true
+  dataDir: .fixture-data
+
+channels:                       # one or more of the channels this build contains
+  http:
+    port: 8787                 # loopback-only; never expose as a public unauthenticated gateway
+  # Telegram easy setup: fixture-only commented example
+  # telegram:
+  #   mode: polling
+  #   botTokenFile: /fixture/telegram.token
+
+plugins: {}                     # extra plugin config; built-in skills are always included, web search and image generation are on unless `web: false` / `image_gen: false`
+
+# Skill research fixture tail: edits must preserve this section and comments.
+skillEvolution:
+  review: false

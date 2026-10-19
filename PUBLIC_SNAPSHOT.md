@@ -36,6 +36,17 @@ The first hosted run passed the package job, including standalone compilation, a
 
 Actual repair checks on Windows/Bun 1.4.3: `bun test test/ci-hosted-boundary.test.ts test/ci-workflows.test.ts test/ci-release.test.ts` passed 89 tests with 526 assertions; `bun run typecheck` passed; `bun script/public-artifact-guard.ts` reported 0 violations; `git diff --check` passed. Shell `bash -n` and attribute checks ran inside the regression test. No full Windows suite or repeated packaging build was run. Windows checks do not prove Linux sandbox compatibility. SOURCE_SHA256SUMS is refreshed over actual publication input bytes.
 
+## Self-contained regression fixtures after run 39246451313
+
+The hosted functional suite reached 3,791 tests and failed seven. Locally, the same two files reproduced exactly seven failures before repair: one missing excluded `services/landing/src/brand/species.ts` input and six explicit CRLF rejection errors in manifest editing. The example structure itself was not the observed failure.
+
+- Replaced the operational landing file dependency with an independently written data-only brand contract fixture (all four species and all five ordered color stops). The existing presence and exact-stop assertions remain unchanged. This checks pinned brand compatibility, not live landing integration.
+- Added a synthetic LF manifest fixture with real/commented channel blocks, inline/standalone comments, empty plugin mapping and an unrelated tail section. All original exact-byte, semantic, comment-order and 25-seed/12-step randomized assertions remain unchanged. No tests were skipped or assertions removed.
+- Normalized only the public YAML example to LF and pinned both YAML paths with Git attributes. Added a separate real-example LF/edit/remove round-trip test; the editor still rejects CRLF as before.
+- No runtime implementation, CI workflow, sandbox containment, performance budget, third-party license, patch or vendor payload changed. Original source checkout was untouched.
+
+Actual local repair checks (Windows, Bun 1.4.3): 124 tests passed across setup-manifest-edit, tui-dino-theme, tui-theme, ci-hosted-boundary, ci-workflows and ci-release (2,811 assertions); typecheck passed; public artifact guard reported zero violations; diff whitespace check passed. SOURCE_SHA256SUMS is regenerated to include both new fixtures (701 files, excluding itself). Hosted full-suite acceptance of this repair remains pending; expected runtime is approximately 16 minutes plus queue/setup. No CI polling or public conversion is performed by this repair.
+
 ## Required before publication
 
 1. Hosted Ubuntu full functional suite, including compiled-skill, POSIX permissions, symlink and GNU-tar audit cases; exact snapshot SHA required.
