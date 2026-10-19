@@ -1,0 +1,16 @@
+node_modules/
+dist/
+.dinobot/
+.env
+.env.*
+!.env.example
+dinobot.yaml
+*.sqlite
+*.sqlite-*
+*.db
+*.db-*
+reports/
+sessions/
+exports/
+coverage/
+*.log

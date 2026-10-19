@@ -1,0 +1,6 @@
+import {expect,test} from "bun:test";
+import {mkdtemp,writeFile,readFile,rm} from "node:fs/promises";
+import {tmpdir} from "node:os";
+import {join} from "node:path";
+import {telegramChannel} from "../src/channels/telegram.ts";
+test("owner enrollment at capacity cannot corrupt all existing authorizations",async()=>{const dir=await mkdtemp(join(tmpdir(),"tg-enroll-cap-"));process.env.TG_CAP_TOKEN="123:fake_only";process.env.TG_CAP_SECRET="fake_secret";const path=join(dir,"pair.json");const chatIds=Array.from({length:1000},(_,i)=>String(-i-1));await writeFile(path,JSON.stringify({botId:"123",userId:"7",chatIds}),{mode:0o600});const c=telegramChannel({port:0,databasePath:join(dir,"queue.db"),botTokenEnv:"TG_CAP_TOKEN",webhookSecretEnv:"TG_CAP_SECRET",pairingPath:path});try{await c.start(async()=>{throw Error("must not call model");});const r=await fetch(new URL("/webhook",c.url()),{method:"POST",headers:{"x-telegram-bot-api-secret-token":"fake_secret"},body:JSON.stringify({update_id:1,message:{message_id:1,from:{id:7,is_bot:false},chat:{id:-999999,type:"supergroup"},text:"/enable"}})});expect(r.status).toBe(403);expect(JSON.parse(await readFile(path,"utf8")).chatIds).toEqual(chatIds);}finally{await c.stop();await rm(dir,{recursive:true,force:true});}});

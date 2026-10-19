@@ -1,0 +1,61 @@
+import { afterEach, expect, test } from "bun:test";
+import { BACKGROUND_CONTEXT as context } from "@earendil-works/chord/context";
+import { createModels } from "@earendil-works/pi-ai/models";
+import { fauxAssistantMessage, fauxProvider } from "@earendil-works/pi-ai/providers/faux";
+import { openNodeSqliteStorage } from "@earendil-works/pi-durable/storage/sqlite/node";
+import { mkdtemp, rm } from "node:fs/promises";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
+import { openBot, type Bot } from "../src/core/bot.ts";
+import { createRun, RunDoc } from "../src/core/dag.ts";
+import { WorkDoc } from "../src/core/verification.ts";
+import { assertDagGoalTx, advanceDag } from "../src/extensions/dag.ts";
+import { dagContinuation, DagContinuationDoc } from "../src/extensions/dag-continuation.ts";
+const bots: Bot[] = []; const dirs: string[] = [];
+afterEach(async () => { for (const b of bots.splice(0)) await b.close(context); for (const d of dirs.splice(0)) await rm(d, { recursive: true, force: true }); });
+async function setup() {
+ const dir = await mkdtemp(join(tmpdir(), "dag-admission-")); dirs.push(dir);
+ const models = createModels(); const faux = fauxProvider({ provider: "faux", models: [{ id: "m" }] }); models.setProvider(faux.provider);
+ faux.setResponses(Array.from({ length: 40 }, () => fauxAssistantMessage("provisional fixture")));
+ const database = join(dir, "test.sqlite");
+ const bot = await openBot({ storage: await openNodeSqliteStorage(database), models, defaultModel: { provider: "faux", modelId: "m" }, plugins: [], toolMode: "direct", settings: { retry: { enabled: false } } }, context); bots.push(bot);
+ const root = await bot.conversation("test", "admission-recovery", context);
+ await (await root.submit({ type: "input", content: "Original immutable full purpose" }, context)).wait(context);
+ return { bot, root, database, models };
+}
+const plan = { nodes: [{ id: "v", kind: "verify" as const, covers: ["R"] }], edges: [], goal: { requirements: ["R"] } };
+for (const binding of ["missing", "stale"] as const) test("T12 SQLite startup refuses " + binding + " legacy admission without guessing goal or losing candidate", async () => {
+ const { bot, root, database, models } = await setup();
+ const goal = (await bot.work.snapshot(root.id, context)).goal!;
+ const run = createRun("legacy-" + binding, plan, Date.now());
+ run.nodes.v!.result = "retained candidate history";
+ if (binding === "stale") run.goalBinding = { epoch: goal.epoch, hash: goal.hash };
+ await bot.harness.commit(async tx => { const d = await tx.doc(RunDoc, root.id); d.runs.push(run); d.activeId = run.id; }, context);
+ await root.reset("human handoff preserves candidate, not permission", context);
+ await bot.close(context); bots.splice(bots.indexOf(bot), 1);
+ const reopened = await openBot({ storage: await openNodeSqliteStorage(database), models, defaultModel: { provider: "faux", modelId: "m" }, plugins: [], toolMode: "direct", settings: { retry: { enabled: false } } }, context); bots.push(reopened);
+ await dagContinuation(() => reopened.harness).recover(context);
+ const after = (await reopened.harness.snapshot(RunDoc, root.id, context))!.runs[0]!;
+ expect(after.status).toBe("blocked");
+ expect(after.reason).toContain("stale_goal_admission_epoch");
+ expect(after.nodes).toEqual(run.nodes);
+ expect(after.goalBinding).toEqual(run.goalBinding);
+ expect((await reopened.harness.snapshot(DagContinuationDoc, root.id, context))?.tasks[run.id]).toBeUndefined();
+ expect((await reopened.work.snapshot(root.id, context)).goal!.sources).toEqual(goal.sources);
+}, 15000);
+test("T12 direct settlement rejects unbound legacy run when actual human goal exists", async () => {
+ const { bot, root } = await setup(); const run = createRun("legacy", plan, Date.now());
+ await expect(bot.harness.commit(tx => assertDagGoalTx(tx, root.id, run), context)).rejects.toThrow("stale_goal_admission_epoch");
+});
+test("T12 source-conversation epoch fences delegated ordinary run before late settlement or dispatch", async () => {
+ const { bot, root } = await setup(); const child = await bot.conversation("test", "delegated-ordinary", context);
+ const goal = (await bot.work.snapshot(root.id, context)).goal!; const run = createRun("delegated", plan, Date.now());
+ run.goalBinding = { conversationId: String(root.id), epoch: goal.epoch, hash: goal.hash };
+ await bot.harness.commit(async tx => { const doc = await tx.doc(RunDoc, child.id); doc.runs.push(run); doc.activeId = run.id; }, context);
+ await root.reset("human handoff", context);
+ let dispatches = 0;
+ const result = await advanceDag({ conversationId: child.id, commit: bot.harness.commit.bind(bot.harness), snapshot: bot.harness.snapshot.bind(bot.harness) }, run.id, context, { dispatch: async () => { dispatches++; } });
+ expect(dispatches).toBe(0); expect(result.run.status).toBe("blocked"); expect(result.run.nodes).toEqual(run.nodes);
+ expect(result.run.reason).toContain("stale_goal_admission_epoch");
+ expect((await bot.work.snapshot(root.id, context)).goal!.sources).toEqual(goal.sources);
+});

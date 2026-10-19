@@ -1,0 +1,284 @@
+diff --git a/dist/components/editor.d.ts b/dist/components/editor.d.ts
+--- a/dist/components/editor.d.ts
++++ b/dist/components/editor.d.ts
+@@ -68,7 +68,8 @@
+     private preferredVisualCol;
+     private snappedFromCursorCol;
+     private undoStack;
+-    onSubmit?: (text: string) => void;
++    /** Trimmed submission plus the exact expanded draft, for lossless failure recovery. */
++    onSubmit?: (text: string, draft?: string) => void;
+     onChange?: (text: string) => void;
+     disableSubmit: boolean;
+     constructor(tui: TUI, theme: EditorTheme, options?: EditorOptions);
+@@ -76,6 +77,10 @@
+     private validPasteIds;
+     /** Segment text with paste-marker awareness, only merging markers with valid IDs. */
+     private segment;
++    /** Non-overlapping single-line markers, with grapheme-aligned boundaries, treated as editing units. */
++    protected getAtomicMarkers(): readonly string[];
++    /** Clear undo, kill ring and history navigation at an editing transaction boundary. */
++    clearEditHistory(): void;
+     getPaddingX(): number;
+     setPaddingX(padding: number): void;
+     getAutocompleteMaxVisible(): number;
+diff --git a/dist/components/editor.js b/dist/components/editor.js
+--- a/dist/components/editor.js
++++ b/dist/components/editor.js
+@@ -23,9 +23,9 @@
+  *
+  * Only markers whose numeric ID exists in `validIds` are merged.
+  */
+-function segmentWithMarkers(text, baseSegmenter, validIds) {
++function segmentWithMarkers(text, baseSegmenter, validIds, atomicMarkers = []) {
+     // Fast path: no paste markers in the text or no valid IDs.
+-    if (validIds.size === 0 || !text.includes("[paste #")) {
++    if (atomicMarkers.length === 0 && (validIds.size === 0 || !text.includes("[paste #"))) {
+         return baseSegmenter.segment(text);
+     }
+     // Find all marker spans with valid IDs.
+@@ -36,36 +36,34 @@
+             continue;
+         markers.push({ start: m.index, end: m.index + m[0].length });
+     }
++    for (const marker of atomicMarkers) {
++        if (!marker || marker.includes("\n")) continue;
++        let start = text.indexOf(marker);
++        while (start !== -1) {
++            markers.push({ start, end: start + marker.length });
++            start = text.indexOf(marker, start + marker.length);
++        }
++    }
++    markers.sort((a, b) => a.start - b.start || b.end - a.end);
+     if (markers.length === 0) {
+         return baseSegmenter.segment(text);
+     }
+-    // Build merged segment list.
+-    const baseSegments = baseSegmenter.segment(text);
++    // Segment ordinary spans separately: a combining suffix may otherwise share
++    // a grapheme with the closing bracket and be silently lost when merging.
+     const result = [];
+-    let markerIdx = 0;
+-    for (const seg of baseSegments) {
+-        // Skip past markers that are entirely before this segment.
+-        while (markerIdx < markers.length && markers[markerIdx].end <= seg.index) {
+-            markerIdx++;
+-        }
+-        const marker = markerIdx < markers.length ? markers[markerIdx] : null;
+-        if (marker && seg.index >= marker.start && seg.index < marker.end) {
+-            // This segment falls inside a marker.
+-            // If this is the first segment of the marker, emit a merged segment.
+-            if (seg.index === marker.start) {
+-                const markerText = text.slice(marker.start, marker.end);
+-                result.push({
+-                    segment: markerText,
+-                    index: marker.start,
+-                    input: text,
+-                });
+-            }
+-            // Otherwise skip (already merged into the first segment).
+-        }
+-        else {
+-            result.push(seg);
+-        }
+-    }
++    const appendText = (start, end) => {
++        for (const segment of baseSegmenter.segment(text.slice(start, end))) {
++            result.push({ ...segment, index: start + segment.index, input: text });
++        }
++    };
++    let cursor = 0;
++    for (const marker of markers) {
++        if (marker.start < cursor) continue;
++        appendText(cursor, marker.start);
++        result.push({ segment: text.slice(marker.start, marker.end), index: marker.start, input: text });
++        cursor = marker.end;
++    }
++    appendText(cursor, text.length);
+     return result;
+ }
+ /**
+@@ -274,7 +272,18 @@
+     }
+     /** Segment text with paste-marker awareness, only merging markers with valid IDs. */
+     segment(text, mode) {
+-        return segmentWithMarkers(text, mode === "word" ? wordSegmenter : graphemeSegmenter, this.validPasteIds());
++        return segmentWithMarkers(text, mode === "word" ? wordSegmenter : graphemeSegmenter, this.validPasteIds(), this.getAtomicMarkers());
++    }
++    /** Override with non-overlapping, single-line markers whose boundaries are grapheme boundaries. */
++    getAtomicMarkers() {
++        return [];
++    }
++    /** End an editing transaction without exposing private undo or kill-ring state. */
++    clearEditHistory() {
++        this.undoStack.clear();
++        this.killRing = new KillRing();
++        this.exitHistoryBrowsing();
++        this.lastAction = null;
+     }
+     getPaddingX() {
+         return this.paddingX;
+@@ -1137,7 +1146,8 @@
+     }
+     submitValue() {
+         this.cancelAutocomplete();
+-        const result = this.expandPasteMarkers(this.state.lines.join("\n")).trim();
++        const draft = this.expandPasteMarkers(this.state.lines.join("\n"));
++        const result = draft.trim();
+         this.state = { lines: [""], cursorLine: 0, cursorCol: 0 };
+         this.pastes.clear();
+         this.pasteCounter = 0;
+@@ -1148,7 +1158,7 @@
+         if (this.onChange)
+             this.onChange("");
+         if (this.onSubmit)
+-            this.onSubmit(result);
++            this.onSubmit(result, draft);
+     }
+     handleBackspace() {
+         this.exitHistoryBrowsing();
+@@ -1226,6 +1236,14 @@
+      * Use this for all non-vertical cursor movements to reset sticky column behavior.
+      */
+     setCursorCol(col) {
++        // Mouse hits on wrapped marker fragments and character jumps must also snap.
++        for (const segment of this.segment(this.state.lines[this.state.cursorLine] || "", "grapheme")) {
++            if (segment.index >= col) break;
++            if (col < segment.index + segment.segment.length) {
++                col = segment.index;
++                break;
++            }
++        }
+         this.state.cursorCol = col;
+         this.preferredVisualCol = null;
+         this.snappedFromCursorCol = null;
+@@ -1665,7 +1683,7 @@
+         }
+         this.setCursorCol(findWordBackward(currentLine, this.state.cursorCol, {
+             segment: (text) => this.segment(text, "word"),
+-            isAtomicSegment: isPasteMarker,
++            isAtomicSegment: (segment) => isPasteMarker(segment) || this.getAtomicMarkers().includes(segment),
+         }));
+     }
+     /**
+@@ -1827,7 +1845,7 @@
+         }
+         this.setCursorCol(findWordForward(currentLine, this.state.cursorCol, {
+             segment: (text) => this.segment(text, "word"),
+-            isAtomicSegment: isPasteMarker,
++            isAtomicSegment: (segment) => isPasteMarker(segment) || this.getAtomicMarkers().includes(segment),
+         }));
+     }
+     // Slash menu only allowed on the first line of the editor
+diff --git a/dist/utils.js b/dist/utils.js
+index e6b878c5234f1bb456033c429e699e1b62629c28..ba887cf7939f2375e16e29cd07ede084c46e7221 100644
+--- a/dist/utils.js
++++ b/dist/utils.js
+@@ -152,6 +152,8 @@ function graphemeWidth(segment) {
+             return 1;
+         if (code === 0x09)
+             return 3;
++        if (isSimpleWideCodePoint(code))
++            return 2;
+     }
+     // Some marks occupy cells even without a base character.
+     if (terminalSpacingMarkRegex.test(segment)) {
+@@ -213,7 +215,7 @@ export function visibleWidth(str) {
+     if (str.length === 0) {
+         return 0;
+     }
+-    // Fast path: printable ASCII, tabs, and ANSI escape sequences. Styled lines take this path, so
++    // Fast path: printable ASCII, simple CJK, tabs, and ANSI escape sequences. Styled lines take this path, so
+     // re-rendering after a theme change does not run grapheme segmentation on every line.
+     const asciiWidth = asciiVisibleWidth(str);
+     if (asciiWidth !== -1) {
+@@ -295,7 +297,19 @@ export function getGraphemeCellRange(line, column) {
+         let textEnd = i;
+         while (textEnd < line.length && !extractAnsiCode(line, textEnd))
+             textEnd++;
+-        for (const { segment } of graphemeSegmenter.segment(line.slice(i, textEnd))) {
++        // Only whole printable-ASCII chunks: an ASCII prefix may share a
++        // grapheme with a following combining mark, VS16, or keycap.
++        const chunk = line.slice(i, textEnd);
++        if (isPrintableAscii(chunk)) {
++            if (column >= currentCol && column < currentCol + chunk.length) {
++                const start = Math.floor(column);
++                return { start, end: start + 1 };
++            }
++            currentCol += chunk.length;
++            i = textEnd;
++            continue;
++        }
++        for (const { segment } of graphemeSegmenter.segment(chunk)) {
+             const width = graphemeWidth(segment);
+             if (width > 0 && column >= currentCol && column < currentCol + width) {
+                 return { start: currentCol, end: currentCol + width };
+@@ -372,8 +386,16 @@ export function extractAnsiCode(str, pos) {
+     return length > 0 ? { code: str.substring(pos, pos + length), length } : null;
+ }
+ /**
+- * Width of a string made of printable ASCII, tabs, and ANSI escape sequences, or -1 if it contains
+- * anything else. Matches `visibleWidth` for those strings without allocating.
++ * Only these BMP ranges are known width-2 singleton graphemes in a complete
++ * accepted string. Excluding Jamo/marks/ZWJ/prepend/VS is essential: ANSI removal
++ * can make them adjacent to a base. Never accept only a safe prefix.
++ */
++function isSimpleWideCodePoint(code) {
++    return (code >= 0x4e00 && code <= 0x9fff) || (code >= 0xac00 && code <= 0xd7a3);
++}
++/**
++ * Width of printable ASCII, simple CJK, tabs, and ANSI, or -1 for the whole
++ * string if any visible codepoint is unknown. Reuses legacy ANSI recognition.
+  */
+ function asciiVisibleWidth(str) {
+     let width = 0;
+@@ -394,6 +416,10 @@ function asciiVisibleWidth(str) {
+                 return -1;
+             i += length;
+         }
++        else if (isSimpleWideCodePoint(code)) {
++            width += 2;
++            i++;
++        }
+         else {
+             return -1;
+         }
+@@ -1107,8 +1133,10 @@ export function truncateToWidth(text, maxWidth, ellipsis = "...", pad = false) {
+                 }
+                 end++;
+             }
+-            for (const { segment } of graphemeSegmenter.segment(text.slice(i, end))) {
+-                const width = graphemeWidth(segment);
++            const chunk = text.slice(i, end);
++            const ascii = isPrintableAscii(chunk);
++            for (const segment of ascii ? chunk : graphemeSegments(chunk)) {
++                const width = ascii ? 1 : graphemeWidth(segment);
+                 if (keepContiguousPrefix && keptWidth + width <= targetWidth) {
+                     if (pendingAnsi) {
+                         result += pendingAnsi;
+@@ -1168,7 +1196,24 @@ export function sliceWithWidth(line, startCol, length, strict = false) {
+         let textEnd = i;
+         while (textEnd < line.length && !extractAnsiCode(line, textEnd))
+             textEnd++;
+-        for (const { segment } of graphemeSegmenter.segment(line.slice(i, textEnd))) {
++        // ANSI parsing is unchanged; only a complete ASCII chunk is safe to
++        // slice by code unit. Keep unusual numeric arguments on the old path.
++        const chunk = line.slice(i, textEnd);
++        if (Number.isSafeInteger(startCol) && Number.isSafeInteger(endCol) && isPrintableAscii(chunk)) {
++            const from = Math.max(0, startCol - currentCol);
++            const to = Math.min(chunk.length, endCol - currentCol);
++            if (to > from) {
++                result += pendingAnsi + chunk.slice(from, to);
++                pendingAnsi = "";
++                resultWidth += to - from;
++            }
++            currentCol += chunk.length;
++            i = textEnd;
++            if (currentCol >= endCol)
++                break;
++            continue;
++        }
++        for (const { segment } of graphemeSegmenter.segment(chunk)) {
+             const w = graphemeWidth(segment);
+             const inRange = currentCol >= startCol && currentCol < endCol;
+             const fits = !strict || currentCol + w <= endCol;

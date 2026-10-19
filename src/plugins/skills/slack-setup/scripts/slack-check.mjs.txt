@@ -1,0 +1,174 @@
+#!/usr/bin/env bun
+// dinobot slack-setup: verify Slack tokens and derive the IDs that channels.slack in dinobot.yaml needs.
+// Tokens are read from files, never from argv, and are never printed.
+//
+//   bun slack-check.mjs --bot-token-file <path> --app-token-file <path>
+//       [--member U...]            the user's Slack member ID, used in the printed dinobot.yaml block
+//       [--test-dm U...]           send one DM to that member (proves chat:write and the member ID)
+//       [--thread <C...> <ts>]     list a thread as Slack sees it (needs channels:history / groups:history)
+//       [--inbox <slack.sqlite>]   list the latest jobs of dinobot's Slack inbox (read from a private copy)
+//
+// Prints one JSON report. Exit 0 when every requested check passed, 1 when a check failed, 2 on bad usage.
+import { copyFileSync, existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
+function usage(message) {
+	console.log(JSON.stringify({ ok: false, error: message }));
+	process.exit(2);
+}
+
+function parse(argv) {
+	const out = {};
+	for (let i = 0; i < argv.length; i++) {
+		const flag = argv[i];
+		const value = () => {
+			const v = argv[++i];
+			if (v === undefined || v.startsWith("--")) usage("missing value for " + flag);
+			return v;
+		};
+		if (flag === "--bot-token-file") out.bot = value();
+		else if (flag === "--app-token-file") out.app = value();
+		else if (flag === "--member") out.member = value();
+		else if (flag === "--test-dm") out.testDm = value();
+		else if (flag === "--thread") out.thread = [value(), value()];
+		else if (flag === "--inbox") out.inbox = value();
+		else usage("unknown argument " + flag);
+	}
+	for (const id of [out.member, out.testDm]) if (id !== undefined && !/^[UW][A-Z0-9]{1,63}$/.test(id)) usage("member IDs look like U0123ABCD");
+	if (!out.bot && !out.app && !out.inbox) usage("pass --bot-token-file and/or --app-token-file (or --inbox)");
+	return out;
+}
+
+function readToken(path, prefix) {
+	if (!path) return null;
+	let token;
+	try {
+		token = readFileSync(path, "utf8").trim();
+	} catch {
+		usage("cannot read " + path);
+	}
+	if (!token.startsWith(prefix) || /\s/.test(token) || token.length > 1024) usage(path + " must hold exactly one " + prefix + " token");
+	return token;
+}
+
+async function slack(token, method, params, mode) {
+	const url = "https://slack.com/api/" + method;
+	const auth = { authorization: "Bearer " + token };
+	let response;
+	if (mode === "json") response = await fetch(url, { method: "POST", headers: { ...auth, "content-type": "application/json; charset=utf-8" }, body: JSON.stringify(params ?? {}) });
+	else if (mode === "get") response = await fetch(url + "?" + new URLSearchParams(params ?? {}), { headers: auth });
+	else response = await fetch(url, { method: "POST", headers: { ...auth, "content-type": "application/x-www-form-urlencoded" }, body: new URLSearchParams(params ?? {}).toString() });
+	try {
+		return await response.json();
+	} catch {
+		return { ok: false, error: "http_" + response.status };
+	}
+}
+
+// Slack's Socket Mode hello frame names the app the app-level token belongs to.
+function helloAppId(url) {
+	return new Promise((resolve) => {
+		const ws = new WebSocket(url);
+		const done = (value) => {
+			clearTimeout(timer);
+			try { ws.close(); } catch {}
+			resolve(value);
+		};
+		const timer = setTimeout(() => done({ error: "no hello frame within 15s" }), 15000);
+		ws.addEventListener("message", (event) => {
+			let hello = null;
+			try { hello = JSON.parse(String(event.data)); } catch {}
+			done(hello && hello.type === "hello" ? { appId: hello.connection_info?.app_id ?? null } : { error: "first frame was not hello" });
+		});
+		ws.addEventListener("error", () => done({ error: "websocket error" }));
+	});
+}
+
+const args = parse(process.argv.slice(2));
+const bot = readToken(args.bot, "xoxb-");
+const app = readToken(args.app, "xapp-");
+const report = { ok: true, checks: {} };
+const failed = (name, value) => { report.checks[name] = value; report.ok = false; };
+
+if (bot) {
+	const auth = await slack(bot, "auth.test");
+	if (auth.ok) {
+		report.checks.botToken = "ok";
+		Object.assign(report, { team: auth.team, teamId: auth.team_id, botUserId: auth.user_id, botId: auth.bot_id });
+	} else failed("botToken", auth.error ?? "failed");
+}
+
+if (app) {
+	const derived = app.split("-")[2];
+	const open = await slack(app, "apps.connections.open");
+	if (!open.ok) failed("appToken", open.error ?? "failed");
+	else {
+		report.checks.appToken = "ok";
+		const hello = await helloAppId(open.url);
+		if (hello.appId) {
+			report.appId = hello.appId;
+			report.checks.appId = hello.appId === derived ? "hello frame matches the token" : "hello frame differs from the token; using the hello value";
+		} else {
+			report.appId = /^A[A-Z0-9]+$/.test(derived ?? "") ? derived : null;
+			report.checks.appId = "unconfirmed (" + hello.error + "); read App ID from the app's Basic Information page if messages are rejected";
+		}
+	}
+}
+
+if (args.testDm) {
+	if (!bot) usage("--test-dm needs --bot-token-file");
+	const sent = await slack(bot, "chat.postMessage", { channel: args.testDm, text: "dinobot: Slack connection test ✅" }, "json");
+	if (sent.ok) {
+		report.checks.testDm = "ok";
+		report.dmChannelId = sent.channel;
+	} else failed("testDm", sent.error ?? "failed");
+}
+
+if (args.thread) {
+	if (!bot) usage("--thread needs --bot-token-file");
+	const [channel, ts] = args.thread;
+	const replies = await slack(bot, "conversations.replies", { channel, ts, limit: "100" }, "get");
+	report.thread = replies.ok
+		? replies.messages.map((m) => ({ ts: m.ts, from: m.bot_id ? "bot" : m.user, text: String(m.text ?? "").slice(0, 80) }))
+		: { error: replies.error, needed: replies.needed };
+}
+
+if (args.inbox) {
+	if (!existsSync(args.inbox)) report.inbox = { error: "no inbox database yet (the Slack channel never started)" };
+	else {
+		const { Database } = await import("bun:sqlite");
+		const dir = mkdtempSync(join(tmpdir(), "slack-inbox-"));
+		try {
+			// The running daemon holds the database; read a copy that includes the WAL.
+			for (const suffix of ["", "-wal", "-shm"]) if (existsSync(args.inbox + suffix)) copyFileSync(args.inbox + suffix, join(dir, "inbox.sqlite" + suffix));
+			const db = new Database(join(dir, "inbox.sqlite"), { readonly: true });
+			try {
+				report.inbox = db.query("select id, state, error, created from jobs order by seq desc limit 20").all().map((row) => ({ ...row, created: new Date(row.created).toISOString() }));
+			} finally {
+				db.close();
+			}
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	}
+}
+
+if (report.teamId && report.botUserId && report.appId) {
+	report.dinobotYaml = [
+		"channels:",
+		"  slack:",
+		"    transport: socket",
+		"    databasePath: \"<dataDir>/slack/slack.sqlite\"",
+		"    appTokenEnv: DINOBOT_SLACK_APP_TOKEN",
+		"    botTokenEnv: DINOBOT_SLACK_BOT_TOKEN",
+		"    appId: " + report.appId,
+		"    teamId: " + report.teamId,
+		"    botUserId: " + report.botUserId,
+		"    allowedUserIds: [" + (args.member ?? args.testDm ?? "U_MEMBER_ID") + "]",
+		"    allowedChannelIds: [\"*\"]",
+	].join("\n");
+}
+
+console.log(JSON.stringify(report, null, 1));
+process.exit(report.ok ? 0 : 1);

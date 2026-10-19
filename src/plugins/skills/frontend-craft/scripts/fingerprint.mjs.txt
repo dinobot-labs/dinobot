@@ -1,0 +1,57 @@
+// Data-driven fingerprint of a reference site: fonts, colors, motion tech, weight, and scroll FPS.
+// Usage: node qa/fingerprint.mjs <url> [--mobile]   -> prints one JSON object.
+import { chromium } from "playwright-core";
+
+const EDGE = "C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe";
+const [url, ...rest] = process.argv.slice(2);
+if (!url) { console.error("usage: node qa/fingerprint.mjs <url> [--mobile]"); process.exit(2); }
+const mobile = rest.includes("--mobile");
+const browser = await chromium.launch({ executablePath: EDGE, headless: true });
+try {
+	const context = await browser.newContext(mobile
+		? { viewport: { width: 390, height: 844 }, deviceScaleFactor: 3, isMobile: true, hasTouch: true, locale: "en-US" }
+		: { viewport: { width: 1440, height: 900 }, deviceScaleFactor: 1, locale: "en-US" });
+	const page = await context.newPage();
+	const scripts = new Set();
+	page.on("request", (r) => { if (r.resourceType() === "script") scripts.add(r.url()); });
+	const response = await page.goto(url, { waitUntil: "domcontentloaded", timeout: 45000 });
+	await page.waitForLoadState("networkidle", { timeout: 12000 }).catch(() => {});
+	await page.waitForTimeout(1500);
+	const info = await page.evaluate(() => {
+		const cs = (el) => (el ? getComputedStyle(el) : null);
+		const pick = (sel) => { const el = document.querySelector(sel); const s = cs(el); return s ? { color: s.color, background: s.backgroundColor, font: s.fontFamily.split(",")[0].trim(), size: s.fontSize, weight: s.fontWeight, letterSpacing: s.letterSpacing, lineHeight: s.lineHeight } : null; };
+		const fonts = [...document.fonts].filter((f) => f.status === "loaded").map((f) => f.family.replace(/["']/g, "") + " " + f.weight);
+		let rules = 0, scrollTimeline = 0, keyframes = 0, customProps = 0, viewTransitions = 0;
+		for (const sheet of document.styleSheets) {
+			let list; try { list = sheet.cssRules; } catch { continue; }
+			const walk = (rs) => { for (const r of rs) { rules++; const t = r.cssText || ""; if (/animation-timeline|scroll-timeline|view-timeline/.test(t)) scrollTimeline++; if (r.type === 7) keyframes++; if (/view-transition/.test(t)) viewTransitions++; const m = t.match(/--[a-zA-Z0-9-]+\s*:/g); if (m) customProps += m.length; if (r.cssRules) walk(r.cssRules); } };
+			walk(list);
+		}
+		const canvases = [...document.querySelectorAll("canvas")].map((c) => c.width + "x" + c.height);
+		const g = window;
+		return {
+			title: document.title,
+			lang: document.documentElement.lang,
+			body: pick("body"), h1: pick("h1"), h2: pick("h2"), p: pick("p"), a: pick("a"), button: pick("button, a[class*=button], a[class*=btn]"),
+			fonts: [...new Set(fonts)].slice(0, 12),
+			css: { rules, keyframes, scrollTimeline, customProps, viewTransitions },
+			runningAnimations: document.getAnimations().length,
+			canvases, svgs: document.querySelectorAll("svg").length, videos: document.querySelectorAll("video").length,
+			libs: { gsap: !!g.gsap, lenis: !!g.lenis || !!document.querySelector("html.lenis"), three: !!g.THREE, lottie: !!g.lottie || !!document.querySelector("lottie-player, dotlottie-player"), rive: !!document.querySelector("canvas[class*=rive]"), framer: !!document.querySelector("[data-framer-name], [data-framer-component-type]"), webflow: !!document.querySelector("html[data-wf-site]"), next: !!g.__NEXT_DATA__ || !!document.querySelector("#__next"), nuxt: !!g.__NUXT__ },
+			height: document.documentElement.scrollHeight,
+			transferKB: Math.round(performance.getEntriesByType("resource").reduce((a, e) => a + (e.transferSize || 0), 0) / 1024),
+		};
+	});
+	const fps = await page.evaluate(() => new Promise((resolve) => {
+		const ts = []; const H = document.documentElement.scrollHeight - innerHeight; const start = performance.now(); const dur = 4000;
+		function f(t) { ts.push(t); const k = Math.min(1, (t - start) / dur); window.scrollTo(0, H * (k < 0.5 ? k * 2 : (1 - k) * 2)); if (t - start < dur) requestAnimationFrame(f); else resolve(ts); }
+		requestAnimationFrame(f);
+	}));
+	const iv = []; for (let i = 1; i < fps.length; i++) iv.push(fps[i] - fps[i - 1]);
+	const sorted = [...iv].sort((a, b) => a - b);
+	let minWin = Infinity; for (let i = 0, j = 0; i < fps.length; i++) { while (fps[i] - fps[j] > 250) j++; if (fps[i] - fps[0] >= 250) minWin = Math.min(minWin, (i - j) / ((fps[i] - fps[j]) / 1000)); }
+	const libsFromUrls = [...scripts].map((s) => s.toLowerCase()).filter((s) => /gsap|lenis|three|lottie|rive|framer|motion|webflow|anime|barba|swiper|splide|locomotive/.test(s)).map((s) => s.split("?")[0].split("/").slice(-1)[0]).slice(0, 8);
+	console.log(JSON.stringify({ url, status: response?.status() ?? null, ...info, libsFromUrls, scrollFps: { frames: fps.length, avg: Math.round((fps.length - 1) / ((fps.at(-1) - fps[0]) / 1000)), p99ms: sorted[Math.floor(sorted.length * 0.99)] ?? null, minWindowFps: Number.isFinite(minWin) ? Math.round(minWin) : null } }));
+} finally {
+	await browser.close();
+}

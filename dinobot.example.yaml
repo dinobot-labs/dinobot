@@ -1,0 +1,261 @@
+# Customer deployment manifest. Copy to dinobot.yaml (or point DINOBOT_CONFIG at it).
+# Secrets (API keys, channel credentials) stay in the environment, never in this file.
+
+bot:
+  enabled: true                 # false: the process exits at boot; nothing starts
+  dataDir: .data                # durable SQLite state; required, always on disk
+  # workspaceRoot: /path/to/project  # file/shell default; new TUI threads otherwise use the client directory
+  model:
+    provider: anthropic         # anthropic | openai
+    modelId: claude-sonnet-4-6
+  toolMode: codemode-only       # direct | hybrid | codemode-only
+  # promptProfile: task          # full (default) | task: lean prompt for headless single-task runs
+
+api:                            # loopback client API for `dinobot tui`; omit to disable local front ends
+  port: 8786
+
+# Custom OpenAI-compatible model providers (routers, gateways, self-hosted servers).
+# The key comes from `/login <id>` or <ID>_API_KEY in the daemon's environment, never from this file.
+# Use the model with `/model axwith/opencodex/google-antigravity/gemini-4-argon`.
+# providers:
+#   axwith:
+#     name: AXwith Router
+#     baseUrl: https://provider.example.com/v1
+#     # apiKeyEnv: AXWITH_API_KEY
+#     models:
+#       - id: opencodex/google-antigravity/gemini-4-argon
+#         name: Gemini 4 Argon
+#         # contextWindow: 128000
+#         # maxTokens: 16384
+
+channels:                       # one or more of the channels this build contains
+  http:
+    port: 8787                 # loopback-only; never expose as a public unauthenticated gateway
+  # Telegram easy setup: dinobot telegram connect --token-file PATH --pairing-file PATH
+  # Polling alternative (no HTTPS ingress; do not enable beside the same bot webhook):
+  # telegram:
+  #   mode: polling
+  #   databasePath: .data/telegram-inbox.sqlite
+  #   botTokenFile: /private/path/telegram.token
+  #   pairingPath: /private/path/telegram-pairing.json
+  # Native webhooks are opt-in; see openwiki/runbooks/messaging-channels.md.
+  # Telegram webhook: re-register setWebhook with allowed_updates=["message","callback_query"]
+  # for choice buttons; polling receives both automatically.
+  # Messaging handlers have no application lifetime deadline.
+  # Legacy handlerTimeoutMs is accepted but deprecated/ignored, even when explicitly set.
+  # Discord delivery still requires a valid ~15-minute interaction token; no public fallback.
+  # Create the private parent directory first; never share DB files between adapters.
+  # telegram:
+  #   port: 8791
+  #   databasePath: .data/telegram-inbox.sqlite
+  #   botTokenEnv: DINOBOT_TELEGRAM_TOKEN
+  #   webhookSecretEnv: DINOBOT_TELEGRAM_SECRET
+  #   allowedUserIds: ["123456789"]
+  #   allowedChatIds: ["-1001234567890"]
+  # discord:
+  #   port: 8792
+  #   databasePath: .data/discord-inbox.sqlite
+  #   applicationId: "123456789012345678"
+  #   publicKey: REPLACE_WITH_64_HEX_PUBLIC_KEY
+  #   allowedUserIds: ["123456789012345678"]
+  #   allowedChannelIds: ["234567890123456789"]
+  #   allowedParentChannelIds: ["345678901234567890"] # signed child thread types 10/11/12 only
+
+  # Slack: no public webhook needed in Socket Mode; see openwiki/runbooks/slack.md.
+  # slack:
+  #   transport: socket
+  #   databasePath: .data/slack-inbox.sqlite
+  #   appTokenEnv: DINOBOT_SLACK_APP_TOKEN
+  #   botTokenEnv: DINOBOT_SLACK_BOT_TOKEN
+  #   appId: A123456
+  #   teamId: T123456
+  #   botUserId: U123456
+  #   allowedUserIds: [U234567]
+  #   allowedChannelIds: [C123456, D123456]   # or ["*"]: any channel the bot is invited to, plus DMs
+  #   toolProgress: native        # native plan cards | text | off
+  #   deliveryRecovery: true      # possible duplicates are visibly marked
+  #   fileReplies: true           # long answers as .txt (files:write scope)
+
+plugins: {}                     # extra plugin config; built-in skills are always included, web search and image generation are on unless `web: false` / `image_gen: false`
+
+# Skill research is opt-in. Existing conversation pins survive flag changes.
+# Admission additionally requires host-registered snapshots, provider reservations and measured SLO evidence.
+# skillEvolution:
+#   sessionPinning: true
+#   observe: false
+#   author: false
+#   evaluate: false
+#   autoPublish: false
+#   deactivate: false
+#   physicalGc: false
+# Background review (ADR 0038) is ON by default: a tool-less author periodically reviews recent
+# settled conversations and installs its candidate reversibly (unverified; unused skills are later
+# archived by the curator). The default turns on author with the budgets below; observe/evaluate/
+# confirmation/SLO are NOT required. dailyMicroUsd rolls over every 24 h (reservations carry over).
+# Opt out with `skillEvolution: { review: false }` (or author: false). Configuring the statistical
+# path (observe/evaluate/autoPublish) without naming review also leaves review off.
+# The defaults, written out:
+# skillEvolution:
+#   author: true
+#   budgets:
+#     maxPending: 2
+#     maxCalls: 4
+#     maxOutputTokens: 8000
+#     timeoutMs: 120000
+#     dailyMicroUsd: 2000000      # $2 per fixed 24 h window (UTC grid; any 24 h span <= 2x)
+#     jobMicroUsd: 400000
+#   review:
+#     publish: true              # install authored candidates (reversible_unverified)
+#     intervalMs: 21600000       # min time between snapshots (6 h)
+#     minConversations: 5        # min new settled root conversations since last snapshot
+#     maxConversations: 20       # max conversations in one snapshot
+#     maxPublishesPerDay: 3
+# Inspect operational status with /skills evolution status; pause/kill/resume are local TUI controls.
+
+# Skill curation (ADR 0038) is ON by default and touches only agent/review/evolution-created skills.
+# An unused skill is archived (reversible: lifecycle inactive, packages/history/pins kept) after
+# L* = ceil(ln(alpha)/ln(1-pMax)) settled root conversations exposed to it without use (149 by default)
+# AND minIdleMs idle. Usage = skills_load; correlational, not proof of quality.
+# /skills curator [status|run|dry-run], /skills archived, /skills restore|pin|unpin <name> (mutations: TUI only).
+# curation:
+#   enabled: true
+#   alpha: 0.05                # per-window false-archive bound for skills used with p >= pMax
+#   pMax: 0.02
+#   minIdleMs: 1209600000      # 14 days
+#   settleMs: 3600000          # a root conversation counts as an exposure 1 h after creation
+#   intervalMs: 21600000       # curator run every 6 h (also once at startup)
+#   includeUser: false         # also curate owner/user-created skills
+#   includeBundled: false      # also curate bundled/source skills (protected names stay exempt)
+
+# Project memory (ADR 0050) is ON by default. One durable store holds team entries (shared by every
+# project) and project entries (only conversations working in the same git repository; all worktrees
+# and channels of a repository share one project). The memory_* tools take scope: team | project.
+# auto: every N user turns of a thread, a background task extracts durable project facts into
+#   project memory (keys auto/<hash>; deleting one keeps it forgotten). It costs one model call per window.
+# recall: before a thread input is admitted, the most relevant project entries are appended once to the
+#   conversation as a [dinobot memory] note (no extra model call).
+# memory:
+#   auto:
+#     enabled: true
+#     everyTurns: 6
+#     model: inherit             # or provider/modelId for a cheaper curator model
+#     maxRetries: 2
+#     leaseMs: 300000            # must exceed timeoutMs
+#     timeoutMs: 120000
+#     maxPerProject: 200
+#   recall:
+#     enabled: true
+#     maxItems: 3
+#     budgetChars: 1200
+# retro (ADR 0076), also ON by default: a background retrospective reads a thread's recent turns and its
+#   Harness record (work plans, repairs, failed checks, verified/blocked outcomes) and keeps working
+#   agreements (preferences and lessons) that every later request of the project carries in its
+#   working_agreements section. It runs when work_finish/a DAG run ends, every everyTurns user turns,
+#   or after idleMinutes without input. One model call per review. The agreements_* tools edit them.
+#   retro:
+#     enabled: true
+#     everyTurns: 6
+#     idleMinutes: 15
+#     model: inherit             # or provider/modelId
+#     maxRetries: 2
+#     leaseMs: 300000            # must exceed 2 x timeoutMs
+#     timeoutMs: 120000
+#     maxActivePerProject: 20
+#     maxActiveTeam: 10
+#     escalateAfterViolations: 3 # an agreement the user had to correct this often is flagged for review
+
+# LSP is always a registered tool (also tools.lsp in codemode).
+# By default discover installed native TypeScript 7 (or typescript-language-server),
+# Pyright, Rust, Go and C/C++ servers.
+# No automatic download. Commands are trusted executable argv, not shell scripts.
+# An explicit servers list replaces defaults; [] disables servers, not the status tool.
+# lsp:
+#   timeoutMs: 15000
+#   servers:
+#     - name: typescript
+#       command: ["typescript-language-server", "--stdio"]
+#       extensions: [".ts", ".tsx", ".js", ".jsx"]
+#       rootMarkers: ["tsconfig.json", "package.json"]
+
+# Slash commands to hide on every surface (TUI dropdown, /help, client API, channels).
+# Available names: src/commands/names.ts. Disabling reasoning also disables its TUI shortcut.
+# Customer builds usually hide the logins.
+# commands:
+#   disabled: [login, logout]
+
+# To configure plugins, replace `plugins: {}` above with `plugins:` and uncomment the entries below.
+# GitHub (opt-in): read-only unless write: true. The token comes from the environment variable named by tokenEnv.
+#  github:
+#    tokenEnv: GITHUB_TOKEN          # default
+#    # apiUrl: https://ghe.example.com/api/v3   # GitHub Enterprise Server
+#    repositories: ["acme/*"]         # optional allowlist: owner/name or owner/*
+#    write: false                     # true adds github_comment and github_create_issue
+# Google Workspace (opt-in, ADR 0077/0078): Gmail, Calendar, Drive (Docs/Sheets/Slides read as text) and contacts.
+# No keys here: the first Google request makes the bot send a login link; the user opens it once on any device.
+# Tokens live in <dataDir>/google-oauth.json. Read-only unless write: true.
+#  google: {}
+#  # google:
+#  #   services: [gmail, calendar]     # default: gmail, calendar, drive, people
+#  #   write: true                     # drafts/send mail, labels, trash, events, create Drive files
+# MCP servers: stdio commands and HTTP endpoints can be configured here.
+#  mcp:
+#    servers:
+#      local:
+#        command: npx
+#        args: ["-y", "example-mcp-server"]
+#        env:
+#          API_TOKEN: ${MCP_API_TOKEN}
+#      remote:
+#        url: https://mcp.example.com
+#        headers:
+#          Authorization: Bearer ${MCP_AUTH_TOKEN}
+# Web search is on by default (ADR 0058): credential-free engines with sequential fallback, no API keys.
+# The model may send search queries to Startpage/DuckDuckGo; turn it off where that is not allowed:
+#  web: false
+# Or tune it (defaults shown):
+#  web:
+#    engines: [startpage, duckduckgo]   # fallback order (default)
+#    timeoutSeconds: 60                 # hard ceiling per engine attempt (max 300)
+#    # endpoints:                       # base-URL overrides for mirrors/tests
+#    #   startpage: https://www.startpage.com
+#    #   duckduckgo: https://html.duckduckgo.com
+# Image generation is on by default (ADR 0088): image_gen_generate creates and edits images with the stored
+# OpenAI Codex (ChatGPT Plus/Pro) login from /login, the way Codex does. No keys here; without that login it fails
+# with login guidance. Prompts and referenced images go to OpenAI under that account; turn it off where not allowed:
+#  image_gen: false
+# Or tune it (defaults shown):
+#  image_gen:
+#    outputDir: generated_images      # relative to the conversation's working directory
+#    # model: gpt-image-2
+#    # timeoutMs: 300000
+# Computer use (opt-in, ADR 0059): the computer_use tool observes and operates desktop apps on this machine
+# through cua-driver. Run `dinobot init` first; it installs the pinned driver for this platform.
+# Only conversations from the listed channels may use it (default: the local TUI only).
+#  computer:
+#    channels: [tui]                    # add e.g. telegram, or '*' for every channel
+#    # command: /path/to/cua-driver     # a driver you installed yourself (override)
+#    # env: { CUA_DRIVER_RS_ENABLE_WAYLAND: "0" }   # extra driver environment; wins over defaults
+#    # takeover: never                  # default auto: input refused in the background is retried once in the foreground
+# Browser (opt-in, ADR 0093): browser_use drives a real Chrome through Patchright in a crash-isolated child process
+# (runs from source with bun). dedicated (default) launches a bot-only Chrome profile; attach uses your own running
+# Chrome once remote debugging is on (chrome://inspect/#remote-debugging) and needs computer: {} to click Chrome's
+# "Allow remote debugging?" dialog. Failed actions name a computer_use fallback window. Default: the local TUI only.
+#  browser: {}
+#  # browser:
+#  #   mode: attach                     # dedicated (default) | attach
+#  #   channels: [tui]
+#  #   browser: chrome                  # chrome (default) | msedge | chromium
+#  #   profile: /srv/dinobot/browser-profile   # dedicated profile; default <dataDir>/browser/profile
+#  #   userDataDir: /home/me/.config/google-chrome   # attach: where DevToolsActivePort is; default per OS
+#  #   humanize: false                  # default true: 25-70 ms per typed character, 150-600 ms before clicks
+# Skills directories: add external skills alongside the built-ins; duplicate names fail.
+# Imported packages and agent edits live in the bot's durable database; source files are never overwritten.
+# Candidate acceptance validates package structure, not improvement; explicit publication changes only new conversations.
+# Inspect or publish manually in the TUI with
+# /skills pending, /skills diff <id>, /skills publish <id>, /skills reject <id>.
+#  skills:
+#    dirs: ["./skills"]
+
+# Agent directories: load subagent definitions from these paths.
+# agents:
+#   dirs: ["./agents"]

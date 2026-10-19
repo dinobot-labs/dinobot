@@ -1,0 +1,683 @@
+diff --git a/src/registry/oauth/oauth.html b/src/registry/oauth/oauth.html
+index cc97b874720755a453474ade631aa9a5372bc98c..8015261f412297df1224fdeffedf17e5c2b1cf84 100644
+--- a/src/registry/oauth/oauth.html
++++ b/src/registry/oauth/oauth.html
+@@ -2,306 +2,431 @@
+ <html lang="en">
+ 	<head>
+ 		<meta charset="UTF-8" />
+-		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
++		<meta name="viewport" content="width=device-width, initial-scale=1" />
+ 		<meta name="color-scheme" content="dark light" />
+-		<title>omp · authentication</title>
++		<meta name="generator" content="dinobot-oauth" />
++		<title>dinobot &middot; sign in</title>
+ 		<style>
+ 			:root {
+-				--bg: #000;
+-				--card: #0b0b0d;
+-				--ink-1: #f4f4f5;
+-				--ink-2: #b4b4bb;
+-				--ink-3: #7a7a83;
+-				--line-1: rgb(255 255 255 / 0.07);
+-				--line-2: rgb(255 255 255 / 0.12);
+-				--top-lit: rgb(255 255 255 / 0.22);
+-				--accent-a: #22d3ee;
+-				--accent-b: #f472b6;
+-				--accent-gradient: linear-gradient(135deg, var(--accent-a), var(--accent-b));
+-				--ok: #4ade80;
+-				--ok-soft: rgb(74 222 128 / 0.12);
+-				--bad: #f87171;
+-				--bad-soft: rgb(248 113 113 / 0.12);
+-				--pending: #a1a1aa;
+-				--pending-soft: rgb(161 161 170 / 0.12);
+-				--glow-a: rgb(34 211 238 / 0.1);
+-				--glow-b: rgb(244 114 182 / 0.08);
+-				--shadow: 0 30px 60px -20px rgb(0 0 0 / 0.8);
+-				--btn-bg: #f4f4f5;
+-				--btn-fg: #000;
+-				--r-control: 8px;
+-				--r-panel: 16px;
+-				--sans: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+-				--mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
++				/* Dinobot Signal: the same hex values as `palette` in src/tui/theme.ts. */
++				--bg-night: #111111;
++				--bg-storm: #191919;
++				--bg-storm-dark: #1e1e1e;
++				--bg-highlight: #232726;
++				--fg: #ecf0ee;
++				--fg-dark: #b7c0bd;
++				--fg-gutter: #5a6461;
++				--comment: #8e9b97;
++				--dark5: #a8b3af;
++				--brand-mint: #19ca9d;
++				--brand-teal: #2db4b2;
++				--brand-cyan: #3da5c2;
++				--brand-blue: #538eda;
++				--brand-indigo: #5d7cde;
++				--tn-green: #afe195;
++				--tn-red: #ff8f87;
++				--tn-yellow: #fabd2f;
++				--selection-border: #5e6b68;
++				--paper: #ffffff;
++				--ink: #000000;
++				--brand-gradient: linear-gradient(90deg, var(--brand-mint), var(--brand-teal), var(--brand-cyan), var(--brand-blue), var(--brand-indigo));
++
++				/* Roles, named after `color` in theme.ts. Dark is the default, like the TUI. */
++				--bg: var(--bg-storm);
++				--panel: var(--bg-storm-dark);
++				--panel-raised: var(--bg-highlight);
++				--panel-border: var(--selection-border);
++				--text-primary: var(--fg);
++				--text-secondary: var(--fg-dark);
++				--gray: var(--comment);
++				--gray-strong: var(--dark5);
++				--success: var(--tn-green);
++				--error: var(--tn-red);
++				--warning: var(--tn-yellow);
++				--focus: var(--brand-cyan);
++				--accent-text: var(--brand-mint);
++				--btn-fg: var(--bg-night);
++				--glow-a: color-mix(in oklab, var(--brand-mint) 12%, transparent);
++				--glow-b: color-mix(in oklab, var(--brand-indigo) 14%, transparent);
++				--grid-dot: color-mix(in oklab, var(--bg-highlight) 90%, transparent);
++				--shadow: 0 24px 60px -24px color-mix(in oklab, var(--ink) 70%, transparent);
++
++				/* 4px spacing grid, like the TUI column grid. */
++				--s-1: 4px;
++				--s-2: 8px;
++				--s-3: 12px;
++				--s-4: 16px;
++				--s-5: 20px;
++				--s-6: 24px;
++				--s-8: 32px;
++				--s-10: 40px;
++				--s-12: 48px;
++
++				/* Type scale. */
++				--t-xs: 12px;
++				--t-sm: 13px;
++				--t-md: 15px;
++				--t-lg: 17px;
++				--t-xl: 24px;
++				--t-2xl: 30px;
++				--lh-tight: 1.2;
++				--lh-body: 1.55;
++
++				--r-control: 6px;
++				--r-panel: 14px;
++				--font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", "Helvetica Neue", sans-serif;
++				--font-mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+ 				color-scheme: dark;
+ 			}
+ 
+ 			@media (prefers-color-scheme: light) {
+ 				:root {
+-					--bg: #fafafa;
+-					--card: #fff;
+-					--ink-1: #111113;
+-					--ink-2: #4b4b52;
+-					--ink-3: #83838b;
+-					--line-1: rgb(0 0 0 / 0.08);
+-					--line-2: rgb(0 0 0 / 0.12);
+-					--top-lit: rgb(0 0 0 / 0.04);
+-					--accent-a: #0891b2;
+-					--accent-b: #db2777;
+-					--ok: #16a34a;
+-					--ok-soft: rgb(22 163 74 / 0.1);
+-					--bad: #dc2626;
+-					--bad-soft: rgb(220 38 38 / 0.1);
+-					--pending: #71717a;
+-					--pending-soft: rgb(113 113 122 / 0.1);
+-					--glow-a: rgb(8 145 178 / 0.08);
+-					--glow-b: rgb(219 39 119 / 0.06);
+-					--shadow: 0 20px 50px -24px rgb(0 0 0 / 0.18);
+-					--btn-bg: #111113;
+-					--btn-fg: #fff;
++					--bg: color-mix(in oklab, var(--fg) 14%, var(--paper));
++					--panel: var(--paper);
++					--panel-raised: color-mix(in oklab, var(--fg) 16%, var(--paper));
++					--panel-border: color-mix(in oklab, var(--fg-gutter) 30%, var(--paper));
++					--text-primary: var(--bg-night);
++					--text-secondary: #3f4946;
++					--gray: var(--fg-gutter);
++					--gray-strong: #4a5552;
++					--success: color-mix(in oklab, var(--tn-green) 62%, var(--ink));
++					--error: color-mix(in oklab, var(--tn-red) 70%, var(--ink));
++					--warning: color-mix(in oklab, var(--tn-yellow) 58%, var(--ink));
++					--focus: color-mix(in oklab, var(--brand-cyan) 70%, var(--ink));
++					--accent-text: color-mix(in oklab, var(--brand-mint) 55%, var(--ink));
++					--btn-fg: var(--bg-night);
++					--glow-a: color-mix(in oklab, var(--brand-mint) 18%, transparent);
++					--glow-b: color-mix(in oklab, var(--brand-indigo) 16%, transparent);
++					--grid-dot: color-mix(in oklab, var(--fg-gutter) 20%, transparent);
++					--shadow: 0 24px 60px -28px color-mix(in oklab, var(--fg-gutter) 45%, transparent);
+ 					color-scheme: light;
+ 				}
+ 			}
+ 
+-			* {
++			*,
++			*::before,
++			*::after {
+ 				box-sizing: border-box;
+ 			}
++			[hidden] {
++				display: none !important;
++			}
+ 
++			html {
++				height: 100%;
++			}
+ 			body {
+ 				margin: 0;
+-				min-height: 100vh;
+-				display: flex;
+-				align-items: center;
+-				justify-content: center;
+-				padding: 1.5rem;
+-				font-family: var(--sans);
++				min-height: 100%;
++				min-height: 100dvh;
++				display: grid;
++				place-items: center;
++				padding: var(--s-4);
++				font-family: var(--font-sans);
++				font-size: var(--t-md);
++				line-height: var(--lh-body);
++				color: var(--text-primary);
+ 				background: var(--bg);
+-				color: var(--ink-1);
+ 				-webkit-font-smoothing: antialiased;
+-				overflow-x: clip;
+ 			}
+ 
+-			/* ambient glow */
+-			.glow {
++			/* Ambient glow over a faint dot matrix, the texture the pixel mascot is drawn in. */
++			.backdrop {
+ 				position: fixed;
+ 				inset: 0;
++				z-index: -1;
+ 				pointer-events: none;
+ 				background:
+-					radial-gradient(ellipse 50vw 40vh at 38% 30%, var(--glow-a), transparent 70%),
+-					radial-gradient(ellipse 50vw 40vh at 64% 64%, var(--glow-b), transparent 70%);
++					radial-gradient(ellipse 70vw 60vh at 18% 8%, var(--glow-a), transparent 70%),
++					radial-gradient(ellipse 60vw 50vh at 88% 96%, var(--glow-b), transparent 70%),
++					radial-gradient(circle, var(--grid-dot) 1px, transparent 1.5px) 0 0 / 18px 18px;
+ 			}
+ 
+-			.container {
++			/* Mascot on the left, text on the right, stacked when narrow. */
++			.panel {
++				--state: var(--brand-teal);
+ 				position: relative;
+ 				width: 100%;
+-				max-width: 400px;
+-				padding: 2rem 2rem 1.75rem;
+-				background: var(--card);
+-				border: 1px solid var(--line-1);
++				max-width: 640px;
++				display: grid;
++				grid-template-columns: 1fr;
++				gap: var(--s-6);
++				padding: var(--s-6);
++				background: var(--panel);
++				border: 1px solid var(--panel-border);
+ 				border-radius: var(--r-panel);
+ 				box-shadow: var(--shadow);
+ 				overflow: hidden;
+-				animation: rise 0.5s cubic-bezier(0.16, 1, 0.3, 1) both;
++				animation: rise 0.45s cubic-bezier(0.16, 1, 0.3, 1) both;
+ 			}
+-			/* top-lit hairline */
+-			.container::before {
++			.panel[data-state="success"] {
++				--state: var(--success);
++			}
++			.panel[data-state="error"] {
++				--state: var(--error);
++			}
++			/* State bar along the top edge, the TUI's accent bar turned sideways. */
++			.panel::before {
+ 				content: "";
+ 				position: absolute;
+-				top: 0;
+-				left: 12%;
+-				right: 12%;
+-				height: 1px;
+-				background: linear-gradient(90deg, transparent, var(--top-lit), transparent);
++				inset: 0 0 auto 0;
++				height: 3px;
++				background: var(--bar, var(--state));
++			}
++			.panel[data-state="pending"] {
++				--bar: var(--brand-gradient);
+ 			}
+ 			@keyframes rise {
+ 				from {
+-					opacity: 0;
+-					transform: translateY(8px);
++					transform: translateY(10px);
+ 				}
+ 			}
+ 
+-			.brand {
+-				display: flex;
+-				align-items: center;
+-				gap: 0.6rem;
+-				margin-bottom: 1.75rem;
++			.mark {
++				margin: 0;
++				width: 120px;
++				height: 72px;
+ 			}
+-			.omp-mark {
+-				flex: none;
++			.mark svg {
+ 				display: block;
++				width: 100%;
++				height: 100%;
++			}
++			/* One rect per lit pixel; the shared gradient runs left to right across the 30px width. */
++			.mark .g {
++				fill: url(#brand-grad);
++			}
++			.mark .w {
++				fill: #ffffff;
++			}
++			.mark .p {
++				fill: #ff8f87;
++			}
++			/* Ridge, belly and mouth are tints of the brand teal, like the TUI mascot. */
++			.mark .s {
++				fill: color-mix(in oklab, var(--brand-teal) 55%, #ffffff);
++			}
++			.mark .l {
++				fill: color-mix(in oklab, var(--brand-teal) 25%, #ffffff);
++			}
++			.mark .d {
++				fill: color-mix(in oklab, var(--brand-teal) 65%, #000000);
++			}
++			.mark .face {
++				display: none;
++			}
++			.panel[data-state="pending"] .face-idle,
++			.panel[data-state="success"] .face-done,
++			.panel[data-state="error"] .face-failed {
++				display: inline;
++			}
++
++			.brand {
++				display: flex;
++				align-items: baseline;
++				gap: var(--s-3);
++				margin: 0 0 var(--s-5);
+ 			}
+ 			.wordmark {
+-				font-size: 13px;
+-				font-weight: 600;
++				font-size: var(--t-lg);
++				font-weight: 700;
+ 				letter-spacing: -0.01em;
++				color: var(--text-primary);
+ 			}
+-			.wordmark-sub {
+-				margin-left: auto;
+-				font-family: var(--mono);
+-				font-size: 12px;
+-				color: var(--ink-3);
++			.brand-label {
++				font-family: var(--font-mono);
++				font-size: var(--t-xs);
++				color: var(--gray-strong);
+ 			}
+ 
+-			.status {
+-				display: inline-flex;
++			.headline {
++				display: flex;
+ 				align-items: center;
+-				gap: 0.45rem;
+-				padding: 0.22rem 0.6rem 0.22rem 0.5rem;
+-				margin-bottom: 1rem;
+-				border-radius: 999px;
+-				font-size: 12px;
+-				font-weight: 500;
+-				color: var(--pending);
+-				background: var(--pending-soft);
+-			}
+-			.status-dot {
+-				width: 7px;
+-				height: 7px;
++				gap: var(--s-3);
++				margin: 0 0 var(--s-3);
++			}
++			.badge {
++				flex: none;
++				display: inline-grid;
++				place-items: center;
++				width: 32px;
++				height: 32px;
+ 				border-radius: 50%;
+-				background: currentColor;
++				color: var(--state);
++				background: color-mix(in oklab, var(--state) 16%, transparent);
+ 			}
+-			.status-word {
++			.badge svg {
+ 				display: none;
++				width: 18px;
++				height: 18px;
+ 			}
+-			.container:not(.success):not(.error) .status-pending,
+-			.success .status-success,
+-			.error .status-error {
+-				display: inline;
+-			}
+-			.container:not(.success):not(.error) .status-dot {
+-				animation: pulse 1.4s ease-in-out infinite;
+-			}
+-			@keyframes pulse {
+-				50% {
+-					opacity: 0.35;
+-				}
+-			}
+-			.success .status {
+-				color: var(--ok);
+-				background: var(--ok-soft);
++			.panel[data-state="pending"] .badge {
++				display: none;
+ 			}
+-			.error .status {
+-				color: var(--bad);
+-				background: var(--bad-soft);
++			.panel[data-state="success"] .icon-ok,
++			.panel[data-state="error"] .icon-bad {
++				display: block;
+ 			}
+-
+ 			h1 {
+-				margin: 0 0 0.5rem;
+-				font-size: 1.35rem;
+-				font-weight: 600;
++				margin: 0;
++				font-size: var(--t-xl);
++				font-weight: 650;
++				line-height: var(--lh-tight);
+ 				letter-spacing: -0.02em;
+-				line-height: 1.25;
+ 				text-wrap: balance;
+ 			}
+-			p {
+-				margin: 0 0 1.5rem;
+-				font-size: 0.9rem;
+-				line-height: 1.6;
+-				color: var(--ink-2);
+-			}
+-			p:last-of-type:not(:has(+ .btn)) {
+-				margin-bottom: 0.25rem;
+-			}
+-			.error p {
+-				font-family: var(--mono);
+-				font-size: 0.8rem;
+-				padding: 0.6rem 0.75rem;
+-				border: 1px solid var(--line-1);
++
++			.message {
++				margin: 0 0 var(--s-6);
++				max-width: 46ch;
++				color: var(--text-secondary);
++			}
++			.detail {
++				margin: 0 0 var(--s-4);
++				padding: var(--s-3) var(--s-4);
++				font-family: var(--font-mono);
++				font-size: var(--t-sm);
++				line-height: var(--lh-body);
++				color: var(--error);
++				background: color-mix(in oklab, var(--error) 8%, transparent);
++				border: 1px solid color-mix(in oklab, var(--error) 30%, transparent);
++				border-left: 3px solid var(--error);
+ 				border-radius: var(--r-control);
++				white-space: pre-wrap;
+ 				overflow-wrap: anywhere;
+ 			}
++			.hint {
++				margin: 0;
++				color: var(--text-secondary);
++			}
++			.hint code {
++				font-family: var(--font-mono);
++				font-size: 0.92em;
++				padding: 1px var(--s-1);
++				border-radius: var(--s-1);
++				color: var(--accent-text);
++				background: var(--panel-raised);
++			}
+ 
+ 			.btn {
+ 				display: inline-flex;
+ 				align-items: center;
+ 				justify-content: center;
+ 				width: 100%;
+-				padding: 0.6rem 1rem;
++				min-height: 40px;
++				padding: 0 var(--s-5);
+ 				font: inherit;
+-				font-size: 0.875rem;
+-				font-weight: 500;
++				font-size: var(--t-sm);
++				font-weight: 600;
+ 				color: var(--btn-fg);
+-				background: var(--btn-bg);
+-				border: none;
++				background: var(--brand-gradient);
++				border: 0;
+ 				border-radius: var(--r-control);
+ 				cursor: pointer;
+-				transition: opacity 0.15s;
++				transition:
++					filter 0.15s,
++					transform 0.15s;
+ 			}
+ 			.btn:hover {
+-				opacity: 0.86;
++				filter: brightness(1.08);
++			}
++			.btn:active {
++				transform: translateY(1px);
+ 			}
+ 			.btn:focus-visible {
+-				outline: 2px solid var(--accent-a);
++				outline: 2px solid var(--focus);
+ 				outline-offset: 2px;
+ 			}
+-			.error .btn {
+-				color: var(--ink-1);
+-				background: transparent;
+-				border: 1px solid var(--line-2);
+-			}
+ 
+-			/* auto-close progress */
+-			.timer {
+-				position: absolute;
+-				left: 0;
+-				bottom: 0;
+-				height: 2px;
+-				width: 100%;
+-				background: var(--accent-gradient);
+-				transform-origin: left;
+-				transform: scaleX(0);
++			.foot {
++				display: flex;
++				align-items: center;
++				gap: var(--s-2);
++				margin-top: var(--s-6);
++				padding-top: var(--s-4);
++				border-top: 1px solid var(--panel-border);
++				font-family: var(--font-mono);
++				font-size: var(--t-xs);
++				color: var(--gray-strong);
+ 			}
+-			.countdown .timer {
+-				animation: countdown 3s linear forwards;
++			.foot .diamond {
++				color: var(--accent-text);
+ 			}
+-			@keyframes countdown {
+-				from {
+-					transform: scaleX(1);
++
++			@media (min-width: 640px) {
++				body {
++					padding: var(--s-8);
++				}
++				.panel {
++					grid-template-columns: 150px 1fr;
++					gap: var(--s-10);
++					padding: var(--s-10) var(--s-10) var(--s-8);
++				}
++				.mark {
++					width: 150px;
++					height: 90px;
+ 				}
+-				to {
+-					transform: scaleX(0);
++				.btn {
++					width: auto;
+ 				}
+ 			}
+ 
+ 			@media (prefers-reduced-motion: reduce) {
+-				.container,
+-				.countdown .timer,
+-				.status-dot {
+-					animation: none !important;
++				.panel {
++					animation: none;
++				}
++				.btn {
++					transition: none;
+ 				}
+ 			}
+ 		</style>
+ 	</head>
+ 	<body>
+-		<span aria-hidden="true" class="glow"></span>
+-		<div id="app" class="container">
+-			<div class="brand">
+-				<svg class="omp-mark" viewBox="0 0 64 64" width="24" height="24" aria-hidden="true">
++		<div class="backdrop" aria-hidden="true"></div>
++		<main id="app" class="panel" data-state="pending">
++			<figure class="mark" aria-hidden="true">
++				<svg viewBox="0 0 30 18" width="150" height="90" shape-rendering="crispEdges" role="img" aria-label="dinobot mascot">
+ 					<defs>
+-						<linearGradient id="omp-mark-grad" x1="0" y1="0" x2="1" y2="1">
+-							<stop offset="0" stop-color="oklch(0.7 0.24 340)" />
+-							<stop offset=".5" stop-color="oklch(0.62 0.21 295)" />
+-							<stop offset="1" stop-color="oklch(0.81 0.14 200)" />
++						<linearGradient id="brand-grad" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="30" y2="0">
++							<stop offset="0" stop-color="#19CA9D"/>
++							<stop offset="0.25" stop-color="#2DB4B2"/>
++							<stop offset="0.5" stop-color="#3DA5C2"/>
++							<stop offset="0.75" stop-color="#538EDA"/>
++							<stop offset="1" stop-color="#5D7CDE"/>
+ 						</linearGradient>
+ 					</defs>
+-					<path fill="url(#omp-mark-grad)" d="M10 14h44v9H43v33h-9V23h-9v22h-9V23H10z" />
++					<g class="body"><rect class="g" x="17" y="0" width="1" height="1"/><rect class="g" x="18" y="0" width="1" height="1"/><rect class="g" x="19" y="0" width="1" height="1"/><rect class="g" x="20" y="0" width="1" height="1"/><rect class="g" x="21" y="0" width="1" height="1"/><rect class="g" x="22" y="0" width="1" height="1"/><rect class="g" x="23" y="0" width="1" height="1"/><rect class="g" x="24" y="0" width="1" height="1"/><rect class="g" x="25" y="0" width="1" height="1"/><rect class="g" x="16" y="1" width="1" height="1"/><rect class="g" x="17" y="1" width="1" height="1"/><rect class="g" x="18" y="1" width="1" height="1"/><rect class="g" x="19" y="1" width="1" height="1"/><rect class="g" x="20" y="1" width="1" height="1"/><rect class="g" x="21" y="1" width="1" height="1"/><rect class="g" x="22" y="1" width="1" height="1"/><rect class="g" x="23" y="1" width="1" height="1"/><rect class="g" x="24" y="1" width="1" height="1"/><rect class="g" x="25" y="1" width="1" height="1"/><rect class="g" x="26" y="1" width="1" height="1"/><rect class="g" x="27" y="1" width="1" height="1"/><rect class="g" x="16" y="2" width="1" height="1"/><rect class="g" x="17" y="2" width="1" height="1"/><rect class="g" x="18" y="2" width="1" height="1"/><rect class="g" x="22" y="2" width="1" height="1"/><rect class="g" x="23" y="2" width="1" height="1"/><rect class="g" x="24" y="2" width="1" height="1"/><rect class="g" x="25" y="2" width="1" height="1"/><rect class="g" x="26" y="2" width="1" height="1"/><rect class="g" x="27" y="2" width="1" height="1"/><rect class="g" x="28" y="2" width="1" height="1"/><rect class="g" x="16" y="3" width="1" height="1"/><rect class="g" x="17" y="3" width="1" height="1"/><rect class="g" x="18" y="3" width="1" height="1"/><rect class="g" x="22" y="3" width="1" height="1"/><rect class="g" x="23" y="3" width="1" height="1"/><rect class="g" x="24" y="3" width="1" height="1"/><rect class="g" x="25" y="3" width="1" height="1"/><rect class="g" x="26" y="3" width="1" height="1"/><rect class="g" x="27" y="3" width="1" height="1"/><rect class="g" x="28" y="3" width="1" height="1"/><rect class="g" x="29" y="3" width="1" height="1"/><rect class="s" x="8" y="4" width="1" height="1"/><rect class="s" x="10" y="4" width="1" height="1"/><rect class="s" x="12" y="4" width="1" height="1"/><rect class="g" x="16" y="4" width="1" height="1"/><rect class="g" x="17" y="4" width="1" height="1"/><rect class="g" x="18" y="4" width="1" height="1"/><rect class="g" x="22" y="4" width="1" height="1"/><rect class="g" x="23" y="4" width="1" height="1"/><rect class="g" x="24" y="4" width="1" height="1"/><rect class="g" x="25" y="4" width="1" height="1"/><rect class="g" x="26" y="4" width="1" height="1"/><rect class="g" x="27" y="4" width="1" height="1"/><rect class="g" x="28" y="4" width="1" height="1"/><rect class="g" x="29" y="4" width="1" height="1"/><rect class="s" x="7" y="5" width="1" height="1"/><rect class="g" x="8" y="5" width="1" height="1"/><rect class="s" x="9" y="5" width="1" height="1"/><rect class="g" x="10" y="5" width="1" height="1"/><rect class="s" x="11" y="5" width="1" height="1"/><rect class="g" x="12" y="5" width="1" height="1"/><rect class="s" x="13" y="5" width="1" height="1"/><rect class="g" x="14" y="5" width="1" height="1"/><rect class="g" x="16" y="5" width="1" height="1"/><rect class="g" x="17" y="5" width="1" height="1"/><rect class="p" x="18" y="5" width="1" height="1"/><rect class="p" x="19" y="5" width="1" height="1"/><rect class="g" x="20" y="5" width="1" height="1"/><rect class="g" x="21" y="5" width="1" height="1"/><rect class="g" x="22" y="5" width="1" height="1"/><rect class="g" x="23" y="5" width="1" height="1"/><rect class="g" x="24" y="5" width="1" height="1"/><rect class="g" x="25" y="5" width="1" height="1"/><rect class="g" x="26" y="5" width="1" height="1"/><rect class="g" x="27" y="5" width="1" height="1"/><rect class="g" x="28" y="5" width="1" height="1"/><rect class="g" x="29" y="5" width="1" height="1"/><rect class="g" x="5" y="6" width="1" height="1"/><rect class="g" x="6" y="6" width="1" height="1"/><rect class="g" x="7" y="6" width="1" height="1"/><rect class="g" x="8" y="6" width="1" height="1"/><rect class="g" x="9" y="6" width="1" height="1"/><rect class="g" x="10" y="6" width="1" height="1"/><rect class="g" x="11" y="6" width="1" height="1"/><rect class="g" x="12" y="6" width="1" height="1"/><rect class="g" x="13" y="6" width="1" height="1"/><rect class="g" x="14" y="6" width="1" height="1"/><rect class="g" x="15" y="6" width="1" height="1"/><rect class="g" x="16" y="6" width="1" height="1"/><rect class="g" x="17" y="6" width="1" height="1"/><rect class="g" x="18" y="6" width="1" height="1"/><rect class="g" x="19" y="6" width="1" height="1"/><rect class="g" x="20" y="6" width="1" height="1"/><rect class="g" x="21" y="6" width="1" height="1"/><rect class="g" x="22" y="6" width="1" height="1"/><rect class="g" x="23" y="6" width="1" height="1"/><rect class="g" x="24" y="6" width="1" height="1"/><rect class="g" x="3" y="7" width="1" height="1"/><rect class="g" x="4" y="7" width="1" height="1"/><rect class="g" x="5" y="7" width="1" height="1"/><rect class="g" x="6" y="7" width="1" height="1"/><rect class="g" x="7" y="7" width="1" height="1"/><rect class="g" x="8" y="7" width="1" height="1"/><rect class="g" x="9" y="7" width="1" height="1"/><rect class="g" x="10" y="7" width="1" height="1"/><rect class="g" x="11" y="7" width="1" height="1"/><rect class="g" x="12" y="7" width="1" height="1"/><rect class="g" x="13" y="7" width="1" height="1"/><rect class="g" x="14" y="7" width="1" height="1"/><rect class="g" x="15" y="7" width="1" height="1"/><rect class="g" x="16" y="7" width="1" height="1"/><rect class="g" x="17" y="7" width="1" height="1"/><rect class="g" x="18" y="7" width="1" height="1"/><rect class="g" x="19" y="7" width="1" height="1"/><rect class="g" x="20" y="7" width="1" height="1"/><rect class="g" x="21" y="7" width="1" height="1"/><rect class="g" x="22" y="7" width="1" height="1"/><rect class="g" x="23" y="7" width="1" height="1"/><rect class="g" x="24" y="7" width="1" height="1"/><rect class="g" x="25" y="7" width="1" height="1"/><rect class="g" x="26" y="7" width="1" height="1"/><rect class="g" x="27" y="7" width="1" height="1"/><rect class="g" x="28" y="7" width="1" height="1"/><rect class="g" x="1" y="8" width="1" height="1"/><rect class="g" x="2" y="8" width="1" height="1"/><rect class="g" x="3" y="8" width="1" height="1"/><rect class="g" x="4" y="8" width="1" height="1"/><rect class="g" x="5" y="8" width="1" height="1"/><rect class="g" x="6" y="8" width="1" height="1"/><rect class="g" x="7" y="8" width="1" height="1"/><rect class="g" x="8" y="8" width="1" height="1"/><rect class="g" x="9" y="8" width="1" height="1"/><rect class="g" x="10" y="8" width="1" height="1"/><rect class="g" x="11" y="8" width="1" height="1"/><rect class="g" x="12" y="8" width="1" height="1"/><rect class="g" x="13" y="8" width="1" height="1"/><rect class="g" x="14" y="8" width="1" height="1"/><rect class="g" x="15" y="8" width="1" height="1"/><rect class="g" x="16" y="8" width="1" height="1"/><rect class="g" x="17" y="8" width="1" height="1"/><rect class="g" x="18" y="8" width="1" height="1"/><rect class="g" x="19" y="8" width="1" height="1"/><rect class="g" x="20" y="8" width="1" height="1"/><rect class="g" x="21" y="8" width="1" height="1"/><rect class="g" x="22" y="8" width="1" height="1"/><rect class="g" x="23" y="8" width="1" height="1"/><rect class="g" x="24" y="8" width="1" height="1"/><rect class="g" x="25" y="8" width="1" height="1"/><rect class="g" x="26" y="8" width="1" height="1"/><rect class="g" x="0" y="9" width="1" height="1"/><rect class="g" x="1" y="9" width="1" height="1"/><rect class="g" x="2" y="9" width="1" height="1"/><rect class="g" x="3" y="9" width="1" height="1"/><rect class="g" x="6" y="9" width="1" height="1"/><rect class="g" x="7" y="9" width="1" height="1"/><rect class="g" x="8" y="9" width="1" height="1"/><rect class="g" x="9" y="9" width="1" height="1"/><rect class="l" x="10" y="9" width="1" height="1"/><rect class="l" x="11" y="9" width="1" height="1"/><rect class="l" x="12" y="9" width="1" height="1"/><rect class="l" x="13" y="9" width="1" height="1"/><rect class="l" x="14" y="9" width="1" height="1"/><rect class="l" x="15" y="9" width="1" height="1"/><rect class="l" x="16" y="9" width="1" height="1"/><rect class="l" x="17" y="9" width="1" height="1"/><rect class="g" x="18" y="9" width="1" height="1"/><rect class="g" x="19" y="9" width="1" height="1"/><rect class="g" x="20" y="9" width="1" height="1"/><rect class="g" x="0" y="10" width="1" height="1"/><rect class="g" x="1" y="10" width="1" height="1"/><rect class="g" x="7" y="10" width="1" height="1"/><rect class="g" x="8" y="10" width="1" height="1"/><rect class="g" x="9" y="10" width="1" height="1"/><rect class="l" x="10" y="10" width="1" height="1"/><rect class="l" x="11" y="10" width="1" height="1"/><rect class="l" x="12" y="10" width="1" height="1"/><rect class="l" x="13" y="10" width="1" height="1"/><rect class="l" x="14" y="10" width="1" height="1"/><rect class="l" x="15" y="10" width="1" height="1"/><rect class="l" x="16" y="10" width="1" height="1"/><rect class="l" x="17" y="10" width="1" height="1"/><rect class="l" x="18" y="10" width="1" height="1"/><rect class="g" x="19" y="10" width="1" height="1"/><rect class="g" x="20" y="10" width="1" height="1"/><rect class="g" x="21" y="10" width="1" height="1"/><rect class="g" x="22" y="10" width="1" height="1"/><rect class="g" x="7" y="11" width="1" height="1"/><rect class="g" x="8" y="11" width="1" height="1"/><rect class="g" x="9" y="11" width="1" height="1"/><rect class="l" x="10" y="11" width="1" height="1"/><rect class="l" x="11" y="11" width="1" height="1"/><rect class="l" x="12" y="11" width="1" height="1"/><rect class="l" x="13" y="11" width="1" height="1"/><rect class="l" x="14" y="11" width="1" height="1"/><rect class="l" x="15" y="11" width="1" height="1"/><rect class="l" x="16" y="11" width="1" height="1"/><rect class="l" x="17" y="11" width="1" height="1"/><rect class="g" x="18" y="11" width="1" height="1"/><rect class="g" x="19" y="11" width="1" height="1"/><rect class="g" x="21" y="11" width="1" height="1"/><rect class="g" x="22" y="11" width="1" height="1"/><rect class="g" x="8" y="12" width="1" height="1"/><rect class="g" x="9" y="12" width="1" height="1"/><rect class="g" x="10" y="12" width="1" height="1"/><rect class="l" x="11" y="12" width="1" height="1"/><rect class="l" x="12" y="12" width="1" height="1"/><rect class="l" x="13" y="12" width="1" height="1"/><rect class="l" x="14" y="12" width="1" height="1"/><rect class="l" x="15" y="12" width="1" height="1"/><rect class="l" x="16" y="12" width="1" height="1"/><rect class="g" x="17" y="12" width="1" height="1"/><rect class="g" x="18" y="12" width="1" height="1"/><rect class="g" x="19" y="12" width="1" height="1"/><rect class="g" x="22" y="12" width="1" height="1"/><rect class="g" x="8" y="13" width="1" height="1"/><rect class="g" x="9" y="13" width="1" height="1"/><rect class="g" x="10" y="13" width="1" height="1"/><rect class="g" x="11" y="13" width="1" height="1"/><rect class="g" x="12" y="13" width="1" height="1"/><rect class="g" x="13" y="13" width="1" height="1"/><rect class="g" x="14" y="13" width="1" height="1"/><rect class="g" x="15" y="13" width="1" height="1"/><rect class="g" x="16" y="13" width="1" height="1"/><rect class="g" x="17" y="13" width="1" height="1"/><rect class="g" x="18" y="13" width="1" height="1"/><rect class="g" x="8" y="14" width="1" height="1"/><rect class="g" x="9" y="14" width="1" height="1"/><rect class="g" x="10" y="14" width="1" height="1"/><rect class="g" x="11" y="14" width="1" height="1"/><rect class="g" x="15" y="14" width="1" height="1"/><rect class="g" x="16" y="14" width="1" height="1"/><rect class="g" x="17" y="14" width="1" height="1"/><rect class="g" x="18" y="14" width="1" height="1"/><rect class="g" x="8" y="15" width="1" height="1"/><rect class="g" x="9" y="15" width="1" height="1"/><rect class="g" x="10" y="15" width="1" height="1"/><rect class="g" x="16" y="15" width="1" height="1"/><rect class="g" x="17" y="15" width="1" height="1"/><rect class="g" x="18" y="15" width="1" height="1"/><rect class="g" x="7" y="16" width="1" height="1"/><rect class="g" x="8" y="16" width="1" height="1"/><rect class="g" x="9" y="16" width="1" height="1"/><rect class="g" x="10" y="16" width="1" height="1"/><rect class="g" x="15" y="16" width="1" height="1"/><rect class="g" x="16" y="16" width="1" height="1"/><rect class="g" x="17" y="16" width="1" height="1"/><rect class="g" x="18" y="16" width="1" height="1"/><rect class="g" x="6" y="17" width="1" height="1"/><rect class="g" x="7" y="17" width="1" height="1"/><rect class="g" x="8" y="17" width="1" height="1"/><rect class="g" x="9" y="17" width="1" height="1"/><rect class="g" x="10" y="17" width="1" height="1"/><rect class="g" x="14" y="17" width="1" height="1"/><rect class="g" x="15" y="17" width="1" height="1"/><rect class="g" x="16" y="17" width="1" height="1"/><rect class="g" x="17" y="17" width="1" height="1"/><rect class="g" x="18" y="17" width="1" height="1"/></g>
++					<g class="face face-idle"><rect class="w" x="21" y="2" width="1" height="1"/><rect class="d" x="25" y="6" width="1" height="1"/><rect class="d" x="26" y="6" width="1" height="1"/><rect class="d" x="27" y="6" width="1" height="1"/><rect class="d" x="28" y="6" width="1" height="1"/><rect class="d" x="29" y="6" width="1" height="1"/></g>
++					<g class="face face-done"><rect class="g" x="19" y="2" width="1" height="1"/><rect class="g" x="21" y="2" width="1" height="1"/><rect class="g" x="20" y="3" width="1" height="1"/><rect class="g" x="19" y="4" width="1" height="1"/><rect class="g" x="20" y="4" width="1" height="1"/><rect class="g" x="21" y="4" width="1" height="1"/><rect class="p" x="25" y="6" width="1" height="1"/><rect class="p" x="26" y="6" width="1" height="1"/><rect class="p" x="27" y="6" width="1" height="1"/><rect class="p" x="28" y="6" width="1" height="1"/><rect class="p" x="29" y="6" width="1" height="1"/></g>
++					<g class="face face-failed"><rect class="g" x="20" y="2" width="1" height="1"/><rect class="g" x="19" y="3" width="1" height="1"/><rect class="g" x="21" y="3" width="1" height="1"/><rect class="g" x="20" y="4" width="1" height="1"/><rect class="d" x="25" y="6" width="1" height="1"/><rect class="d" x="26" y="6" width="1" height="1"/><rect class="d" x="27" y="6" width="1" height="1"/><rect class="d" x="28" y="6" width="1" height="1"/><rect class="d" x="29" y="6" width="1" height="1"/></g>
+ 				</svg>
+-				<span class="wordmark">omp</span>
+-				<span class="wordmark-sub">oauth</span>
+-			</div>
+-
+-			<div class="status" role="status">
+-				<span aria-hidden="true" class="status-dot"></span>
+-				<span class="status-word status-pending">Waiting</span>
+-				<span class="status-word status-success">Connected</span>
+-				<span class="status-word status-error">Failed</span>
++			</figure>
++			<div class="body">
++				<header class="brand">
++					<span class="wordmark">dinobot</span>
++					<span class="brand-label">sign in</span>
++				</header>
++				<div class="headline">
++					<span class="badge" aria-hidden="true">
++						<svg class="icon-ok" viewBox="0 0 20 20">
++							<path d="M4.5 10.5l3.6 3.6L15.5 6.4" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" />
++						</svg>
++						<svg class="icon-bad" viewBox="0 0 20 20">
++							<path d="M6 6l8 8M14 6l-8 8" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" />
++						</svg>
++					</span>
++					<h1 id="title">Finishing sign-in&hellip;</h1>
++				</div>
++				<p id="message" class="message"></p>
++				<pre id="detail" class="detail" hidden></pre>
++				<p id="hint" class="hint" hidden>Return to your terminal and run <code>/login</code> again.</p>
++				<button id="close" class="btn" type="button" onclick="window.close()" hidden>Close window</button>
++				<footer class="foot">
++					<span class="diamond" aria-hidden="true">&#9670;</span>
++					<span class="tagline">Team agent in your terminal</span>
++				</footer>
+ 			</div>
+-
+-			<h1 id="title">Authentication</h1>
+-			<p id="message"></p>
+-			<button onclick="window.close()" class="btn">Close window</button>
+-			<span aria-hidden="true" class="timer"></span>
+-		</div>
++		</main>
+ 
+ 		<script id="server-state" type="application/json">
+ 			__OAUTH_STATE__
+@@ -315,29 +440,29 @@
+ 				const params = new URLSearchParams(window.location.search);
+ 				serverState = {
+ 					ok: params.get("ok") === "1",
+-					error: params.get("error") || "Authentication failed",
++					error: params.get("error") || "Sign-in failed",
+ 				};
+ 			}
+ 
+ 			const app = document.getElementById("app");
+ 			const title = document.getElementById("title");
+ 			const message = document.getElementById("message");
++			const detail = document.getElementById("detail");
++			const hint = document.getElementById("hint");
++			const closeButton = document.getElementById("close");
+ 
+ 			if (serverState.ok) {
+-				const closeButton = document.querySelector(".btn");
+-				app.classList.add("success", "countdown");
+-				title.textContent = "Authentication successful";
+-				message.textContent = "You have successfully logged in.";
+-				window.close();
+-				setTimeout(() => {
+-					app.classList.remove("countdown");
+-					closeButton.remove();
+-					message.innerHTML = "You have successfully logged in.<br>Please close this tab manually.";
+-				}, 300);
++				app.dataset.state = "success";
++				title.textContent = "Signed in";
++				message.textContent = "You're connected. Return to your terminal - dinobot has picked up the login.";
++				closeButton.hidden = false;
+ 			} else {
+-				app.classList.add("error");
+-				title.textContent = "Authentication failed";
+-				message.textContent = serverState.error || "An error occurred";
++				app.dataset.state = "error";
++				title.textContent = "Sign-in failed";
++				message.hidden = true;
++				detail.textContent = serverState.error || "An unknown error occurred";
++				detail.hidden = false;
++				hint.hidden = false;
+ 			}
+ 		</script>
+ 	</body>

@@ -1,0 +1,153 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened, edited, ready_for_review]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+# A newer push to the same PR supersedes the in-flight run. Release calls (workflow_call)
+# get a unique run_id group and are never cancelled.
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  test:
+    name: Tests and types
+    # Hosted Linux: sandbox probe must pass, never bypass containment.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: 1.4.2
+          # Cache paths are workspace-relative and differ between hosted and self-hosted runners.
+          no-cache: true
+      - name: Prepare the required Linux sandbox (no unsandboxed fallback)
+        shell: bash
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y bubblewrap dbus-user-session
+          uid=$(id -u)
+          sudo loginctl enable-linger "$USER"
+          sudo systemctl start "user@$uid.service"
+          echo "XDG_RUNTIME_DIR=/run/user/$uid" >> "$GITHUB_ENV"
+          echo "DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/$uid/bus" >> "$GITHUB_ENV"
+      - run: bun install --frozen-lockfile
+      - name: Conventional PR title
+        if: github.event_name == 'pull_request'
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+        run: bun script/ci/pr-title.ts
+      - run: bun run typecheck
+      - run: bun script/public-artifact-guard.ts
+      - name: Record runtime library layout
+        run: ls -ld /bin /lib /lib64 /usr/lib64 && ls -l /usr/lib64/ld-linux*
+      - name: Probe the real namespace boundary
+        run: >-
+          bun -e 'import {runSkillSandbox} from "./src/core/skills/sandbox.ts";
+          const result = await runSkillSandbox({fixtureDirectory:process.cwd()+"/test", command:["/usr/bin/true"], timeoutMs:5000, maxOutputBytes:4096, signal:new AbortController().signal});
+          console.log(result); if(result.status !== "completed") process.exit(1);'
+      - name: Full functional suite without user credentials
+        shell: bash
+        run: |
+          sandbox=$(mktemp -d)
+          trap 'rm -rf "$sandbox"' EXIT
+          mkdir -p "$sandbox/config" "$sandbox/data" "$sandbox/cache"
+          env HOME="$sandbox" XDG_CONFIG_HOME="$sandbox/config" XDG_DATA_HOME="$sandbox/data" XDG_CACHE_HOME="$sandbox/cache" DINOBOT_NO_UPDATE_CHECK=1 timeout 1200 bun test --path-ignore-patterns '**/tui-perf.test.ts'
+
+  performance:
+    name: Performance budgets
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: 1.4.2
+          # Cache paths are workspace-relative and differ between hosted and self-hosted runners.
+          no-cache: true
+      - run: bun install --frozen-lockfile
+      - name: Record performance environment
+        run: |
+          bun --version
+          lscpu
+          uptime
+          bash script/ci/performance-counters.sh
+      # Same assertions/budgets, a fresh process and runner instead of accumulated suite state.
+      - run: bun test test/tui-perf.test.ts
+      - name: Record final performance counters (also on failure)
+        if: always()
+        run: bash script/ci/performance-counters.sh
+
+  package:
+    name: Package and leak checks
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    outputs:
+      artifact_id: ${{ steps.upload.outputs.artifact-id }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: 1.4.2
+          # Cache paths are workspace-relative and differ between hosted and self-hosted runners.
+          no-cache: true
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: 24
+          package-manager-cache: false
+      - run: npm install --global npm@11.19.0 --ignore-scripts
+      - run: bun install --frozen-lockfile
+      - name: Standalone host compilation
+        run: bun run build
+      - run: bun run release
+      - name: Bundled CLI smoke (no credentials or installation)
+        run: |
+          sandbox=$(mktemp -d)
+          trap 'rm -rf "$sandbox"' EXIT
+          HOME="$sandbox" DINOBOT_NO_UPDATE_CHECK=1 bun dist/npm/package/main.js --help
+      - name: Hash the audited tarball
+        working-directory: dist/npm
+        run: sha512sum dinobot-*.tgz > SHA512SUMS
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        id: upload
+        with:
+          name: npm-${{ github.sha }}
+          path: |
+            dist/npm/dinobot-*.tgz
+            dist/npm/SHA512SUMS
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0
+
+  gate:
+    name: CI
+    if: always()
+    needs: [test, package, performance]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 1
+    steps:
+      - name: Require every check to succeed
+        env:
+          TEST_RESULT: ${{ needs.test.result }}
+          PACKAGE_RESULT: ${{ needs.package.result }}
+          PERFORMANCE_RESULT: ${{ needs.performance.result }}
+        run: |
+          test "$PACKAGE_RESULT" = success
+          test "$TEST_RESULT" = success && test "$PERFORMANCE_RESULT" = success

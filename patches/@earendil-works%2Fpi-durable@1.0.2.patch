@@ -1,0 +1,998 @@
+diff --git a/dist/env/index.d.ts b/dist/env/index.d.ts
+index 6cf8b5edcb8459e4e895cca6cecc45c43fe911a2..da9ddaca899a8c3852b4a2ca76435e3afc3a8d90 100644
+--- a/dist/env/index.d.ts
++++ b/dist/env/index.d.ts
+@@ -93,7 +93,22 @@ export interface ShellExecResult {
+     /** Temporary file holding the complete raw output, when the spill thresholds were exceeded. */
+     spillPath?: string;
+ }
++export interface NativeProcessEvent {
++    readonly phase: "admitted" | "started" | "settled";
++    readonly nonce: string;
++    readonly pid: number | null;
++    readonly startTime: string | null;
++    readonly controlled: boolean;
++    readonly canonical?: boolean;
++    readonly code?: number | null;
++    readonly signal?: string | null;
++    /** Windows boot identity at containment; a different current identity proves the tree ended with a reboot. */
++    readonly boot?: string;
++}
+ export interface ShellExecOptions {
++    onProcess?: (event: NativeProcessEvent) => void | Promise<void>;
++    /** Opaque host capability, absent from tool input schema. */
++    controlledProcess?: object;
+     cwd?: string;
+     env?: Record<string, string>;
+     inheritEnv?: boolean;
+diff --git a/dist/env/node.d.ts b/dist/env/node.d.ts
+index b0bbee7c1983d88568309672c4fd81eef47be631..53ea20df88b579e74d48236c41879b7ce88b855d 100644
+--- a/dist/env/node.d.ts
++++ b/dist/env/node.d.ts
+@@ -1,5 +1,8 @@
+ import type { Context } from "@earendil-works/chord";
+ import { type ExecutionEnv, ExecutionError, FileError, type FileInfo, type Result, type ShellExecOptions, type ShellExecResult, type TextLineReader } from "./index.ts";
++export declare function isNativeProcessEvent(event: unknown): event is import("./index.ts").NativeProcessEvent;
++/** OS-only evidence that every process of a recorded `started` event has exited. */
++export declare function observeNativeProcessQuiescence(started: unknown): Promise<{ state: "quiescent" | "alive" | "unknown"; evidence: string }>;
+ export declare class NodeExecutionEnv implements ExecutionEnv {
+     /** Every local environment sees the same files. */
+     readonly id: string;
+@@ -12,6 +15,7 @@ export declare class NodeExecutionEnv implements ExecutionEnv {
+         shellPath?: string;
+         shellEnv?: NodeJS.ProcessEnv;
+     });
++    controlledProcess(milliseconds?: number): object;
+     absolutePath(path: string, _context: Context): Promise<Result<string, FileError>>;
+     joinPath(parts: string[], _context: Context): Promise<Result<string, FileError>>;
+     exec(command: string, options: ShellExecOptions | undefined, context: Context): Promise<Result<ShellExecResult, ExecutionError>>;
+diff --git a/dist/env/node.js b/dist/env/node.js
+index 25c34ed5c3f6f2715d859fd57d1256e79731cc3f..543c8bd4aa1262f3d52356a76643a8b1b4f49e1c 100644
+--- a/dist/env/node.js
++++ b/dist/env/node.js
+@@ -4,8 +4,204 @@ import { constants, createWriteStream } from "node:fs";
+ import { access, appendFile, lstat, mkdir, mkdtemp, open as openFile, readdir, readFile, realpath, rename, rm, writeFile, } from "node:fs/promises";
+ import { homedir, constants as osConstants, tmpdir } from "node:os";
+ import { basename, isAbsolute, join, resolve } from "node:path";
++import { createRequire } from "node:module";
+ import { fileURLToPath } from "node:url";
+ import { ExecutionError, err, FileError, ok, toError, } from "./index.js";
++// Receipts are host-created object identities, never JSON/tool results. Reopen cannot recreate them.
++const nativeEvents = new WeakSet();
++const controlledTickets = new WeakMap();
++export function isNativeProcessEvent(event) { return !!event && nativeEvents.has(event); }
++function processEvent(value) { const event = Object.freeze(value); nativeEvents.add(event); return event; }
++// Windows process-tree containment. An evidence-only Job Object (no kill-on-close, no breakaway) receives a fixed,
++// host-owned launcher while that launcher is blocked before it can create any process; only then does the launcher
++// start the shell. Every descendant is therefore created inside the job, and a fresh job without BREAKAWAY_OK or
++// SILENT_BREAKAWAY_OK makes CREATE_BREAKAWAY_FROM_JOB fail. Zero active job processes after actual close proves the
++// whole tree exited. Any FFI, assignment or query failure yields no evidence (UNKNOWN), never a weaker proof.
++let win32Kernel;
++function win32Native() {
++    if (win32Kernel !== undefined) return win32Kernel;
++    win32Kernel = null;
++    if (process.platform !== "win32" || process.arch !== "x64" || !process.versions.bun) return win32Kernel;
++    try {
++        const { dlopen, FFIType, ptr } = createRequire(import.meta.url)("bun:ffi");
++        const handle = FFIType.ptr, dword = FFIType.u32, bool = FFIType.i32;
++        const { symbols } = dlopen("kernel32.dll", {
++            CreateJobObjectW: { args: [handle, handle], returns: handle },
++            QueryInformationJobObject: { args: [handle, FFIType.i32, handle, dword, handle], returns: bool },
++            AssignProcessToJobObject: { args: [handle, handle], returns: bool },
++            TerminateJobObject: { args: [handle, dword], returns: bool },
++            OpenProcess: { args: [dword, bool, dword], returns: handle },
++            IsProcessInJob: { args: [handle, handle, handle], returns: bool },
++            GetProcessId: { args: [handle], returns: dword },
++            GetExitCodeProcess: { args: [handle, handle], returns: bool },
++            GetProcessTimes: { args: [handle, handle, handle, handle, handle], returns: bool },
++            CloseHandle: { args: [handle], returns: bool },
++        });
++        win32Kernel = { k: symbols, ptr };
++    }
++    catch {
++        win32Kernel = null;
++    }
++    return win32Kernel;
++}
++const PROCESS_TERMINATE = 0x0001, PROCESS_SET_QUOTA = 0x0100, PROCESS_QUERY_LIMITED_INFORMATION = 0x1000, STILL_ACTIVE = 259;
++const JOB_BASIC_ACCOUNTING = 1, JOB_BASIC_LIMITS = 2, JOB_LIMIT_BREAKAWAY_OK = 0x800, JOB_LIMIT_SILENT_BREAKAWAY_OK = 0x1000;
++/** FILETIME creation instant of an open process handle, or null. */
++function win32CreationTime(native, process) {
++    const times = new BigUint64Array(4);
++    if (!native.k.GetProcessTimes(process, native.ptr(times, 0), native.ptr(times, 8), native.ptr(times, 16), native.ptr(times, 24)) || !times[0]) return null;
++    return times[0];
++}
++/** Creation instant of the System process: fixed for one boot, so a different value proves a reboot. */
++let win32Boot;
++function win32BootIdentity() {
++    if (win32Boot !== undefined) return win32Boot;
++    win32Boot = null;
++    const native = win32Native();
++    if (!native) return win32Boot;
++    const system = native.k.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, 4);
++    if (!system) return win32Boot;
++    try { const created = win32CreationTime(native, system); win32Boot = created ? "win32-system-created:" + created : null; }
++    finally { native.k.CloseHandle(system); }
++    return win32Boot;
++}
++function win32JobAccounting(native, job) {
++    // JOBOBJECT_BASIC_ACCOUNTING_INFORMATION (x64, 48 bytes): TotalProcesses @36, ActiveProcesses @40.
++    const buffer = new BigUint64Array(6);
++    if (!native.k.QueryInformationJobObject(job, JOB_BASIC_ACCOUNTING, native.ptr(buffer), 48, null)) return null;
++    const view = new DataView(buffer.buffer);
++    return { total: view.getUint32(36, true), active: view.getUint32(40, true) };
++}
++/** Contain the blocked launcher `pid` in a fresh evidence-only job, or null with nothing retained. */
++function win32Contain(pid) {
++    const native = win32Native();
++    if (!native || !Number.isSafeInteger(pid) || pid <= 0) return null;
++    const { k, ptr } = native;
++    const job = k.CreateJobObjectW(null, null);
++    if (!job) return null;
++    let target = null;
++    try {
++        // JOBOBJECT_BASIC_LIMIT_INFORMATION (x64, 64 bytes): LimitFlags DWORD @16. A fresh job must allow no breakaway.
++        const limits = new BigUint64Array(8);
++        if (!k.QueryInformationJobObject(job, JOB_BASIC_LIMITS, ptr(limits), 64, null)) throw new Error("job limits unavailable");
++        if (new DataView(limits.buffer).getUint32(16, true) & (JOB_LIMIT_BREAKAWAY_OK | JOB_LIMIT_SILENT_BREAKAWAY_OK)) throw new Error("job allows breakaway");
++        target = k.OpenProcess(PROCESS_TERMINATE | PROCESS_SET_QUOTA | PROCESS_QUERY_LIMITED_INFORMATION, 0, pid);
++        if (!target || k.GetProcessId(target) !== pid) throw new Error("launcher handle unavailable");
++        const exit = new Uint32Array(1);
++        if (!k.GetExitCodeProcess(target, ptr(exit)) || exit[0] !== STILL_ACTIVE) throw new Error("launcher not running");
++        if (!k.AssignProcessToJobObject(job, target)) throw new Error("launcher assignment refused");
++        const member = new Int32Array(1);
++        if (!k.IsProcessInJob(target, job, ptr(member)) || member[0] === 0) throw new Error("launcher not in job");
++        const accounting = win32JobAccounting(native, job);
++        if (!accounting || accounting.total !== 1 || accounting.active !== 1) throw new Error("job is not exactly the launcher");
++        const created = win32CreationTime(native, target);
++        if (!created) throw new Error("launcher identity unavailable");
++        let open = true;
++        return {
++            startTime: "win32-filetime:" + created,
++            /** true: zero processes ever-assigned remain; false: some remain; null: no evidence. */
++            empty() { if (!open) return null; const now = win32JobAccounting(native, job); return now ? now.active === 0 : null; },
++            terminate() { if (open) k.TerminateJobObject(job, 1); },
++            close() { if (open) { open = false; k.CloseHandle(job); } },
++        };
++    }
++    catch {
++        k.CloseHandle(job);
++        return null;
++    }
++    finally {
++        if (target) k.CloseHandle(target);
++    }
++}
++// Jobs whose tree outlived its exec, retained (bounded) only as later operator evidence; eviction loses evidence.
++// Once such a job is observed empty it can never gain a process again (only this host holds its handle), so the
++// handle is closed and the fact itself is remembered: observing evidence never consumes it.
++const retainedContainments = new Map();
++const drainedContainments = new Set();
++const MAX_RETAINED_CONTAINMENTS = 256;
++const MAX_DRAINED_CONTAINMENTS = 4096;
++function bounded(collection, limit, evict) {
++    while (collection.size > limit) {
++        const oldest = collection.keys().next().value;
++        evict?.(collection.get?.(oldest));
++        collection.delete(oldest);
++    }
++}
++function retainContainment(nonce, containment) {
++    retainedContainments.set(nonce, containment);
++    bounded(retainedContainments, MAX_RETAINED_CONTAINMENTS, evicted => evicted.close());
++}
++/** Upper bound for the launcher to start and be contained before the command's own timeout begins. */
++const WIN32_LAUNCHER_READY_MS = 30000;
++const sleep = (milliseconds) => new Promise(resolve => setTimeout(resolve, milliseconds));
++/** Job accounting can trail the final pipe close by a few milliseconds; wait bounded for the exact zero. */
++async function win32Drained(containment) {
++    for (let waited = 0; waited <= 1000; waited += 10) {
++        const empty = containment.empty();
++        if (empty !== false) return empty === true;
++        await sleep(10);
++    }
++    return false;
++}
++/**
++ * Fixed launcher source: reports its identity, then waits for the host to contain it before creating any process.
++ * It starts in the host-owned SystemRoot, never the workspace, so a workspace bunfig.toml `preload` cannot run code in
++ * the launcher before containment; the shell gets the real working directory through the start message.
++ */
++const WIN32_LAUNCHER = "process.once('disconnect',()=>process.exit(1));process.once('message',m=>{process.removeAllListeners('disconnect');let c;" +
++    "try{c=require('node:child_process').spawn(m.shell,m.args,{stdio:'inherit',env:m.env,cwd:m.cwd,windowsHide:true});}catch(e){process.stderr.write(String(e&&e.message||e)+'\\n');process.exit(127);}" +
++    "process.disconnect();c.once('error',e=>{process.stderr.write(String(e&&e.message||e)+'\\n');process.exit(127);});c.once('exit',code=>process.exit(code??1));});" +
++    "process.send({ready:true,pid:process.pid});";
++/**
++ * Operator evidence that every process of a recorded `started` event has exited, from the OS only.
++ * quiescent: POSIX spawned process group is empty (ESRCH), a retained Windows job holds zero processes, or the
++ * Windows boot identity differs from the recorded one. alive: the group or job still has a process. unknown: no evidence.
++ */
++export async function observeNativeProcessQuiescence(started) {
++    if (!started || started.phase !== "started" || typeof started.nonce !== "string") return { state: "unknown", evidence: "no recorded process identity" };
++    const identified = Number.isSafeInteger(started.pid) && started.pid > 0 && !!started.startTime;
++    if (process.platform !== "win32") {
++        if (!identified) return { state: "unknown", evidence: "no recorded process identity" };
++        try { process.kill(-started.pid, 0); return { state: "alive", evidence: "process group " + started.pid + " still has a member" }; }
++        catch (error) {
++            if (error?.code === "ESRCH") return { state: "quiescent", evidence: "process group " + started.pid + " is empty" };
++            if (error?.code === "EPERM") return { state: "alive", evidence: "process group " + started.pid + " still has a member" };
++            return { state: "unknown", evidence: "process group query failed: " + (error?.code ?? error) };
++        }
++    }
++    const retained = retainedContainments.get(started.nonce);
++    if (retained) {
++        const empty = retained.empty();
++        if (empty === false) return { state: "alive", evidence: "job of " + started.nonce + " still has a process" };
++        if (empty === true) {
++            retainedContainments.delete(started.nonce);
++            retained.close();
++            drainedContainments.add(started.nonce);
++            bounded(drainedContainments, MAX_DRAINED_CONTAINMENTS);
++        }
++    }
++    if (drainedContainments.has(started.nonce)) return { state: "quiescent", evidence: "job of " + started.nonce + " holds zero processes" };
++    const boot = win32BootIdentity();
++    if (typeof started.boot === "string" && boot && started.boot !== boot) return { state: "quiescent", evidence: "rebooted since the process started (" + started.boot + " -> " + boot + ")" };
++    return { state: "unknown", evidence: started.boot ? "no retained job and no reboot since the process started" : "no retained job and no recorded boot identity" };
++}
++async function nativeStartTime(pid) {
++    if (process.platform === "win32") {
++        const observed = await runCommand("powershell.exe", ["-NoProfile", "-Command", "$p=Get-CimInstance Win32_Process -Filter 'ProcessId=" + pid + "'; if($p){$p.CreationDate.ToUniversalTime().ToString('o')}"], 5000);
++        return observed.status === 0 && observed.stdout.trim() ? observed.stdout.trim() : null;
++    }
++    if (process.platform === "darwin") {
++        const observed = await runCommand("/bin/ps", ["-o", "lstart=", "-p", String(pid)], 5000);
++        return observed.status === 0 && observed.stdout.trim() ? observed.stdout.trim() : null;
++    }
++    try { const stat = await readFile("/proc/" + pid + "/stat", "utf8"); return stat.slice(stat.lastIndexOf(")") + 2).split(" ")[19] ?? null; } catch { return null; }
++}
++// Fixed POSIX gate, not caller source. fd 3 is separate from command stdin; exec preserves the
++// observed PID, start instant and detached process group. Empty launcher env and cwd '/' prevent
++// caller startup/preload hooks before the commit. env restores the exact target environment as
++// argv data (including hostile quotes/options), never by evaluating it as shell source.
++const POSIX_GATE = 'IFS= read -r start <&3 && [ "$start" = go ] || exit 125; exec 3<&-; cd -- "$1" || exit 125; shift; exec /usr/bin/env -i -- "$@"';
++const POSIX_GATE_READY_MS = 30000;
+ const MAX_TIMEOUT_MS = 2_147_483_647;
+ const MAX_TIMEOUT_SECONDS = MAX_TIMEOUT_MS / 1000;
+ const EXIT_STDIO_GRACE_MS = 100;
+@@ -389,6 +585,11 @@ export class NodeExecutionEnv {
+         this.shellPath = options.shellPath;
+         this.shellEnv = options.shellEnv;
+     }
++    /** Bounded host-owned process, not caller code or universal descendant containment. */
++    controlledProcess(milliseconds = 1000) {
++        if (!Number.isSafeInteger(milliseconds) || milliseconds < 1 || milliseconds > 30000) throw new Error("invalid controlled lifetime");
++        const ticket = Object.freeze({}); controlledTickets.set(ticket, { env: this, milliseconds }); return ticket;
++    }
+     async absolutePath(path, _context) {
+         return ok(resolvePath(this.cwd, path));
+     }
+@@ -414,12 +615,31 @@ export class NodeExecutionEnv {
+             const cause = toError(error);
+             return err(new ExecutionError("spawn_error", `Working directory does not exist: ${cwd}\nCannot execute bash commands.`, cause));
+         }
++        const ticket = options?.controlledProcess && controlledTickets.get(options.controlledProcess);
++        if (options?.controlledProcess && (!ticket || ticket.env !== this)) return err(new ExecutionError("spawn_error", "foreign or forged controlled ticket"));
++        if (ticket && command !== "@native-controlled-wait") return err(new ExecutionError("spawn_error", "controlled ticket requires the explicit host command"));
++        if (ticket) controlledTickets.delete(options.controlledProcess);
++        const nonce = randomUUID();
++        const admitted = processEvent({ phase: "admitted", nonce, pid: null, startTime: null, controlled: !!ticket });
++        try { await options?.onProcess?.(admitted); } catch (error) { return err(new ExecutionError("callback_error", toError(error).message)); }
+         return await new Promise((resolvePromise) => {
++            let processObservation = Promise.resolve();
++            let resolveClosed;
++            const actualClose = new Promise(resolve => { resolveClosed = resolve; });
++            let observedIdentity;
+             let settled = false;
+             let timedOut = false;
+             let callbackError;
+             let spillError;
+             let child;
++            // Windows ordinary commands run under the fixed launcher; containment is null when the job evidence failed.
++            const contained = !ticket && !!win32Native();
++            const gated = !ticket && !!options?.onProcess && (process.platform === "linux" || process.platform === "darwin");
++            let gateTimer;
++            let stopGate;
++            let gateStopped = false;
++            const gateStop = new Promise(resolve => { stopGate = () => { gateStopped = true; resolve(false); }; });
++            let containment = null;
+             let timeoutId;
+             const spillPrefix = [];
+             let spillPath;
+@@ -428,7 +648,12 @@ export class NodeExecutionEnv {
+             let spillStream;
+             let spillBackpressured = false;
+             const onAbort = () => {
+-                if (child?.pid)
++                if (gated) {
++                    stopGate();
++                    child?.stdio[3]?.destroy();
++                    clearTimeout(gateTimer);
++                }
++                if (child?.pid && child.exitCode === null && child.signalCode === null)
+                     killProcessTree(child.pid);
+             };
+             const failCallback = (error) => {
+@@ -459,6 +684,7 @@ export class NodeExecutionEnv {
+                 if (settled)
+                     return;
+                 settled = true;
++                if (gated) clearTimeout(gateTimer);
+                 if (timeoutId)
+                     clearTimeout(timeoutId);
+                 if (signal)
+@@ -533,15 +759,102 @@ export class NodeExecutionEnv {
+             };
+             try {
+                 const commandFromStdin = shellConfig.value.commandTransport === "stdin";
+-                child = spawn(shellConfig.value.shell, commandFromStdin ? shellConfig.value.args : [...shellConfig.value.args, command], {
+-                    cwd,
+-                    detached: process.platform !== "win32",
+-                    env: getShellEnv(this.shellEnv, options?.env, options?.inheritEnv),
+-                    stdio: [commandFromStdin ? "pipe" : "ignore", "pipe", "pipe"],
++                // Fixed code only; waits for the host identity commit before starting its bounded timer.
++                const controlledCode = "process.send({ready:true,pid:process.pid});process.once('message',()=>setTimeout(()=>process.exit(0)," + (ticket?.milliseconds ?? 0) + "));";
++                const shellArgs = commandFromStdin ? shellConfig.value.args : [...shellConfig.value.args, command];
++                const shellEnv = getShellEnv(this.shellEnv, options?.env, options?.inheritEnv);
++                // The cwd is passed as an argv datum, not quoted/interpolated source. The gate cd runs only
++                // after identity commit and before exec; the original shell receives the original env/stdin.
++                const gateArgs = gated ? ["-c", POSIX_GATE, "dinobot-native-gate", resolve(cwd),
++                    ...Object.entries(shellEnv).filter(([, value]) => value !== undefined).map(([key, value]) => key + "=" + value), shellConfig.value.shell, ...shellArgs] : undefined;
++                // The contained launcher is detached from the host's own kill-on-close job, so a host crash leaves the tree
++                // as running as it would without containment; BUN_BE_BUN lets a compiled host binary evaluate the launcher.
++                child = spawn(ticket || contained ? process.execPath : gated ? "/bin/sh" : shellConfig.value.shell, ticket ? ["-e", controlledCode] : contained ? ["-e", WIN32_LAUNCHER] : gated ? gateArgs : shellArgs, {
++                    cwd: contained ? (process.env.SystemRoot ?? "C:\\Windows") : gated ? "/" : cwd,
++                    detached: process.platform !== "win32" || contained,
++                    env: ticket ? { SystemRoot: process.env.SystemRoot ?? "C:\\Windows" } : contained ? { SystemRoot: process.env.SystemRoot ?? "C:\\Windows", BUN_BE_BUN: "1" } : gated ? {} : shellEnv,
++                    stdio: ticket ? ["ignore", "pipe", "pipe", "ipc"] : contained ? [commandFromStdin ? "pipe" : "ignore", "pipe", "pipe", "ipc"] : gated ? [commandFromStdin ? "pipe" : "ignore", "pipe", "pipe", "pipe"] : [commandFromStdin ? "pipe" : "ignore", "pipe", "pipe"],
+                     windowsHide: true,
+                 });
+-                if (child.pid)
+-                    this.activeChildPids.add(child.pid);
++                if (child.pid) this.activeChildPids.add(child.pid);
++                if (gated) {
++                    child.stdio[3].on("error", failCallback);
++                    child.once("exit", stopGate);
++                    child.once("error", stopGate);
++                    gateTimer = setTimeout(() => failCallback(new Error("POSIX identity gate deadline exceeded")), POSIX_GATE_READY_MS);
++                }
++                const observe = async () => {
++                    const identity = child.pid ? nativeStartTime(child.pid) : Promise.resolve(null);
++                    const startTime = gated ? await Promise.race([identity, gateStop]) : await identity;
++                    if (gated && gateStopped) return;
++                    if (gated && !startTime) throw new Error("POSIX process identity unavailable; command not started");
++                    observedIdentity = processEvent({ phase: "started", nonce, pid: child.pid ?? null, startTime, controlled: !!ticket });
++                    const commit = Promise.resolve(options?.onProcess?.(observedIdentity)).then(() => true);
++                    if (gated) {
++                        const committed = await Promise.race([commit, gateStop]);
++                        if (!committed || gateStopped || callbackError || timedOut || signal?.aborted || child.exitCode !== null || child.signalCode !== null) { onAbort(); return; }
++                        clearTimeout(gateTimer);
++                        child.stdio[3].end("go\n");
++                    } else await commit;
++                    if (ticket && child.connected) child.send({ start: true });
++                };
++                // Containment strictly precedes the shell: the launcher creates no process until the identity commit.
++                const containAndStart = async () => {
++                    // While the exit is unreaped, libuv still holds the launcher's process handle, so its PID cannot be
++                    // reused by an unrelated process between this check and OpenProcess (both synchronous).
++                    containment = child.exitCode === null && child.signalCode === null ? win32Contain(child.pid) : null;
++                    // Boot identity is recorded even without containment: a later reboot still proves the tree ended.
++                    const boot = win32BootIdentity();
++                    observedIdentity = processEvent({ phase: "started", nonce, pid: child.pid ?? null, startTime: containment?.startTime ?? null, controlled: false, ...(boot ? { boot } : {}) });
++                    await options?.onProcess?.(observedIdentity);
++                    if (callbackError || timedOut || signal?.aborted || !child.connected) {
++                        // Never leave the launcher blocked: disconnecting makes it exit before it creates any process.
++                        if (child.connected) child.disconnect();
++                        containment?.terminate();
++                        return;
++                    }
++                    // The command's timeout budget starts with the command, not with host containment; the spawn-time
++                    // timer (at least WIN32_LAUNCHER_READY_MS) bounds a launcher that never becomes ready.
++                    if (timeoutId) {
++                        clearTimeout(timeoutId);
++                        timeoutId = setTimeout(() => { timedOut = true; onAbort(); }, timeoutMs);
++                    }
++                    child.send({ shell: shellConfig.value.shell, args: shellArgs, env: shellEnv, cwd });
++                };
++                // Actual close, not output-idle grace, exitCode or absence of PID.
++                child.once("close", (code, exitSignal) => {
++                    processObservation = processObservation.then(async () => {
++                        if (contained) {
++                            // Interrupted trees stay UNKNOWN even when the job was terminated; the retained job remains
++                            // operator evidence. A drained, uninterrupted job is the Windows canonical proof.
++                            const interrupted = settled || timedOut || !!signal?.aborted || callbackError !== undefined || spillError !== undefined;
++                            // After the root tree was killed (same taskkill path and timing as before containment), also end
++                            // descendants whose parents already exited and so escaped `taskkill /T`.
++                            if (interrupted) containment?.terminate();
++                            const drained = containment ? await win32Drained(containment) : false;
++                            if (containment && (interrupted || !drained) && containment.empty() !== null) retainContainment(nonce, containment);
++                            else containment?.close();
++                            if (settled) return;
++                            const event = processEvent({ phase: "settled", nonce, pid: child.pid ?? null, startTime: observedIdentity?.startTime ?? null, controlled: false, code, signal: exitSignal, canonical: !!observedIdentity?.startTime && drained && !interrupted });
++                            await options?.onProcess?.(event);
++                            return;
++                        }
++                        if (!ticket && settled) return; // Invocation ended; retain UNKNOWN, do not emit a late receipt.
++                        // Canonical: the fixed host process, or an empty spawned process group (kill(-pgid,0) ESRCH) after actual close.
++                        // A session-escaping descendant (setsid) is outside this proof.
++                        const event = processEvent({ phase: "settled", nonce, pid: child.pid ?? null, startTime: observedIdentity?.startTime ?? null, controlled: !!ticket, code, signal: exitSignal, canonical: !!observedIdentity?.startTime && (!gated || !(callbackError || timedOut || signal?.aborted)) && (!!ticket || (process.platform !== "win32" && !!child.pid && (() => { try { process.kill(-child.pid, 0); return false; } catch (error) { return error?.code === "ESRCH"; } })())) });
++                        await options?.onProcess?.(event);
++                    }).catch(failCallback).finally(resolveClosed);
++                });
++                if (ticket) child.once("message", (message) => {
++                    if (message?.ready !== true || message.pid !== child.pid) { failCallback(new Error("invalid controlled identity")); return; }
++                    processObservation = observe().catch(failCallback);
++                });
++                else if (contained) child.once("message", (message) => {
++                    if (message?.ready !== true || message.pid !== child.pid) { failCallback(new Error("invalid launcher identity")); return; }
++                    processObservation = containAndStart().catch(failCallback);
++                });
++                else if (options?.onProcess) processObservation = observe().catch(failCallback);
+                 if (commandFromStdin) {
+                     child.stdin?.on("error", () => { });
+                     child.stdin?.end(command);
+@@ -558,7 +871,7 @@ export class NodeExecutionEnv {
+                     : setTimeout(() => {
+                         timedOut = true;
+                         onAbort();
+-                    }, timeoutMs);
++                    }, contained ? Math.max(timeoutMs, WIN32_LAUNCHER_READY_MS) : timeoutMs); // contained: re-armed at shell start
+             if (signal) {
+                 if (signal.aborted)
+                     onAbort();
+@@ -593,6 +906,8 @@ export class NodeExecutionEnv {
+                 spillStart !== undefined &&
+                 (spillStream === undefined || spillBackpressured)).then(async ({ code, signal: exitSignal }) => {
+                 await finishSpill();
++                await processObservation;
++                if (ticket || contained) await actualClose;
+                 emit(stdoutDecoder.decode());
+                 emit(stderrDecoder.decode());
+                 if (callbackError) {
+diff --git a/dist/harness/agent.js b/dist/harness/agent.js
+index f1312e4fb38484319edc72b0e5374d9c02e948c1..2069eb2df2a6189c7c80514d68d70a2dd7d299ed 100644
+--- a/dist/harness/agent.js
++++ b/dist/harness/agent.js
+@@ -8,6 +8,8 @@ export const DEFAULT_RETRY_POLICY = {
+ };
+ export const DEFAULT_COMPACTION_POLICY = {
+     enabled: true,
++    maxContextTokens: 300000,
++    maxContextRatio: 0.7,
+     reserveTokens: 16384,
+     keepRecentTokens: 20000,
+     backgroundTokens: 32768,
+@@ -32,6 +34,7 @@ export function resolveSettings(settings) {
+         stream: { ...settings?.stream },
+         retry: { ...DEFAULT_RETRY_POLICY, ...settings?.retry },
+         compaction: { ...DEFAULT_COMPACTION_POLICY, ...settings?.compaction },
++        compactionOverrides: { ...settings?.compaction },
+         toolExecution: settings?.toolExecution ?? "parallel",
+         steeringMode: settings?.steeringMode ?? "one-at-a-time",
+         followUpMode: settings?.followUpMode ?? "one-at-a-time",
+diff --git a/dist/harness/compaction-policy.js b/dist/harness/compaction-policy.js
+new file mode 100644
+index 0000000000000000000000000000000000000000..b8d6f5808ab39eecfdfbb39673f659d94b7fa941
+--- /dev/null
++++ b/dist/harness/compaction-policy.js
+@@ -0,0 +1,22 @@
++/** Resolve against the current model at every preparation/select; never persist model-sized defaults. */
++export function modelCompactionPolicy(settings, contextWindow) {
++    const policy = settings.compaction;
++    if (!Number.isFinite(contextWindow) || contextWindow <= 0)
++        return { ...policy, blockingTokens: Infinity };
++    const specified = settings.compactionOverrides ?? {};
++    const finite = (value, fallback) => Number.isFinite(value) && value >= 0 ? value : fallback;
++    const reserve = finite(specified.reserveTokens, Math.min(16384, Math.floor(contextWindow * 0.25)));
++    const ratio = Number.isFinite(policy.maxContextRatio) && policy.maxContextRatio > 0 && policy.maxContextRatio <= 1
++        ? policy.maxContextRatio : 0.7;
++    const cap = finite(policy.maxContextTokens, 300000);
++    const blockingTokens = Math.max(1, Math.floor(Math.min(contextWindow - reserve, contextWindow * ratio, cap > 0 ? cap : Infinity)));
++    return {
++        ...policy,
++        // This is output headroom, NOT window minus the absolute cap: summaries must not grow with window size.
++        reserveTokens: Math.max(1, Math.min(reserve, contextWindow - 1)),
++        blockingTokens,
++        keepRecentTokens: finite(specified.keepRecentTokens, Math.min(20000, Math.floor(blockingTokens * 0.25))),
++        backgroundTokens: Math.min(Math.max(0, blockingTokens - 1), finite(specified.backgroundTokens,
++            Math.min(32768, Math.floor(contextWindow * 0.1), Math.floor(blockingTokens * 0.25)))),
++    };
++}
+diff --git a/dist/harness/compaction.js b/dist/harness/compaction.js
+index 38f93034aed576dbc09b69c06534e5be52bc57c6..735821ec846abda7572d408171dd70e55a16c6fe 100644
+--- a/dist/harness/compaction.js
++++ b/dist/harness/compaction.js
+@@ -1,3 +1,4 @@
++import { modelCompactionPolicy } from "./compaction-policy.js";
+ import { calculateContextTokens, estimateMessageTokens } from "@earendil-works/pi-ai/utils/estimate";
+ import { isRetryableAssistantError, retryDelayMs } from "@earendil-works/pi-ai/utils/retry";
+ import { CompactionEntry } from "../entries.js";
+@@ -64,7 +65,7 @@ export const CompactionTask = defineTask({
+             const model = ref === undefined ? undefined : runtime.models.getModel(ref.provider, ref.modelId);
+             if (ref === undefined || model === undefined)
+                 return failNoModel(runtime, ref, context);
+-            const policy = settings.compaction;
++            const policy = modelCompactionPolicy(settings, model.contextWindow);
+             const view = await runtime.context(conversationId, context);
+             const cut = selectCut(view, policy.keepRecentTokens);
+             if (cut === undefined)
+@@ -125,6 +126,7 @@ export const CompactionTask = defineTask({
+                 sessionId: await ensureProviderSessionId(runtime, context),
+                 ...(thinkingLevel === "off" ? {} : { reasoning: thinkingLevel }),
+             };
++            await runtime.beforeModelRequest(context);
+             const message = await runtime.models.completeSimple(model, { messages }, options);
+             // An abort mark or close: the abort invocation or the reopened task handles the committed state.
+             runtime.signal.throwIfAborted();
+@@ -295,7 +297,12 @@ function summaryPrompt(messages, instructions) {
+     const focus = instructions === undefined ? "" : `\n\nAdditional focus: ${instructions}`;
+     return `<conversation>\n${serializeConversation(messages)}\n</conversation>\n\n${SUMMARIZATION_PROMPT}${focus}`;
+ }
+-/** Messages as plain text, so the summarizer reads a transcript instead of continuing it. System messages are omitted. */
++/**
++ * Messages as plain text, so the summarizer reads a transcript instead of continuing it. System messages are omitted.
++ * Thinking is omitted too (upstream 15e7bdc1): replayed thinking is often not part of the live context, so including it
++ * can make the request larger than the context it summarizes. Visible text, tool calls, and tool results record what
++ * happened.
++ */
+ export function serializeConversation(messages) {
+     const parts = [];
+     for (const message of messages) {
+@@ -305,7 +312,6 @@ export function serializeConversation(messages) {
+                 parts.push(`[User]: ${text}`);
+         }
+         else if (message.role === "assistant") {
+-            const thinking = message.content.flatMap((content) => (content.type === "thinking" ? [content.thinking] : []));
+             const text = message.content.flatMap((content) => (content.type === "text" ? [content.text] : []));
+             const calls = message.content.flatMap((content) => content.type === "toolCall"
+                 ? [
+@@ -314,8 +320,6 @@ export function serializeConversation(messages) {
+                         .join(", ")})`,
+                 ]
+                 : []);
+-            if (thinking.length > 0)
+-                parts.push(`[Assistant thinking]: ${thinking.join("\n")}`);
+             if (text.length > 0)
+                 parts.push(`[Assistant]: ${text.join("\n")}`);
+             if (calls.length > 0)
+diff --git a/dist/harness/context.js b/dist/harness/context.js
+index e6e697b17bbf2ebcf8844c8fa273766c2875e8c3..85a11f000d9d5ff8e6cd72efecb3a2c661e8dffa 100644
+--- a/dist/harness/context.js
++++ b/dist/harness/context.js
+@@ -50,7 +50,19 @@ export async function deriveContext(storage, conversationId, bounds, context) {
+         const contributed = edit?.action === "replace" ? edit.messages : (entry.model ?? []);
+         return contributed.filter((message) => message.role !== "assistant" || !EXCLUDED_STOP_REASONS.has(message.stopReason));
+     });
+-    return { head, entries, contributions, messages: orderToolResults(contributions.flat()) };
++    return { head, entries, contributions, messages: leadWithSystem(orderToolResults(contributions.flat())) };
++}
++/**
++ * Move a system message that only user messages precede to the front (upstream 92216fa1). A run's input is committed
++ * before generation renders the system prompt, so a transcript, or the range after a compaction or reset, starts with
++ * user messages followed by the baseline system message. Providers treat only a leading system message as the initial
++ * prompt and tool set; without it, a later tool change rewrites the request's tool list and invalidates the prompt cache.
++ */
++function leadWithSystem(messages) {
++    const index = messages.findIndex((message) => message.role !== "user");
++    if (index <= 0 || messages[index].role !== "system")
++        return messages;
++    return [messages[index], ...messages.slice(0, index), ...messages.slice(index + 1)];
+ }
+ /** The raw active entries within captured bounds, without deriving model context. */
+ export async function activeEntries(storage, conversationId, bounds, context) {
+diff --git a/dist/harness/generation.d.ts b/dist/harness/generation.d.ts
+index ecdb130a93d5c388f2090eb39cffde0fdfe48bc4..ccd0557bdafa606dadac6d3a2c264d7664a2f690 100644
+--- a/dist/harness/generation.d.ts
++++ b/dist/harness/generation.d.ts
+@@ -12,6 +12,8 @@ export type GenerationCheckpoint = {
+     compacted?: TaskId<CompactionResult>;
+     /** Error text of the overflow that started `compacted`; checked once when `prepare` resumes. */
+     overflow?: string;
++    /** Set when the blocking threshold started `compacted`; its outcome is checked once when `prepare` resumes. */
++    threshold?: true;
+ } | {
+     phase: "request";
+     attempt: number;
+diff --git a/dist/harness/generation.js b/dist/harness/generation.js
+index 548358eb9904ef6ce82ed3346e94984d50f826ef..65de96a6d46e13b8ba490ae3cc10abe1b6b0ed63 100644
+--- a/dist/harness/generation.js
++++ b/dist/harness/generation.js
+@@ -5,6 +5,7 @@ import { getCurrentTools } from "@earendil-works/pi-ai/utils/transcript";
+ import { AssistantEntry, ResetEntry, SystemEntry, UserEntry } from "../entries.js";
+ import { defineTask } from "../tasks.js";
+ import { addTools } from "./agent.js";
++import { modelCompactionPolicy } from "./compaction-policy.js";
+ import { createCompaction, estimateContext, selectCut } from "./compaction.js";
+ import { applyBoundary, prepareBoundary } from "./inbox.js";
+ import { assignJson } from "./json.js";
+@@ -37,13 +38,22 @@ export const GenerationTask = defineTask({
+             const resolved = model === undefined ? undefined : runtime.models.getModel(model.provider, model.modelId);
+             if (model === undefined || resolved === undefined)
+                 return failNoModel(runtime, model, context);
+-            const { attempt, compacted, overflow } = task.state.checkpoint;
++            const { attempt, compacted, overflow, threshold: blocked } = task.state.checkpoint;
+             if (compacted !== undefined && overflow !== undefined) {
+                 const [outcome] = await runtime.outcomes([compacted], context);
+                 if (outcome?.status !== "completed" || outcome.result.entryId === undefined) {
+                     return failModelError(runtime, overflow, context);
+                 }
+             }
++            // Upstream 89e5c2c0: a threshold compaction that found nothing to compact or was declined leaves a request
++            // that may still fit. One that failed left a context it judged too large: sending it would at best leave no
++            // room for the answer.
++            if (compacted !== undefined && blocked === true) {
++                const [outcome] = await runtime.outcomes([compacted], context);
++                if (outcome !== undefined && outcome.status !== "completed") {
++                    return failModelError(runtime, compactionFailure(outcome), context);
++                }
++            }
+             const view = await runtime.context(conversationId, context);
+             const shown = replaySections(view.messages);
+             const report = (error) => runtime.report(error);
+@@ -60,13 +70,13 @@ export const GenerationTask = defineTask({
+             const desired = await renderSections(agent.sections, input, shown, report, context);
+             const entries = planSystemEntries(view, desired, agent.tools, runtime.now());
+             const threshold = compacted === undefined
+-                ? thresholdCompaction(view, entries, resolved.contextWindow, settings.compaction)
++                ? thresholdCompaction(view, entries, resolved.contextWindow, modelCompactionPolicy(settings, resolved.contextWindow))
+                 : undefined;
+             if (threshold === "blocking") {
+                 // Compact first and prepare again; the transcript is unchanged until the compaction appends.
+                 await runtime.commit(async (tx) => {
+                     const child = await createCompaction(tx, conversationId, { reason: "threshold" }, runtime.taskId);
+-                    const checkpoint = { phase: "prepare", attempt, compacted: child };
++                    const checkpoint = { phase: "prepare", attempt, compacted: child, threshold: true };
+                     return { status: "waiting", checkpoint, on: [child], policy: "allSettled" };
+                 }, context);
+                 return;
+@@ -117,6 +127,7 @@ export const GenerationTask = defineTask({
+                 sessionId: await ensureProviderSessionId(runtime, context),
+                 ...(thinkingLevel === "off" ? {} : { reasoning: thinkingLevel }),
+             };
++            await runtime.beforeModelRequest(context);
+             const message = await streamResponse(runtime, model, messages, options, attempt, context);
+             const request = { attempt, compacted, model: ref, cutoff, messages: view.messages };
+             await classify(runtime, request, message, context);
+@@ -140,6 +151,7 @@ export const GenerationTask = defineTask({
+             if (model === undefined)
+                 return failNoModel(runtime, ref, context);
+             await runtime.sleep(pollAt, context);
++            await runtime.beforeModelRequest(context);
+             const message = await runtime.models.fetchDeferred(model, handle, { signal: runtime.signal });
+             const request = { attempt, compacted, model: ref, cutoff, pollAt };
+             await classify(runtime, request, message, context);
+@@ -208,20 +220,34 @@ function createToolTask(tx, runtime, assistant, callId) {
+ }
+ /**
+  * Which threshold compaction preparation starts before its request (spec §8.3): `blocking` above
+- * `contextWindow - reserveTokens`, `background` above the background threshold, and only when range selection finds a
++ * the model-sized ratio/cap/reserve threshold, `background` above the background threshold, and only when range selection finds a
+  * cut. The caller starts a background one only while no compaction is listed.
+  */
+ function thresholdCompaction(view, planned, contextWindow, policy) {
+     if (!policy.enabled || contextWindow <= 0)
+         return undefined;
+     const tokens = estimateContext(view, planned.flatMap((entry) => entry.model ?? []));
+-    const blocking = contextWindow - policy.reserveTokens;
++    const blocking = policy.blockingTokens;
+     const background = blocking - policy.backgroundTokens;
+     const over = tokens > blocking ? "blocking" : policy.backgroundTokens > 0 && tokens > background ? "background" : undefined;
+     if (over === undefined || selectCut(view, policy.keepRecentTokens) === undefined)
+         return undefined;
+     return over;
+ }
++/** Error text for a generation whose blocking compaction ended without completing. */
++function compactionFailure(outcome) {
++    switch (outcome.status) {
++        case "failed":
++        case "faulted":
++            return `Compaction failed: ${outcome.error.message}`;
++        case "orphaned":
++            return `Compaction failed: ${outcome.reason}`;
++        case "aborted":
++            return "Compaction was aborted";
++        default:
++            return `Compaction ended: ${outcome.status}`;
++    }
++}
+ /** Settle the run's inputs `unanswered` with `model_error` and fail with `text`. */
+ async function failModelError(runtime, text, context) {
+     await runtime.commit(async (tx) => {
+@@ -273,6 +299,8 @@ async function streamResponse(runtime, model, messages, options, attempt, contex
+             const message = copyJson(partial, { omitUndefinedProperties: true });
+             await runtime.commit(async (tx) => {
+                 const live = await tx.doc(LiveDoc, runtime.conversationId);
++                if (live.run?.taskId !== runtime.taskId || live.generation?.attempt !== attempt)
++                    throw new Error("Streaming generation ownership changed");
+                 live.generation ??= { attempt };
+                 assignJson(live.generation, "message", message);
+                 return undefined;
+@@ -344,7 +372,8 @@ async function classify(runtime, request, message, context) {
+     const settings = runtime.settings;
+     const overflow = message.stopReason === "error" && isContextOverflow(message);
+     if (overflow && compacted === undefined && settings.compaction.enabled) {
+-        const policy = settings.compaction;
++        const model = runtime.models.getModel(ref.provider, ref.modelId);
++        const policy = modelCompactionPolicy(settings, model?.contextWindow ?? 0);
+         const view = await runtime.context(conversationId, context, cutoff);
+         if (selectCut(view, policy.keepRecentTokens) !== undefined) {
+             const text = message.errorMessage ?? "Context overflow";
+diff --git a/dist/harness/harness.js b/dist/harness/harness.js
+index 22b0bbe007354343d7e2502a0b007d6607d5014f..d26dde26b266a0ca6699e3ca041a80d0ea87c9bc 100644
+--- a/dist/harness/harness.js
++++ b/dist/harness/harness.js
+@@ -98,6 +98,7 @@ class HarnessImpl extends SessionImpl {
+             storage,
+             registry: options.registry,
+             models: options.models,
++            beforeModelRequest: (conversationId, callContext) => options.beforeModelRequest?.({ conversationId, read: this }, callContext),
+             agent: (id, snapshot, callContext) => this.resolveAgent(id, snapshot, callContext),
+             settings,
+             env: (id, callContext) => this.buildEnv(id, callContext),
+diff --git a/dist/harness/scheduler.d.ts b/dist/harness/scheduler.d.ts
+index c485fb9c12cceec9448762f7bc05b67d6ca916d2..9091853254cf2c1e26390d9818c76050f0987a41 100644
+--- a/dist/harness/scheduler.d.ts
++++ b/dist/harness/scheduler.d.ts
+@@ -20,6 +20,7 @@ export type TaskSchedulerOptions = {
+     readonly storage: Storage;
+     readonly registry: RegistryReader;
+     readonly models: Models;
++    readonly beforeModelRequest: (conversationId: ConversationId, context: Context) => void | Promise<void>;
+     /** Resolve a conversation's agent against a snapshot; the runtime calls it at most once per phase. */
+     readonly agent: (conversationId: ConversationId, snapshot: RegistrySnapshot, context: Context) => Promise<Agent>;
+     /** Resolve the settings; read at each access. */
+diff --git a/dist/harness/scheduler.js b/dist/harness/scheduler.js
+index 4e2d00f0d3539bb9ada6195d0979fda171f14ad0..6e4dcf105fe2be9379ae7049670ab1c3b9d0dd80 100644
+--- a/dist/harness/scheduler.js
++++ b/dist/harness/scheduler.js
+@@ -27,6 +27,7 @@ export class TaskScheduler {
+     #storage;
+     #registry;
+     #models;
++    #beforeModelRequest;
+     #agent;
+     #settings;
+     #env;
+@@ -43,6 +44,8 @@ export class TaskScheduler {
+     #idleWaiters = new Waiters();
+     /** Definition whose migration failed per task; retried only once the registry resolves another definition. */
+     #failedMigrations = new Map();
++    /** Failed scheduler settlement is not durable progress. Retry only after its task changes or reopen. */
++    #failedSteps = new Map();
+     /** Owner task of each loaded conversation, `null` when ownerless. */
+     #edges = new Map();
+     /** Tasks that own a loaded conversation; their nodes stay in `#settled` once terminal. */
+@@ -66,6 +69,7 @@ export class TaskScheduler {
+         this.#storage = options.storage;
+         this.#registry = options.registry;
+         this.#models = options.models;
++        this.#beforeModelRequest = options.beforeModelRequest;
+         this.#agent = options.agent;
+         this.#settings = options.settings;
+         this.#env = options.env;
+@@ -210,6 +214,7 @@ export class TaskScheduler {
+                 continue;
+             changed = true;
+             const record = change.value;
++            this.#failedSteps.delete(record.id);
+             const previous = this.#live.get(record.id);
+             if (failedOutcome(record) && (previous === undefined || !failedOutcome(previous)))
+                 failed.push(record.id);
+@@ -594,7 +599,7 @@ export class TaskScheduler {
+                 // Taken once per pass, and only when some task is a candidate.
+                 let snapshot;
+                 for (const record of [...this.#live.values()]) {
+-                    if (this.#invocations.has(record.id) || this.#waitingOn(record, owned).length > 0)
++                    if (this.#failedSteps.has(record.id) || this.#invocations.has(record.id) || this.#waitingOn(record, owned).length > 0)
+                         continue;
+                     if (record.state.status === "completing")
+                         continue;
+@@ -691,6 +696,8 @@ export class TaskScheduler {
+         return { scheduling, tasks };
+     }
+     #inspectTask(record, snapshot, owned) {
++        if (this.#failedSteps.has(record.id))
++            return { kind: "blocked", reason: "settlement_failed", error: this.#failedSteps.get(record.id) };
+         if (this.#invocations.has(record.id))
+             return { kind: "running" };
+         if (record.state.status === "completing")
+@@ -842,6 +849,7 @@ export class TaskScheduler {
+         }
+         catch (error) {
+             this.#end(invocation);
++            this.#failedSteps.set(invocation.taskId, error);
+             if (!this.#closing)
+                 this.#report(error);
+             return undefined;
+@@ -962,6 +970,10 @@ export class TaskScheduler {
+             conversationId: invocation.conversationId,
+             signal: invocation.controller.signal,
+             models: this.#models,
++            beforeModelRequest: (context) => this.#read(invocation, async () => {
++                await this.#beforeModelRequest(invocation.conversationId, context);
++                invocation.controller.signal.throwIfAborted();
++            }),
+             agent: (context) => invocation.ended ? Promise.reject(endedError(invocation)) : awaitWithContext(agent(), context),
+             get settings() {
+                 return settings();
+diff --git a/dist/harness/types.d.ts b/dist/harness/types.d.ts
+index 90a829b623022eab2a03c82696b9e84a868a2bff..bf3ac71cc6c404b8504834440f972721b13e5648 100644
+--- a/dist/harness/types.d.ts
++++ b/dist/harness/types.d.ts
+@@ -313,6 +313,10 @@ export type ConversationRetryPolicy = {
+ export type CompactionPolicy = {
+     /** Threshold and overflow compaction. */
+     enabled: boolean;
++    /** Absolute automatic context cap; 0 disables this cap. Defaults to 300000. */
++    maxContextTokens?: number;
++    /** Fraction of the current model window; defaults to 0.7. Set 1 for legacy reserve-only thresholds. */
++    maxContextRatio?: number;
+     /** Room kept free for the answer: generation blocks to compact above `contextWindow - reserveTokens`. */
+     reserveTokens: number;
+     /** Approximate size of the recent context a summary keeps verbatim. */
+@@ -348,6 +352,8 @@ export type Settings = {
+     readonly stream: ConversationStreamOptions;
+     readonly retry: ConversationRetryPolicy;
+     readonly compaction: CompactionPolicy;
++    /** Host-specified fields, retained so model-sized defaults do not override explicit settings. */
++    readonly compactionOverrides?: Partial<CompactionPolicy>;
+     readonly toolExecution: ToolExecutionMode;
+     readonly steeringMode: QueueMode;
+     readonly followUpMode: QueueMode;
+@@ -366,6 +372,12 @@ export type HarnessOptions<Tool extends ToolRegistration = ToolRegistration> = {
+     readonly settings?: HarnessSettings;
+     /** Builds a conversation's environment at each use. Never called on the Session line; may be async. */
+     readonly env?: (target: EnvTarget, context: Context) => ExecutionEnv | undefined | Promise<ExecutionEnv | undefined>;
++    /**
++     * Host integrity boundary immediately before generation, compaction, or deferred polling dispatches to Models.
++     * Runs outside the Session line, after ordinary request hooks. Rejection faults the task; it is not reported
++     * and ignored like extension hooks. Rechecked for every attempt, including resumed request checkpoints.
++     */
++    readonly beforeModelRequest?: (target: { readonly conversationId: ConversationId; readonly read: DocumentReader }, context: Context) => void | Promise<void>;
+     /**
+      * Runs in every commit that creates or forks a conversation, raw `tx.createConversation()` included, after the
+      * built-in `pi.*` documents and before the conveniences apply `agent` and run `init`. A fork already has its copies.
+@@ -402,7 +414,7 @@ export type TaskInspection = {
+     /** No registered definition can take it; aborting it settles it as `orphaned`. */
+      | {
+         readonly kind: "blocked";
+-        readonly reason: "missing_task" | "task_too_old" | "migration_failed";
++        readonly reason: "missing_task" | "task_too_old" | "migration_failed" | "settlement_failed";
+         readonly error?: unknown;
+     };
+ };
+diff --git a/dist/session/transaction.js b/dist/session/transaction.js
+index 026df30ec4b48db5a4ccf72508954e6aa0b052e1..0d5a98ac408982ee5f7213e234a1863caa496d53 100644
+--- a/dist/session/transaction.js
++++ b/dist/session/transaction.js
+@@ -25,6 +25,12 @@ function applySubmissionChange(current, change) {
+ }
+ const INTERNAL_SCAN_PAGE_SIZE = 256;
+ const EMPTY_OPERATIONS = [];
++/**
++ * A document that defines no `checkpointWhen` still gets a new base after this many deltas. Without it a long-lived
++ * document is never rebased and every load replays its whole history (tens of seconds at daemon start).
++ */
++const DEFAULT_CHECKPOINT_DELTAS = 256;
++const defaultCheckpointWhen = (_value, _ops, info) => info.deltasSinceBase >= DEFAULT_CHECKPOINT_DELTAS;
+ const TABLE_JSON_COPY_OPTIONS = { omitUndefinedProperties: true };
+ /**
+  * Transaction for one Session commit callback.
+@@ -593,7 +599,7 @@ export class Transaction {
+             if (plan.content?.type === "document.change" && plan.content.content.kind === "delta" && change?.loaded) {
+                 const { prepared, version } = change;
+                 const info = { deltasSinceBase: change.loaded.deltasSinceBase };
+-                if (change.definition?.checkpointWhen?.(prepared.value, prepared.ops, info)) {
++                if ((change.definition?.checkpointWhen ?? defaultCheckpointWhen)(prepared.value, prepared.ops, info)) {
+                     plan.content = { ...plan.content, content: { version, kind: "base", value: prepared.value } };
+                 }
+             }
+diff --git a/dist/storage/sqlite/storage.js b/dist/storage/sqlite/storage.js
+index e425feb4e4be65e9aaf45e8fe1c130cf04bb1bc5..d6828e205db4ab3b93586e298757154faee949b6 100644
+--- a/dist/storage/sqlite/storage.js
++++ b/dist/storage/sqlite/storage.js
+@@ -72,9 +72,10 @@ export class SqliteStorage {
+     closing;
+     admittedReads = 0;
+     readsDrained;
+-    constructor(db, nextId) {
++    constructor(db, nextId, nextSeq) {
+         this.db = db;
+         this.nextId = nextId;
++        this.nextSeq = nextSeq;
+     }
+     /** Initialize storage over an owned SQLite database facade. */
+     static async open(db) {
+@@ -83,7 +84,7 @@ export class SqliteStorage {
+             const metadata = await db.get("SELECT next_id, next_seq FROM durable_metadata WHERE singleton = 1");
+             if (metadata === undefined)
+                 throw new Error("Durable SQLite metadata is missing");
+-            return new SqliteStorage(db, Number(metadata.next_id));
++            return new SqliteStorage(db, Number(metadata.next_id), metadata.next_seq);
+         }
+         catch (error) {
+             try {
+@@ -103,6 +104,8 @@ export class SqliteStorage {
+             const metadata = await transaction.get("SELECT next_id, next_seq FROM durable_metadata WHERE singleton = 1");
+             if (metadata === undefined)
+                 throw new Error("Durable SQLite metadata is missing");
++            if (metadata.next_seq !== this.nextSeq)
++                throw new StorageRejected("Durable SQLite writer is stale; reopen before writing");
+             const committedSeq = seqFromNumber(metadata.next_seq);
+             await this.checkGlobalIds(transaction, writes);
+             await this.checkDocumentActions(transaction, documentActions);
+@@ -113,6 +116,7 @@ export class SqliteStorage {
+             return committedSeq;
+         });
+         this.nextId = Math.max(this.nextId, candidateNextId);
++        this.nextSeq = seq + 1;
+         return seq;
+     }
+     async mintId() {
+@@ -389,6 +393,28 @@ export class SqliteStorage {
+             if (revision.kind !== "delta" || revision.version !== base.version) {
+                 throw new Error(`Document ${id} crosses a stored version boundary without a base`);
+             }
++            // Compatibility for one authenticated pre-CAS history. Never synthesize absent content.
++            // The replacement bytes, address, base/version, owner task and subsequent paths are all pinned.
++            const next = tail[tail.indexOf(revision) + 1];
++            if (record.id === 3525 && record.kind === "pi.live" && record.scope.kind === "conversation" &&
++                record.scope.conversationId === 3524 && record.createdAt === 20788 &&
++                record.history === "latest" && record.fork === "initial" && base.seq === 117979 && base.version === 1 &&
++                revision.seq === 118182 && revision.content === '[["s",["generation"],{"attempt":1}]]' &&
++                value.run?.taskId === 21842 && value.generation?.attempt === 1 &&
++                value.generation?.message?.content?.[1]?.type === "toolCall" &&
++                typeof value.generation.message.content[1].partialJson === "string" &&
++                typeof value.generation.message.content[1].arguments?.code === "string" &&
++                next?.seq === 118185 && next.kind === "delta" && next.version === 1) {
++                const ops = parseJson(next.content);
++                if (Array.isArray(ops) && ops.length === 2 && ops.every((op, index) =>
++                    Array.isArray(op) && op.length === 3 && op[0] === "a" && typeof op[2] === "string" &&
++                    JSON.stringify(op[1]) === JSON.stringify(index === 0
++                        ? ["generation", "message", "content", 1, "partialJson"]
++                        : ["generation", "message", "content", 1, "arguments", "code"]))) {
++                    value = { ...value, generation: { ...value.generation, attempt: 1 } };
++                    continue;
++                }
++            }
+             value = apply(value, parseJson(revision.content));
+         }
+         return { record, version: base.version, value, deltasSinceBase: tail.length };
+diff --git a/dist/tools/bash.d.ts b/dist/tools/bash.d.ts
+index 23f1d7db3e5b048961182849ca8d59a09c98a16d..a2dbaf7f7e723442b55a4e3edda5db8d8197866d 100644
+--- a/dist/tools/bash.d.ts
++++ b/dist/tools/bash.d.ts
+@@ -11,6 +11,8 @@ export interface BashExecution {
+     cwd: string;
+     env: Record<string, string>;
+     inheritEnv: boolean;
++    /** Host prepare only, absent from model input schema. */
++    controlledProcess?: object;
+ }
+ export type BashPrepare = (execution: BashExecution, api: ToolExecutionApi, context: Context) => void | Promise<void>;
+ export interface BashToolOptions {
+diff --git a/dist/tools/bash.js b/dist/tools/bash.js
+index 592ce45cac1a0401b88516bb1240d5a2b19b6ffb..e07baa687fc68206064c4c50cb9871d653d1bfd7 100644
+--- a/dist/tools/bash.js
++++ b/dist/tools/bash.js
+@@ -44,6 +44,7 @@ export function createBashTool(options) {
+                 cwd: execution.cwd,
+                 env: execution.env,
+                 inheritEnv: execution.inheritEnv,
++                ...(execution.controlledProcess ? { controlledProcess: execution.controlledProcess } : {}),
+                 ...(timeout === undefined ? {} : { timeout }),
+                 onOutput: (text) => api.output(text),
+                 spill: { afterBytes: DEFAULT_MAX_BYTES, afterLines: DEFAULT_MAX_LINES },
+diff --git a/dist/types.d.ts b/dist/types.d.ts
+index 19096c02e4586347078f08433176ed839bb11a5e..f7fab139c1b112cc4f885e56449364a5d750fcff 100644
+--- a/dist/types.d.ts
++++ b/dist/types.d.ts
+@@ -144,6 +144,8 @@ export interface TaskRuntime<I, S, R, H extends object> extends DocumentObserver
+     /** `HarnessOptions.settings`, resolved at each access. */
+     readonly settings: Settings;
+     readonly models: Models;
++    /** Await the host integrity boundary; rejection prevents model dispatch and faults this task. */
++    beforeModelRequest(context: Context): Promise<void>;
+     /** Calls `HarnessOptions.env` for the task's conversation; rejects with its error. */
+     env(context: Context): Promise<ExecutionEnv | undefined>;
+     /** Handlers of this task's name from the extensions its conversation selects, in extension order. */

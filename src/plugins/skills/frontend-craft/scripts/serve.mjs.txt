@@ -1,0 +1,46 @@
+// Start the landing site locally for QA scripts and screenshots, then stop it.
+// Usage (from services/landing):
+//   import { withServer } from "./qa/serve.mjs";
+//   await withServer({ mode: "preview" }, async (origin) => { ... });
+// mode "dev" runs `vite` (HMR, unbuilt), mode "preview" runs `vite preview` on the last build (run `cf build` first).
+// The worker runs in workerd in both modes, so /api/* and locale routing behave like production.
+// Never leave a server running after the script ends: this helper always kills the process tree.
+import { spawn, execSync } from "node:child_process";
+import { setTimeout as sleep } from "node:timers/promises";
+
+export async function startServer({ mode = "preview", port = mode === "dev" ? 5173 : 4173, cwd = process.cwd(), timeoutMs = 60000 } = {}) {
+	const args = mode === "dev" ? ["vite", "--port", String(port), "--strictPort"] : ["vite", "preview", "--port", String(port), "--strictPort"];
+	const child = spawn("bun", ["x", ...args], { cwd, stdio: ["ignore", "pipe", "pipe"], shell: false, windowsHide: true });
+	let log = "";
+	child.stdout.on("data", (d) => (log += d));
+	child.stderr.on("data", (d) => (log += d));
+	const origin = "http://localhost:" + port;
+	const deadline = Date.now() + timeoutMs;
+	while (Date.now() < deadline) {
+		if (child.exitCode !== null) throw new Error("server exited early (" + child.exitCode + "):\n" + log);
+		try {
+			const res = await fetch(origin + "/", { redirect: "manual" });
+			if (res.status > 0) return { origin, child, log: () => log, stop: () => stopServer(child) };
+		} catch {}
+		await sleep(250);
+	}
+	stopServer(child);
+	throw new Error("server did not start within " + timeoutMs + " ms:\n" + log);
+}
+
+export function stopServer(child) {
+	if (!child || child.exitCode !== null) return;
+	try {
+		if (process.platform === "win32") execSync("taskkill /pid " + child.pid + " /T /F", { stdio: "ignore" });
+		else child.kill("SIGTERM");
+	} catch {}
+}
+
+export async function withServer(options, fn) {
+	const server = await startServer(options);
+	try {
+		return await fn(server.origin, server);
+	} finally {
+		server.stop();
+	}
+}

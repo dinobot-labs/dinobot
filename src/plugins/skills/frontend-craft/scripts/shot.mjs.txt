@@ -1,0 +1,57 @@
+// Capture reference screenshots with the installed Microsoft Edge (no browser download needed).
+// Usage: node qa/shot.mjs <url> <out-prefix> [--mobile] [--scrolls=N]
+//   writes <out-prefix>-1.jpg (above the fold) and <out-prefix>-2.jpg ... (after scrolling N viewports, default 1).
+//   Prints JSON: {url, finalUrl, status, title, files, ms}. JPEG quality 72, 1440x900 (or 390x844 @2x with --mobile).
+import { chromium } from "playwright-core";
+import { mkdirSync } from "node:fs";
+import { dirname } from "node:path";
+
+export const EDGE = "C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe";
+const [url, prefix, ...rest] = process.argv.slice(2);
+if (!url || !prefix) {
+	console.error("usage: node qa/shot.mjs <url> <out-prefix> [--mobile] [--scrolls=N]");
+	process.exit(2);
+}
+const mobile = rest.includes("--mobile");
+const scrolls = Number((rest.find((a) => a.startsWith("--scrolls=")) ?? "--scrolls=1").split("=")[1]);
+mkdirSync(dirname(prefix), { recursive: true });
+const t0 = Date.now();
+const browser = await chromium.launch({ executablePath: EDGE, headless: true });
+try {
+	const context = await browser.newContext(
+		mobile
+			? { viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true, locale: "en-US" }
+			: { viewport: { width: 1440, height: 900 }, deviceScaleFactor: 1, locale: "en-US" },
+	);
+	const page = await context.newPage();
+	const response = await page.goto(url, { waitUntil: "domcontentloaded", timeout: 45000 });
+	await page.waitForLoadState("networkidle", { timeout: 12000 }).catch(() => {});
+	await page.waitForTimeout(1800);
+	// Best effort: dismiss cookie banners so the design is visible.
+	for (const label of ["Accept all", "Accept All", "Accept", "I agree", "Agree", "Got it", "Allow all", "OK"]) {
+		const button = page.getByRole("button", { name: label, exact: true }).first();
+		if (await button.isVisible().catch(() => false)) {
+			await button.click({ timeout: 2000 }).catch(() => {});
+			await page.waitForTimeout(400);
+			break;
+		}
+	}
+	const files = [];
+	const first = prefix + "-1.jpg";
+	await page.screenshot({ path: first, type: "jpeg", quality: 72 });
+	files.push(first);
+	for (let i = 0; i < scrolls; i++) {
+		await page.mouse.move(mobile ? 195 : 720, mobile ? 422 : 450);
+		await page.mouse.wheel(0, mobile ? 844 : 900);
+		await page.waitForTimeout(200);
+		// Fallback for pages that ignore synthetic wheel events (custom scrollers excluded).
+		await page.evaluate((y) => { if (window.scrollY < y * 0.5) window.scrollTo({ top: y, behavior: "instant" }); }, (i + 1) * (mobile ? 844 : 900));
+		await page.waitForTimeout(1600);
+		const file = prefix + "-" + (i + 2) + ".jpg";
+		await page.screenshot({ path: file, type: "jpeg", quality: 72 });
+		files.push(file);
+	}
+	console.log(JSON.stringify({ url, finalUrl: page.url(), status: response?.status() ?? null, title: await page.title(), files, ms: Date.now() - t0 }));
+} finally {
+	await browser.close();
+}

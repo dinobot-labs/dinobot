@@ -1,0 +1,29 @@
+# dinobot slack-setup: start a command OUTSIDE dinobot's process tree on Windows.
+# A one-shot scheduled task in the user's interactive session runs it hidden through wscript;
+# the task registration is removed right after it starts, the started process keeps running.
+#
+#   powershell -NoProfile -ExecutionPolicy Bypass -File detach-windows.ps1 -Exe <program> -Arguments '<args>' [-Name <task name>]
+#
+# Quote arguments that contain spaces inside -Arguments, e.g. -Arguments '"C:\My Files\restart-when-idle.mjs" --dry-run'.
+# No administrator rights are needed (Limited run level, current user).
+param(
+	[Parameter(Mandatory = $true)][string]$Exe,
+	[string]$Arguments = "",
+	[string]$Name = "dinobot-detached"
+)
+$ErrorActionPreference = "Stop"
+if (-not (Test-Path -LiteralPath $Exe)) { throw "program not found: $Exe" }
+$vbs = Join-Path $env:TEMP ($Name + ".vbs")
+$line = '"' + $Exe + '" ' + $Arguments
+# VBScript string literal: double every quote. UTF-16 with BOM keeps non-ASCII paths intact for wscript.
+$vbsText = 'CreateObject("WScript.Shell").Run "' + $line.Replace('"', '""') + '", 0, False'
+[System.IO.File]::WriteAllText($vbs, $vbsText, [System.Text.Encoding]::Unicode)
+$action = New-ScheduledTaskAction -Execute "wscript.exe" -Argument ('"' + $vbs + '"')
+$principal = New-ScheduledTaskPrincipal -UserId ([System.Security.Principal.WindowsIdentity]::GetCurrent().Name) -LogonType Interactive -RunLevel Limited
+$settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -ExecutionTimeLimit (New-TimeSpan -Hours 8)
+Register-ScheduledTask -TaskName $Name -Action $action -Principal $principal -Settings $settings -Force | Out-Null
+Start-ScheduledTask -TaskName $Name
+Start-Sleep -Seconds 3
+$info = Get-ScheduledTaskInfo -TaskName $Name
+Unregister-ScheduledTask -TaskName $Name -Confirm:$false
+Write-Output ("started=" + $info.LastRunTime + " result=" + $info.LastTaskResult)
