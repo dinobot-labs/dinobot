@@ -6,6 +6,10 @@
 
 Source-available agent daemon and terminal UI (TUI), written in TypeScript for Bun.
 
+## Video
+
+https://github.com/user-attachments/assets/6b7d112e-d469-4512-b97b-96999dcf8936
+
 ## License
 
 Free noncommercial use under PolyForm Noncommercial 1.0.0 (LICENSE). This is not OSI-approved open source. Commercial use requires separate written permission: dev0jsh@gmail.com. Third-party code retains its original licenses; see THIRD_PARTY_NOTICES.md.
