@@ -1,3 +1,7 @@
+<p align="center">
+  <img src=".github/assets/logo.svg" alt="Dinobot logo" width="160">
+</p>
+
 # dinobot
 
 Source-available agent daemon and terminal UI (TUI), written in TypeScript for Bun.
