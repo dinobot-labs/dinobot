@@ -42,7 +42,7 @@ export type ReconcileResult =
 	| { status: "refused"; error: string; blockers: string[]; required?: TokenRef[]; calls: QuarantinedCall[] };
 
 /** Session audit trail of operator reconciliations, newest last. */
-export const ClaimReconcileAuditDoc = defineDoc<{ entries: { at: number; actor: string; note: string; released: Claim[]; unfenced?: Claim[]; retained: Claim[]; calls: { conversationId: number; taskId: string; evidence: { nonce: string; evidence: string }[] }[] }[] }>({
+export const ClaimReconcileAuditDoc = defineDoc<{ entries: { at: number; actor: string; note: string; snapshot?: string; released: Claim[]; unfenced?: Claim[]; retained: Claim[]; calls: { conversationId: number; taskId: string; evidence: { nonce: string; evidence: string }[] }[] }[] }>({
 	kind: "dinobot.claims.reconcile-audit", version: 1, scope: "session", initial: () => ({ entries: [] }),
 });
 
@@ -229,6 +229,105 @@ export async function reconcileQuarantine(harness: Harness, request: ReconcileRe
 		(await tx.doc(ClaimReconcileAuditDoc)).entries.push({ at, actor, note, released, unfenced, retained, calls: scoped.map(c => ({ conversationId: c.conversationId, taskId: c.taskId, evidence: c.processes.map(p => ({ nonce: p.nonce, evidence: p.evidence.evidence })) })) });
 		return { status: "reconciled" as const, released, unfenced, retained, calls: scoped };
 	}, context);
+}
+
+/** An exact tokenless native call, never a claim wildcard or a caller-supplied receipt. */
+export type NativeCallRef = { conversationId: number; taskId: string };
+export type NativeCallReconcileRequest = { calls: NativeCallRef[]; actor: string; note: string; snapshot: string };
+
+export function parseNativeCallRefs(value: unknown): NativeCallRef[] {
+ if (!Array.isArray(value) || !value.length || value.length > 1000) throw Error("invalid_native_calls");
+ const refs = value.map((item: unknown): NativeCallRef => {
+  if (!item || typeof item !== "object" || Array.isArray(item)) throw Error("invalid_native_call");
+  const ref = item as Record<string, unknown>;
+  if (!Number.isSafeInteger(ref.conversationId) || Number(ref.conversationId) <= 0 || typeof ref.taskId !== "string" || !/^[1-9][0-9]*$/.test(ref.taskId) || !Number.isSafeInteger(Number(ref.taskId))) throw Error("invalid_native_call");
+  return { conversationId: ref.conversationId as number, taskId: ref.taskId };
+ });
+ refs.sort((a,b) => a.conversationId - b.conversationId || Number(a.taskId) - Number(b.taskId));
+ if (new Set(refs.map(ref => JSON.stringify(ref))).size !== refs.length) throw Error("duplicate_native_calls");
+ return refs;
+}
+
+/** Read the call, exact lease and ownership/task gates together for compare-and-swap. */
+async function nativeCallStateTx(tx: Tx, refs: NativeCallRef[]) {
+ const rows: Journal["calls"] = [];
+ const selected: unknown[] = [];
+ const blockers: string[] = [];
+ const coordination = await tx.doc(WorkspaceCoordDoc);
+ for (const ref of refs) {
+  const conversation = await tx.conversation(ref.conversationId as ConversationId);
+  const task = await tx.task(Number(ref.taskId) as TaskId);
+  const matches = conversation ? (await tx.doc(NativeProvenanceDoc, conversation.id)).calls.filter(call => call.taskId === ref.taskId && call.kind === "process") : [];
+  const leaseId = "native:" + ref.taskId + ":process";
+  const leases = coordination.leases.filter(lease => lease.id === leaseId);
+  const owner = conversation?.owner;
+  const ownerTask = owner ? await tx.task(owner.taskId) : undefined;
+  const binding = conversation ? (await tx.doc(WorkDoc, conversation.id)).dagParent : undefined;
+  selected.push({ ref, conversation: conversation ? { id: conversation.id, owner } : null, task: task ? { id: task.id, conversationId: task.conversationId, status: task.state.status } : null, ownerTask: ownerTask ? { id: ownerTask.id, conversationId: ownerTask.conversationId, status: ownerTask.state.status } : null, binding, calls: matches, leases });
+  if (!conversation || matches.length !== 1) { blockers.push(`native call ${ref.conversationId}/${ref.taskId} is missing or ambiguous`); continue; }
+  const call = matches[0]!;
+  if (call.phase !== "unknown") blockers.push(`native call ${ref.conversationId}/${ref.taskId} is not UNKNOWN`);
+  if (call.tokens.length || (call.acquiredTokens ?? []).length) blockers.push(`native call ${ref.conversationId}/${ref.taskId} is not tokenless`);
+  if (!task || task.conversationId !== conversation.id || task.state.status !== "terminal") blockers.push(`native task ${ref.taskId} is missing, nonterminal or belongs to another conversation`);
+  if (owner && (!ownerTask || ownerTask.conversationId !== owner.conversationId || ownerTask.state.status !== "terminal")) blockers.push(`owner task of native call ${ref.conversationId}/${ref.taskId} is missing or nonterminal`);
+  if (leases.length !== 1 || leases[0]!.conversationId !== String(ref.conversationId) || leases[0]!.taskId !== ref.taskId || leases[0]!.phase !== "blocked-unknown" || leases[0]!.workId !== "") blockers.push(`native lease ${leaseId} is missing or does not match its call`);
+  rows.push({ conversationId: conversation.id, call: JSON.parse(JSON.stringify(call)) as NativeCall, task: task === undefined ? "missing" : task.state.status === "terminal" ? "terminal" : "running" });
+ }
+ return JSON.parse(JSON.stringify({ rows, selected, blockers })) as { rows: Journal["calls"]; selected: unknown[]; blockers: string[] };
+}
+
+const nativeCallSnapshot = (state: Awaited<ReturnType<typeof nativeCallStateTx>>) => createHash("sha256").update(JSON.stringify(state)).digest("hex");
+
+async function nativeCallPlan(harness: Harness, refs: NativeCallRef[], context: Context, observe: ObserveQuiescence) {
+ const state = await harness.commit(tx => nativeCallStateTx(tx, refs), context);
+ const calls = await assess({ claims: [], calls: state.rows, snapshots: [], owners: [] }, observe);
+ const identityBlockers = calls.flatMap(call => call.processes.filter(process => !Number.isSafeInteger(process.pid) || Number(process.pid) <= 0 || typeof process.startTime !== "string" || !process.startTime).map(process => `process ${process.nonce} has no complete recorded identity`));
+ const blockers = [...new Set([...state.blockers, ...calls.flatMap(call => call.blockers), ...identityBlockers])];
+ return { state, calls, blockers, snapshot: nativeCallSnapshot(state) };
+}
+
+/** Offline operator preview; never automatically called by token abandonment or the daemon. */
+export async function planNativeCallReconciliation(harness: Harness, calls: NativeCallRef[], context: Context, observe: ObserveQuiescence = observeNativeProcessQuiescence) {
+ const refs = parseNativeCallRefs(calls);
+ const plan = await nativeCallPlan(harness, refs, context, observe);
+ return { snapshot: plan.snapshot, requiredCalls: refs, blockers: plan.blockers, calls: plan.calls };
+}
+
+/** Reconcile only proven-quiescent tokenless native calls; never unfence or release a claim. */
+export async function reconcileNativeCalls(harness: Harness, request: NativeCallReconcileRequest, context: Context, observe: ObserveQuiescence = observeNativeProcessQuiescence, now = Date.now): Promise<ReconcileResult> {
+ const actor = request.actor.trim(), note = request.note.trim();
+ if (!actor || !note || actor.length > MAX_ACTOR_LENGTH || note.length > MAX_NOTE_LENGTH) return { status: "refused", error: "actor_and_note_required", blockers: ["actor and note are required for the audit record"], calls: [] };
+ let refs: NativeCallRef[];
+ try { refs = parseNativeCallRefs(request.calls); } catch (error) { return { status: "refused", error: error instanceof Error ? error.message : "invalid_native_calls", blockers: ["name the exact native calls"], calls: [] }; }
+ if (!/^[a-f0-9]{64}$/.test(request.snapshot)) return { status: "refused", error: "snapshot_required", blockers: ["use a fresh exact-call plan"], calls: [] };
+ const plan = await nativeCallPlan(harness, refs, context, observe);
+ if (plan.snapshot !== request.snapshot) return { status: "refused", error: "snapshot_mismatch", blockers: ["native call, lease or ownership state changed"], calls: plan.calls };
+ if (plan.blockers.length) return { status: "refused", error: "not_proven_quiescent", blockers: plan.blockers, calls: plan.calls };
+ const at = now();
+ const committed = await harness.commit(async tx => {
+  const current = await nativeCallStateTx(tx, refs);
+  if (current.blockers.length || nativeCallSnapshot(current) !== request.snapshot) return false;
+  for (const ref of refs) {
+   const call = (await tx.doc(NativeProvenanceDoc, ref.conversationId as ConversationId)).calls.find(call => call.taskId === ref.taskId && call.kind === "process" && call.phase === "unknown")!;
+   const assessed = plan.calls.find(call => call.conversationId === ref.conversationId && call.taskId === ref.taskId)!;
+   call.phase = "reconciled";
+   call.reconciled = { at, actor, note, evidence: assessed.processes.map(process => ({ nonce: process.nonce, evidence: process.evidence.evidence })) };
+  }
+  const coordination = await tx.doc(WorkspaceCoordDoc);
+  coordination.leases = coordination.leases.filter(lease => !refs.some(ref => lease.id === "native:" + ref.taskId + ":process" && lease.conversationId === String(ref.conversationId) && lease.taskId === ref.taskId));
+  (await tx.doc(ClaimReconcileAuditDoc)).entries.push({ at, actor, note, snapshot: request.snapshot, released: [], unfenced: [], retained: [], calls: plan.calls.map(call => ({ conversationId: call.conversationId, taskId: call.taskId, evidence: call.processes.map(process => ({ nonce: process.nonce, evidence: process.evidence.evidence })) })) });
+  return true;
+ }, context);
+ if (!committed) return { status: "refused", error: "changed_during_reconcile", blockers: ["native call, lease or ownership state changed during observation"], calls: plan.calls };
+ const coordination = await harness.snapshot(WorkspaceCoordDoc, context);
+ const audit = (await harness.snapshot(ClaimReconcileAuditDoc, context))?.entries.at(-1);
+ let readback = coordination !== undefined && audit?.snapshot === request.snapshot && audit.actor === actor && audit.note === note && audit.calls.length === refs.length && audit.calls.every(call => refs.some(ref => ref.conversationId === call.conversationId && ref.taskId === call.taskId)) && audit.released.length === 0 && (audit.unfenced ?? []).length === 0 && audit.retained.length === 0;
+ for (const ref of refs) {
+  const call = (await harness.snapshot(NativeProvenanceDoc, ref.conversationId as ConversationId, context))?.calls.find(call => call.taskId === ref.taskId && call.kind === "process");
+  readback &&= call?.phase === "reconciled" && call.reconciled?.at === at && call.reconciled.actor === actor && call.reconciled.note === note && !coordination?.leases.some(lease => lease.id === "native:" + ref.taskId + ":process");
+ }
+ if (!readback) return { status: "refused", error: "reconciliation_readback_failed", blockers: ["commit may have succeeded; inspect authoritative state before any retry"], calls: plan.calls };
+ return { status: "reconciled", released: [], unfenced: [], retained: [], calls: plan.calls };
 }
 
 /** Deliberately not a quiescence assertion. Only the offline maintenance command exposes this operation. */

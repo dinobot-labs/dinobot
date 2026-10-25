@@ -14,7 +14,7 @@ test("maintenance request preserves exact tokens and rejects caller evidence", (
  expect(() => parseAbandonRequest({ tokens: [] })).toThrow("invalid_tokens");
 });
 
-test.skipIf(process.platform !== "win32")("offline command refuses an already-open real SQLite connection", async () => {
+test.skipIf(process.platform !== "win32" && process.platform !== "darwin")("offline command refuses an already-open real SQLite connection", async () => {
  const dir = await mkdtemp(join(process.env.TMPDIR ?? tmpdir(), "quarantine-lock-"));
  const path = join(dir, "host.sqlite"); const request = join(dir, "request.json");
  await writeFile(request, JSON.stringify({ tokens: [{ key: "host:legacy", holder: "conversation:1", token: 384 }] }));
@@ -28,7 +28,7 @@ test.skipIf(process.platform !== "win32")("offline command refuses an already-op
  } finally { await storage.close(context); Bun.gc(true); await Bun.sleep(200); await rm(dir, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 }); }
 });
 
-test.skipIf(process.platform !== "win32")("exclusive SQLite connection fences new readers for its whole lifetime", async () => {
+test.skipIf(process.platform !== "win32" && process.platform !== "darwin")("exclusive SQLite connection fences new readers for its whole lifetime", async () => {
  const dir = await mkdtemp(join(process.env.TMPDIR ?? tmpdir(), "quarantine-exclusive-")); const path = join(dir, "host.sqlite");
  const first = await openNodeSqliteDatabase(path, { busyTimeoutMs: 50 });
  try {
@@ -40,6 +40,10 @@ test.skipIf(process.platform !== "win32")("exclusive SQLite connection fences ne
  } finally { await first.close(); }
  const reopened = await openNodeSqliteDatabase(path); await reopened.close();
  await rm(dir, { recursive: true, force: true });
+});
+
+test.skipIf(process.platform === "win32" || process.platform === "darwin")("unsupported platforms refuse maintenance inventory", async () => {
+	await expect(recoveryProcessBlockers([1])).rejects.toThrow("unsupported_platform_maintenance_only");
 });
 
 test.skipIf(process.platform !== "win32")("live process inventory refuses a real lingering child, not PID absence as proof", async () => {
