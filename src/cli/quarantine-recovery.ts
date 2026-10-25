@@ -8,19 +8,22 @@ import { createModels } from "@earendil-works/pi-ai/models";
 import { createRegistry, Harness } from "@earendil-works/pi-durable";
 import { openNodeSqliteDatabase } from "@earendil-works/pi-durable/storage/sqlite/node";
 import { SqliteStorage } from "@earendil-works/pi-durable/storage/sqlite";
-import { abandonQuarantine, ClaimAbandonAuditDoc, planQuarantineAbandonment, type AbandonRequest, type TokenRef } from "../core/claim-reconcile.ts";
+import { abandonQuarantine, ClaimAbandonAuditDoc, planQuarantineAbandonment, parseNativeCallRefs, planNativeCallReconciliation, reconcileNativeCalls, type NativeCallReconcileRequest, type AbandonRequest, type TokenRef } from "../core/claim-reconcile.ts";
+import { recoveryProcessBlockersDarwin } from "./quarantine-process-inventory.ts";
 
-const USAGE = `dinobot quarantine-recovery --database <existing.sqlite> --request <request.json> [--apply]
-Offline Windows maintenance only: exclusive database lock, no scheduling, channels, plugins or credentials.
+const USAGE = `dinobot quarantine-recovery --database <existing.sqlite> --request <request.json> [--reconcile-native] [--apply]
+Offline Windows or macOS maintenance only: exclusive database lock, no scheduling, channels, plugins or credentials.
 Without --apply: inspect the exact token closure and return its snapshot and blockers.
 With --apply: require actor, note, snapshot and the literal acceptance from the plan.
 Abandonment is audited risk acceptance, NOT canonical quiescence. No automatic unlock.
+With --reconcile-native: request exact tokenless native calls instead of tokens; require OS quiescence, actor, note and a fresh snapshot. No historical external-effect waiver applies.
 Back up the stopped database and sidecars first. Keep the original backup untouched.
 `;
 
 export function parseAbandonRequest(value: unknown): AbandonRequest {
  if (!value || typeof value !== "object" || Array.isArray(value)) throw Error("invalid_request");
  const v = value as Record<string, unknown>;
+ if (v.calls !== undefined) throw Error("mixed_recovery_modes");
  if (!Array.isArray(v.tokens) || !v.tokens.length || v.tokens.length > 1000) throw Error("invalid_tokens");
  const tokens: TokenRef[] = v.tokens.map((t: unknown) => {
   if (!t || typeof t !== "object" || Array.isArray(t)) throw Error("invalid_token");
@@ -32,9 +35,19 @@ export function parseAbandonRequest(value: unknown): AbandonRequest {
  return { tokens, actor: (v.actor as string) ?? "", note: (v.note as string) ?? "", snapshot: (v.snapshot as string) ?? "", acceptance: (v.acceptance as string) ?? "" };
 }
 
+export function parseNativeCallReconcileRequest(value: unknown): NativeCallReconcileRequest {
+ if (!value || typeof value !== "object" || Array.isArray(value)) throw Error("invalid_request");
+ const v = value as Record<string, unknown>;
+ if (v.tokens !== undefined || v.acceptance !== undefined) throw Error("mixed_recovery_modes");
+ for (const key of ["actor", "note", "snapshot"]) if (v[key] !== undefined && typeof v[key] !== "string") throw Error("invalid_" + key);
+ return { calls: parseNativeCallRefs(v.calls), actor: (v.actor as string) ?? "", note: (v.note as string) ?? "", snapshot: (v.snapshot as string) ?? "" };
+}
+
 /** Conservative live-process negative control, never positive evidence from PID absence. */
 export async function recoveryProcessBlockers(pids: number[]): Promise<string[]> {
- if (process.platform !== "win32") throw Error("windows_maintenance_only");
+ if (pids.some(pid => !Number.isSafeInteger(pid) || pid <= 0)) throw Error("invalid_recorded_pid");
+ if (process.platform === "darwin") return recoveryProcessBlockersDarwin(pids);
+ if (process.platform !== "win32") throw Error("unsupported_platform_maintenance_only");
  const { stdout } = await promisify(execFile)("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", "$ErrorActionPreference='Stop'; @(Get-CimInstance Win32_Process | Select-Object ProcessId,Name) | ConvertTo-Json -Compress"], { timeout: 15_000, maxBuffer: 4 * 1024 * 1024, windowsHide: true });
  const rows: unknown = JSON.parse(stdout);
  if (!Array.isArray(rows)) throw Error("process_inventory_unavailable");
@@ -50,11 +63,13 @@ export async function runQuarantineRecovery(argv: string[]): Promise<number> {
  let database: Awaited<ReturnType<typeof openNodeSqliteDatabase>> | undefined;
  let harness: Harness | undefined;
  try {
-  const { values } = parseArgs({ args: argv, options: { database: { type: "string" }, request: { type: "string" }, apply: { type: "boolean" }, help: { type: "boolean" } } });
+  const { values } = parseArgs({ args: argv, options: { database: { type: "string" }, request: { type: "string" }, apply: { type: "boolean" }, help: { type: "boolean" }, "reconcile-native": { type: "boolean" } } });
   if (values.help) { console.log(USAGE); return 0; }
-  if (process.platform !== "win32") throw Error("windows_maintenance_only");
+  if (process.platform !== "win32" && process.platform !== "darwin") throw Error("unsupported_platform_maintenance_only");
   if (!values.database || !values.request || !existsSync(values.database)) throw Error("existing_database_and_request_required");
-  const request = parseAbandonRequest(JSON.parse(await readFile(values.request, "utf8")));
+  const contents: unknown = JSON.parse(await readFile(values.request, "utf8"));
+  const nativeRequest = values["reconcile-native"] ? parseNativeCallReconcileRequest(contents) : undefined;
+  const abandonRequest = nativeRequest ? undefined : parseAbandonRequest(contents);
   database = await openNodeSqliteDatabase(await realpath(values.database), { busyTimeoutMs: 100 });
   // The same connection keeps the exclusive lock until close, across all Harness transactions.
   // Failure means another reader/writer is alive: never retry, stop it, or repair behind its back.
@@ -62,6 +77,16 @@ export async function runQuarantineRecovery(argv: string[]): Promise<number> {
   await database.exec("BEGIN EXCLUSIVE; COMMIT;");
   harness = await Harness.open(await SqliteStorage.open(database), { registry: createRegistry(), models: createModels() }, context);
   // Deliberately never resume, openBot, load plugins, abort or wait for tasks.
+  if (nativeRequest) {
+   const plan = await planNativeCallReconciliation(harness, nativeRequest.calls, context);
+   const processBlockers = await recoveryProcessBlockers(plan.calls.flatMap(call => call.processes.flatMap(process => process.pid === null ? [] : [process.pid])));
+   if (!values.apply) { console.log(JSON.stringify({ ...plan, blockers: [...plan.blockers, ...processBlockers] })); return 0; }
+   if (processBlockers.length) { console.log(JSON.stringify({ status: "refused", error: "live_processes", blockers: processBlockers })); return 1; }
+   const result = await reconcileNativeCalls(harness, nativeRequest, context);
+   console.log(JSON.stringify(result));
+   return result.status === "reconciled" ? 0 : 1;
+  }
+  const request = abandonRequest!;
   const plan = await planQuarantineAbandonment(harness, request.tokens, context);
   const processBlockers = await recoveryProcessBlockers(plan.calls.flatMap(c => c.processes.flatMap(p => p.pid === null ? [] : [p.pid])));
   if (!values.apply) { console.log(JSON.stringify({ ...plan, blockers: [...plan.blockers, ...processBlockers], canonicalQuiescence: false })); return 0; }
