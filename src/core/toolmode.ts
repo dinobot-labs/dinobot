@@ -17,6 +17,7 @@ import { toolSearchExtension } from "../extensions/tool-search.ts";
 import type { LoadedPlugin, PluginTool } from "../plugins/types.ts";
 import { pluginResultContent } from "./plugin-content.ts";
 import { conversationChannel } from "./threads.ts";
+import { subagentStates } from "../extensions/plugin-hooks.ts";
 import { executeManagedEffect } from "./managed-effects.ts";
 import { compactSchema } from "./schema-compact.ts";
 import { admitUnknownNativeCall, settleExternalCall } from "./claim-cleanup.ts";
@@ -116,6 +117,8 @@ function directTool(tool: PluginTool, logins: ReadonlySet<string>, providerLogin
 			let channel: Promise<string | undefined> | undefined;
 			const call: PluginToolCall = {
 				...(context.abortSignal ? { signal: context.abortSignal } : {}),
+				conversationId: String(api.conversationId),
+				subagents: () => subagentStates(api, api.conversationId, context),
 				// Resolved on demand and at most once per call; most tools never ask.
 				channel: () => (channel ??= conversationChannel(api, api.conversationId, context)),
 				...(api.env?.cwd !== undefined ? { cwd: api.env.cwd } : {}),

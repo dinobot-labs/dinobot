@@ -22,6 +22,7 @@ has no built-in plugin, connect it through the `mcp` plugin or let the agent use
 | `mcp` | off (opt-in) | whatever each server needs, via `${VAR}` expansion | the MCP servers you configure | `mcp_<server>_<tool>` |
 | `computer` | off (opt-in) | none | `cua-driver` 0.34.0 (installed by `dinobot init`) | `computer_use` |
 | `browser` | off (opt-in) | none; dedicated mode keeps its own Chrome profile, attach mode uses the user's Chrome logins | an installed Chrome/Edge (not installed by dinobot); Patchright is a package dependency | `browser_use` |
+| `pm` | off (opt-in) | none | `git` on PATH when a ledger names a repo | `pm_create_ledger`, `pm_list_ledgers`, `pm_add_items`, `pm_transition`, `pm_run_check`, `pm_record_decision`, `pm_set_status`, `pm_status`, `pm_verify`, `pm_export_markdown` |
 
 To see what actually loaded, run `/plugins` (TUI or http channel). Each line is `<id>: <tool names>`. The serve log
 also prints a startup line `dinobot up: ... plugins=image_gen(1 tools),web(1 tools),skills(0 tools)`.
@@ -33,7 +34,7 @@ Source: src/manifest.ts (`parseManifest`), src/plugins/types.ts (`loadPlugin`).
 - **Tool names are `<pluginId>_<toolName>`.** Plugin and tool names must match `^[a-z][a-z0-9_]*$`. Codemode uses the
   same name, for example `tools.web_search({...})` or `tools.github_get_issue({...})`.
 - **Unknown ids are errors.** A key under `plugins:` that is not in the catalog fails boot with
-  `plugins.<id>: unknown plugin (available: aside, browser, computer, github, google, image_gen, mcp, skills, web)`. Only the catalog's own keys count,
+  `plugins.<id>: unknown plugin (available: aside, browser, computer, github, google, image_gen, mcp, pm, skills, web)`. Only the catalog's own keys count,
   so a name like `toString` is also an unknown plugin.
 - **Config is validated at boot.** Schema errors are reported as `plugins.<id>/<path>: <message>`. All manifest
   problems are collected and boot stops with `invalid manifest:` followed by the list.
@@ -444,6 +445,33 @@ plugins:
 ```
 
 Setup: run `dinobot init` (or `dinobot init --check` to verify), add `computer: {}`, then restart the daemon.
+
+## `pm`: mechanically checked project ledger for long multi-worker work (opt-in)
+
+Source: src/plugins/pm/, src/extensions/plugin-hooks.ts, openwiki/architecture/pm.md, openwiki/decisions/0105-pm-ledger-plugin.md.
+
+```yaml
+plugins:
+  pm: {}              # ledgers live in <dataDir>/pm
+  # pm: { root: /srv/dinobot/pm }
+```
+
+- `root` (optional): directory of the ledger files. Default `<dataDir>/pm`, outside every workspace. Each ledger is a
+  hash-chained event list; a hand edit is detected on load (the chain is unkeyed, so it does not stop deliberate forgery).
+- The conversation that calls `pm_create_ledger` owns the ledger. Only it may change items; workers (subagents) report and
+  the PM conversation records.
+- Rules checked by code, not by the model: `doing` needs a running subagent `taskId` as worker, finished dependencies and a
+  free WIP slot; `review`/`done` need a commit that exists in the ledger's `repo` and a settled worker; `done` also needs
+  the commit reachable from `integrationRef` and a passing `pm_run_check` of every required check on exactly that commit.
+  `pm_run_check` refuses a work tree that is not at the commit or has tracked changes, and fails a run if the tree changes.
+  A check runs for at most its `timeoutSec` (default and maximum 900 s, so it fits one codemode cell); a codemode cell
+  that calls `pm_run_check` waits for it instead of the usual 60 s.
+- Turn-end hook: when the owner conversation ends a turn, the host continues it (at most 3 times per human input, never
+  after a continued turn without a tool call) while a finished worker is unrecorded, a `doing` item has no live worker,
+  ready items wait with WIP capacity free, or every item is final but the ledger is still active. `pm_set_status paused`
+  with a reason stops the dispatch rule on purpose.
+- `pm_status` gives counts, the ready frontier, the critical path and an ETA from recorded timestamps. `pm_export_markdown`
+  writes a read-only Markdown view for people.
 
 ## `skills`: skill source importer (always on)
 

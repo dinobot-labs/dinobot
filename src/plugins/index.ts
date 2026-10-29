@@ -6,6 +6,7 @@ import { githubPlugin } from "./github/index.ts";
 import { googlePlugin } from "./google/index.ts";
 import { imageGenPlugin } from "./image_gen/index.ts";
 import { mcpPlugin } from "./mcp/index.ts";
+import { pmPlugin } from "./pm/index.ts";
 import { skillsPlugin } from "./skills/index.ts";
 import { webPlugin } from "./web/index.ts";
 
@@ -18,6 +19,7 @@ export const pluginCatalog: Readonly<Record<string, Plugin>> = {
 	[googlePlugin.id]: googlePlugin,
 	[imageGenPlugin.id]: imageGenPlugin,
 	[mcpPlugin.id]: mcpPlugin,
+	[pmPlugin.id]: pmPlugin,
 	[skillsPlugin.id]: skillsPlugin,
 	[webPlugin.id]: webPlugin,
 };

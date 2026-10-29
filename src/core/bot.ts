@@ -40,6 +40,7 @@ import { sessionsExtension } from "../extensions/sessions.ts";
 import { skillsExtension } from "../extensions/skills.ts";
 import { type AgentDefinition, subagentsExtension, type SubagentSpawner, type WakeDeliver, WakeDoc } from "../extensions/subagents.ts";
 import { livenessExtension } from "../extensions/liveness.ts";
+import { pluginHooksExtension } from "../extensions/plugin-hooks.ts";
 import { todoExtension } from "../extensions/todo.ts";
 import { verificationExtension } from "../extensions/verification.ts";
 import type { LoadedPlugin } from "../plugins/types.ts";
@@ -444,6 +445,11 @@ export async function openBot(options: BotOptions, context: Context): Promise<Bo
 	registry.install(verificationExtension(work, plugins.flatMap((plugin) =>
 		plugin.tools.filter((tool) => tool.readOnly !== true).map((tool) => tool.name),
 	), onOutcome));
+	// Plugin turn-end checks (ADR 0105) run before the goal liveness hook: a mechanical ledger finding is more specific.
+	registry.install(pluginHooksExtension(() => {
+		if (!openedHarness) throw new Error("Bot harness is not open");
+		return openedHarness;
+	}, plugins, (error) => console.error("plugin onTurnEnd failed:", error instanceof Error ? error.message : error)));
 	// Last onYield hook (ADR 0096): the first continuation wins, so every arming hook above runs before it decides.
 	registry.install(livenessExtension(() => {
 		if (!openedHarness) throw new Error("Bot harness is not open");

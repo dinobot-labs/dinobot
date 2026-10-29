@@ -26,8 +26,36 @@ export class PluginContent {
  */
 export type ProviderLogin = { readonly apiKey: string; readonly baseUrl?: string };
 
+/** One subagent a conversation started, as the host's committed records show it. */
+export type PluginSubagent = {
+	/** Handle the model uses for `task_output` / `kill_task`. */
+	readonly taskId: string;
+	readonly status: "running" | "completed" | "failed" | "cancelled";
+	readonly description: string;
+	readonly background: boolean;
+};
+
+/**
+ * What the host tells a plugin's {@link PluginInstance.onTurnEnd} hook when a top-level conversation is about to end its
+ * turn with a final answer. Every field comes from committed host records, never from the model.
+ */
+export type PluginTurnEnd = {
+	readonly conversationId: string;
+	readonly cwd?: string;
+	/** Every subagent the conversation started, finished ones included. */
+	readonly subagents: readonly PluginSubagent[];
+	/** Questions to the human that are still open; their answer re-enters the conversation by itself. */
+	readonly openHumanAsks: number;
+	/** DAG runs still running; their settlement re-enters the conversation by itself. */
+	readonly runningDagRuns: number;
+};
+
 /** What the host tells a tool about the call. */
 export type PluginToolCall = {
+	/** The calling conversation's durable id. Undefined when the host cannot attribute the call (tests, embedding). */
+	readonly conversationId?: string;
+	/** The subagents the calling conversation started, read from committed host records on demand. */
+	readonly subagents?: () => Promise<readonly PluginSubagent[]>;
 	/** Host-generated one-use intent identity; never a model argument. */
 	readonly effectId?: string;
 	readonly signal?: AbortSignal;
@@ -137,6 +165,12 @@ export type PluginInstance = {
 	readonly skillPackages?: readonly SkillPackage[];
 	/** Host-owned files the plugin keeps (credentials); the agent's file and shell tools may not touch them. */
 	readonly storagePaths?: readonly string[];
+	/**
+	 * Mechanical check run when a top-level conversation ends its turn with a final answer. Return text to continue the
+	 * run with that text as a host message (bounded by the host per human input), or undefined to let the turn end.
+	 * Throwing lets the turn end; the host reports the error.
+	 */
+	onTurnEnd?(turn: PluginTurnEnd): Promise<string | undefined>;
 	close?(): Promise<void>;
 };
 
@@ -173,6 +207,7 @@ export type LoadedPlugin = {
 	readonly storagePaths?: readonly string[];
 	/** The plugin's declared `providerLogins`; the host resolves only these for its tools. */
 	readonly providerLogins?: readonly string[];
+	onTurnEnd?(turn: PluginTurnEnd): Promise<string | undefined>;
 	close?(): Promise<void>;
 };
 
@@ -217,6 +252,7 @@ export async function loadPlugin(plugin: Plugin, rawConfig: unknown, host: Plugi
 		...(instance.skillPackages !== undefined ? { skillPackages: instance.skillPackages } : {}),
 		...(instance.storagePaths !== undefined ? { storagePaths: instance.storagePaths } : {}),
 		...(plugin.providerLogins?.length ? { providerLogins: Object.freeze([...plugin.providerLogins]) } : {}),
+		...(instance.onTurnEnd !== undefined ? { onTurnEnd: instance.onTurnEnd.bind(instance) } : {}),
 		...(instance.close !== undefined ? { close: instance.close.bind(instance) } : {}),
 	};
 }
