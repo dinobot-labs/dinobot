@@ -34,7 +34,37 @@ export type PlanNode = {
 	cost?: number;
 	route?: string;
 	repair?: { predecessorId: string; maxRepairs: number };
+	/**
+	 * expand nodes only: a statically checked spawn template. The node runs read-only and answers how many instances of
+	 * the template to create (at most `max`); the host inserts them between this node and its children.
+	 */
+	spawn?: SpawnTemplate;
+	/** Host-set on spawned instances: the expand node that created this node. Never accepted from a model plan. */
+	origin?: string;
 };
+
+/**
+ * Spawn template θ = ⟨kind, description, reads, writes, cost, max, depth, recursive⟩. The template's reads/writes are the
+ * envelope every instance must stay inside; the compiler checks the plan with one placeholder node per unexpanded
+ * template (worst case envelope), so every static guarantee holds before anything is spawned.
+ */
+export type SpawnTemplate = {
+	template: { kind: "act" | "delegate"; description?: string; reads?: string[]; writes?: string[]; cost?: number };
+	/** n_θ: instances per expansion, 1..SPAWN_MAX_FANOUT. */
+	max: number;
+	/** d_θ: recursion depth budget, 1..SPAWN_MAX_DEPTH (default 1). An instance may itself expand only while depth > 1. */
+	depth?: number;
+};
+
+export const SPAWN_MAX_FANOUT = 16;
+export const SPAWN_MAX_DEPTH = 3;
+/** Hard cap on plan nodes including spawned instances; the schema separately caps a submitted plan at 256. */
+export const MAX_PLAN_NODES = 1024;
+
+/** Id of the compile-time placeholder that stands for every instance of an unexpanded template. */
+export function envelopeId(id: string): string {
+	return `${id}/*`;
+}
 
 export type Plan = {
 	nodes: PlanNode[];
@@ -46,7 +76,7 @@ export type Plan = {
 };
 
 export type CheckName = "shape" | "acyclic" | "closure" | "coverage" | "race" | "verify-dominance" | "authority"
-	| "certifying-dominance" | "pre-effect-verification" | "producer-order";
+	| "certifying-dominance" | "pre-effect-verification" | "producer-order" | "spawn";
 
 export type Diagnostic = { check: CheckName; message: string; nodes: string[] };
 
@@ -96,7 +126,93 @@ function normalizeScope(scope: string): string {
 	return s === "." ? "" : s;
 }
 
+/** `inner` lies inside `outer` (equal or contained). */
+export function scopeWithin(inner: string, outer: string): boolean {
+	const x = normalizeScope(inner);
+	const y = normalizeScope(outer);
+	return y === "" || x === y || x.startsWith(`${y}/`);
+}
+
+/** True when some node was spawned by `id`. */
+export function expanded(plan: Plan, id: string): boolean {
+	return plan.nodes.some((n) => n.origin === id);
+}
+
+/**
+ * T1–T3: template shape. Spawned work is bounded (fan-out, depth, total nodes), reversible (no irreversible, ask,
+ * verify or repair instances, so authority and certification stay static), and the expanding node itself writes
+ * nothing. Instances must name their spawner, live under its id and be its children.
+ */
+function spawnDiagnostics(plan: Plan): Diagnostic[] {
+	const out: Diagnostic[] = [];
+	const byId = new Map(plan.nodes.map((n) => [n.id, n]));
+	if (plan.nodes.length > MAX_PLAN_NODES) out.push({ check: "spawn", message: `plan has ${plan.nodes.length} nodes; at most ${MAX_PLAN_NODES} including spawned instances`, nodes: [] });
+	for (const node of plan.nodes) {
+		const s = node.spawn;
+		if (s) {
+			const bad = (why: string) => out.push({ check: "spawn", message: `spawn template of "${node.id}": ${why}`, nodes: [node.id] });
+			if (node.kind !== "expand") bad("only expand nodes may spawn");
+			if (node.writes?.length) bad("an expanding node plans read-only; declare writes on the template");
+			if (node.irreversible || node.repair || node.covers?.length) bad("an expanding node cannot be irreversible, repaired or cover requirements");
+			if (!Number.isInteger(s.max) || s.max < 1 || s.max > SPAWN_MAX_FANOUT) bad(`max must be an integer in 1..${SPAWN_MAX_FANOUT}`);
+			if (s.depth !== undefined && (!Number.isInteger(s.depth) || s.depth < 1 || s.depth > SPAWN_MAX_DEPTH)) bad(`depth must be an integer in 1..${SPAWN_MAX_DEPTH}`);
+			const t = s.template as Record<string, unknown> | undefined;
+			if (!t || (t.kind !== "act" && t.kind !== "delegate")) bad("template kind must be act or delegate");
+			else {
+				const extra = Object.keys(t).filter((k) => !["kind", "description", "reads", "writes", "cost"].includes(k));
+				if (extra.length) bad(`template cannot declare ${extra.join(", ")}`);
+				if (s.template.cost !== undefined && !(s.template.cost >= 0 && Number.isFinite(s.template.cost))) bad("template has an invalid cost");
+			}
+		}
+		if (node.origin !== undefined) {
+			const origin = byId.get(node.origin);
+			if (!origin?.spawn || !node.id.startsWith(`${node.origin}/`) || !plan.edges.some(([a, b]) => a === node.origin && b === node.id)) {
+				out.push({ check: "spawn", message: `instance "${node.id}" does not follow its spawner "${node.origin}"`, nodes: [node.id] });
+			}
+		} else {
+			const slash = node.id.lastIndexOf("/");
+			for (let cut = slash; cut > 0; cut = node.id.lastIndexOf("/", cut - 1)) {
+				if (byId.get(node.id.slice(0, cut))?.spawn) { out.push({ check: "spawn", message: `node id "${node.id}" is reserved for instances spawned by "${node.id.slice(0, cut)}"`, nodes: [node.id] }); break; }
+			}
+		}
+	}
+	return out;
+}
+
+/**
+ * The worst-case plan: every unexpanded template becomes one placeholder node between its spawner and the spawner's
+ * children, with the full envelope. An instance has exactly the spawner's ancestors plus the spawner, and the
+ * spawner's descendants, so it is unordered with exactly the nodes the placeholder is unordered with; its scopes lie
+ * inside the envelope. Race freedom, authority and the dominance checks of this plan therefore bound every
+ * instantiation up to scope narrowing, which the full recompile at spawn time (R5) re-checks exactly.
+ */
+function envelopePlan(plan: Plan): Plan | undefined {
+	const open = plan.nodes.filter((n) => n.spawn && !expanded(plan, n.id));
+	if (!open.length) return undefined;
+	const nodes = [...plan.nodes];
+	const edges = [...plan.edges];
+	for (const node of open) {
+		const t = node.spawn!.template;
+		const id = envelopeId(node.id);
+		nodes.push({ id, kind: t.kind, ...(t.reads ? { reads: t.reads } : {}), ...(t.writes ? { writes: t.writes } : {}) });
+		edges.push([node.id, id]);
+		for (const [from, to] of plan.edges) if (from === node.id) edges.push([id, to]);
+	}
+	return { ...plan, nodes, edges };
+}
+
 export function compilePlan(plan: Plan): CompileResult {
+	const spawn = spawnDiagnostics(plan);
+	if (spawn.length) return { ok: false, diagnostics: spawn };
+	const envelope = envelopePlan(plan);
+	if (envelope) {
+		const worst = compileCore(envelope);
+		if (!worst.ok) return { ok: false, diagnostics: worst.diagnostics.map((d) => ({ ...d, message: `${d.message} (spawn envelope)` })) };
+	}
+	return compileCore(plan);
+}
+
+function compileCore(plan: Plan): CompileResult {
 	const diagnostics: Diagnostic[] = [];
 	const byId = new Map<string, PlanNode>();
 	for (const node of plan.nodes) {
@@ -328,6 +444,9 @@ export function nodeKey(node: PlanNode, parentKeys: readonly string[], factIds: 
 		covers: [...(node.covers ?? [])].sort(),
 		irreversible: node.irreversible ?? false,
 		route: node.route ?? null,
+		// Only spawning nodes and instances add fields, so keys of plans without spawn are unchanged.
+		...(node.spawn ? { spawn: node.spawn } : {}),
+		...(node.origin !== undefined ? { origin: node.origin } : {}),
 	};
 	return createHash("sha256")
 		.update(JSON.stringify([node.id, contract, [...parentKeys].sort(), [...factIds].sort()]))

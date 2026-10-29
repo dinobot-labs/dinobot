@@ -9,7 +9,7 @@ import {
 } from "../core/dag.ts";
 import { dagAnswerScope, dagDisplayInputs, selectAnswerDag, terminalDag } from "../core/dag-scope.ts";
 import { dagPrompt } from "../core/dag-verification.ts";
-import type { Plan, PlanNode } from "../core/plan.ts";
+import { MAX_PLAN_NODES, type Plan, type PlanNode, SPAWN_MAX_DEPTH, SPAWN_MAX_FANOUT } from "../core/plan.ts";
 import { WorkDoc, syncGoalHeadTx, assertGoalAdmissionTx, type WorkService } from "../core/verification.ts";
 import { clone } from "../core/json.ts";
 import { cleanupOwnerClaimsTx } from "../core/claim-cleanup.ts";
@@ -37,6 +37,16 @@ const planSchema = Type.Object({
 		covers: Type.Optional(Type.Array(Type.String({ minLength: 1 }))), irreversible: Type.Optional(Type.Boolean()),
 		repair: Type.Optional(Type.Object({ predecessorId: Type.String({ minLength: 1 }), maxRepairs: Type.Integer({ minimum: 0, maximum: 2 }) }, { additionalProperties: false })),
 		cost: Type.Optional(Type.Number({ minimum: 0 })), route: Type.Optional(Type.String({ description: "Subagent model: provider/modelId, a bare modelId (orchestrator's provider) or inherit; omit to inherit the orchestrator's model at dispatch. Unknown models are rejected; accepted routes are pinned to provider/modelId at admission." })),
+		spawn: Type.Optional(Type.Object({
+			template: Type.Object({
+				kind: Type.Union([Type.Literal("act"), Type.Literal("delegate")]),
+				description: Type.Optional(Type.String({ maxLength: 4000 })),
+				reads: Type.Optional(Type.Array(Type.String({ minLength: 1 }))), writes: Type.Optional(Type.Array(Type.String({ minLength: 1 }))),
+				cost: Type.Optional(Type.Number({ minimum: 0 })),
+			}, { additionalProperties: false }),
+			max: Type.Integer({ minimum: 1, maximum: SPAWN_MAX_FANOUT }),
+			depth: Type.Optional(Type.Integer({ minimum: 1, maximum: SPAWN_MAX_DEPTH })),
+		}, { additionalProperties: false, description: "expand nodes only: the node plans read-only and the host spawns 1..max instances of the template (reads/writes = envelope) between it and its children; depth>1 lets instances expand again." })),
 	}, { additionalProperties: false }), { maxItems: 256 }),
 	edges: Type.Array(Type.Array(Type.String(), { minItems: 2, maxItems: 2 }), { maxItems: 4096 }),
 	goal: Type.Object({ requirements: Type.Array(Type.String({ minLength: 1 }), { minItems: 1 }) }, { additionalProperties: false }),
@@ -443,6 +453,7 @@ export function dagExtension(work: WorkService, spawner: { current?: SubagentSpa
 				"DAG orchestration (ADR 0030): use DAG for multi-step work. dag_run compiles a finite plan (acyclic, closure, coverage, Bernstein race freedom, verify dominance, certifying dominance, pre-effect verification, producer order, authority). dag_step settles children and dispatches ready nodes as subagents or registered work checks. Answer open asks then step again. Research-owned runs are controlled only through research_status/research_cancel, never generic DAG mutations.",
 				"A requirement is certified by any passing verify node that covers it, so give every effect (writes or irreversible) a requirement that only verify nodes after it cover, put a verify node that reads each upstream write between it and any irreversible node, and declare post req:<id> on the node that establishes a requirement (its verifiers must run after it). An ask node opens an ask record when dispatched: with irreversible descendants it is a human authority ask (relay it, then answer approve or deny with the human's quote); otherwise it is your own decision (answer it yourself). Step again after answering.",
 				"For complex or long-running work, decompose as finely as practical into small independently verifiable units, each with explicit scope, dependencies and completion criteria. Separate implementation act/delegate nodes from read-only verify nodes for each meaningful unit; connect implementation -> verification -> dependent work so consumers use verified results. Do not defer all validation to one final mega-step; retain final integration verification as well. Avoid meaningless overfragmentation and obey finite node limits (at most 256 nodes per plan).",
+				`When the number of parallel parts is only known at run time, give an expand node a spawn template {template:{kind, reads, writes}, max, depth}: it plans read-only, the host spawns 1..max instances (at most ${SPAWN_MAX_FANOUT} each, depth ${SPAWN_MAX_DEPTH}, ${MAX_PLAN_NODES} nodes per run) inside the template's reads/writes between it and its children and re-checks the whole plan; the compiler checks the envelope first, so the expand node's children must include a verify that reads the template's writes. Each expansion appears as one bounded receipt line.`,
 				"Contracts use file/check/fact/node/req predicates; natural language belongs in description. Declare reads/writes scopes. Irreversible actions need an ask ancestor. Replan with dag_run({plan, run_id}) only by extending the goal within the finite budget.",
 				"Terminal DAG history is queryable with dag_status({run_id}) and is not the status of a later unrelated input. Do not prepend historical cancellation/completion warnings to an ordinary answer or treat model prose as a completion receipt.",
 				...(run && !historical ? [`${run.id === doc?.activeId ? "Active run:" : "Current input run (inactive; use explicit run_id):"}\n${summarize(run)}`] : []),
@@ -549,7 +560,7 @@ export function dagExtension(work: WorkService, spawner: { current?: SubagentSpa
 							return;
 						}
 						if (!spawner.current) throw new Error("subagent spawner is unavailable");
-						await spawner.current.spawn({ description: `${runId}:${id}`, prompt, subagentType: node.kind === "verify" ? "explore" : "general-purpose", background: true, owner: "dag", ...(node.route ? { model: node.route } : {}), key: `${runId}:${id}:${current.nodes[id]!.key}:${current.nodes[id]!.runs + 1}:${current.nodes[id]!.generation ?? 0}:${current.revision}` }, { ...api, commit: (change, c) => api.commit(async tx => {
+						await spawner.current.spawn({ description: `${runId}:${id}`, prompt, subagentType: node.kind === "verify" || node.spawn ? "explore" : "general-purpose", background: true, owner: "dag", ...(node.route ? { model: node.route } : {}), key: `${runId}:${id}:${current.nodes[id]!.key}:${current.nodes[id]!.runs + 1}:${current.nodes[id]!.generation ?? 0}:${current.revision}` }, { ...api, commit: (change, c) => api.commit(async tx => {
 							const r = (await tx.doc(RunDoc, api.conversationId)).runs.find(x => x.id === runId)!;
 							await assertDagGoalTx(tx,api.conversationId,r);
                             if (!frontier(r).includes(id) || r.nodes[id]!.key !== current.nodes[id]!.key) {

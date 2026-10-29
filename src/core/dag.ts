@@ -1,7 +1,7 @@
 import { readVerdict } from "./dag-verification.ts";
 import { createHash } from "node:crypto";
 import { defineDoc } from "@earendil-works/pi-durable";
-import { type CompiledPlan, compilePlan, type Diagnostic, descendants, nodeKey, type Plan, type PlanNode, readyNodes } from "./plan.ts";
+import { type CompiledPlan, compilePlan, type Diagnostic, descendants, MAX_PLAN_NODES, nodeKey, type Plan, type PlanNode, readyNodes, scopeWithin } from "./plan.ts";
 
 /**
  * Durable DAG run state and its pure transition functions (ADR 0030).
@@ -33,6 +33,8 @@ export type NodeRun = {
 	pendingRepair?: { key: string; attempt: number; generation: number; result: string };
 	/** Why the previous verifier attempt delivered no readable verdict; shown to the next attempt, cleared on success. */
 	protocolFeedback?: string;
+	/** Why the previous instantiation of this node's spawn template was rejected; shown to the next attempt. */
+	spawnFeedback?: string;
 	/** Host-accepted receipt, bound to this exact node key and attempt. */
 	receipt?: { id: string; key: string; attempt: number };
 	/** Content key of the current attempt: contract, parent keys and facts read. */
@@ -84,6 +86,10 @@ export type RunState = {
 	replanBudget: number;
 	/** History of Φ = [budget, |unmet|] for auditing the progress proof. */
 	potential: [number, number][];
+	/** Instances ever spawned in this run; never reset by replan or re-expansion, so spawn credit only decreases. */
+	spawned?: number;
+	/** History of Φ' = [spawn credit, budget, |unmet|] at each expansion. */
+	spawnPotential?: [number, number, number][];
 	reason?: string;
 	createdAt: number;
 	updatedAt: number;
@@ -139,6 +145,120 @@ export function potential(run: RunState): [number, number] {
 /** a < b in the lexicographic well-order on ℕ². */
 export function lessThan(a: readonly [number, number], b: readonly [number, number]): boolean {
 	return a[0] < b[0] || (a[0] === b[0] && a[1] < b[1]);
+}
+
+/** Instances one run may spawn in its lifetime, across all expansions, re-expansions and replans. */
+export const SPAWN_CREDIT = 768;
+/** Byte bound of the settlement receipt the orchestrator sees for one expansion, whatever its size. */
+export const KAPPA = 512;
+
+/**
+ * Φ' = (spawn credit, replan budget, |unmet|) on ℕ³, lexicographic. An expansion lowers the credit by n ≥ 1 and leaves
+ * the budget; a replan lowers the budget and leaves the credit (carried instances were already paid for). Both are
+ * strict decreases, so a run admits finitely many expansions and replans; with MAX_NODE_ATTEMPTS per key this bounds
+ * dispatches for fixed facts, as before.
+ */
+export function spawnPotential(run: RunState): [number, number, number] {
+	return [SPAWN_CREDIT - (run.spawned ?? 0), run.replanBudget, unmet(run).length];
+}
+
+function lessThan3(a: readonly number[], b: readonly number[]): boolean {
+	for (let i = 0; i < 3; i++) if (a[i] !== b[i]) return a[i]! < b[i]!;
+	return false;
+}
+
+/** Spawned descendants of `id` (its instances and, recursively, theirs). */
+export function instancesOf(plan: Plan, id: string): string[] {
+	const out: string[] = [];
+	const stack = [id];
+	while (stack.length) {
+		const cur = stack.pop()!;
+		for (const n of plan.nodes) if (n.origin === cur) { out.push(n.id); stack.push(n.id); }
+	}
+	return out;
+}
+
+type Instance = { description: string; reads?: string[]; writes?: string[]; expand?: boolean };
+
+/** Parse the planner's answer: exactly one JSON object {"instances":[...]}, optionally in one code fence. */
+function readInstances(result: string): Instance[] | string {
+	let body = result.trim();
+	const fence = /^```(?:json)?\s*\n([\s\S]*?)\n```$/.exec(body);
+	if (fence) body = fence[1]!.trim();
+	let value: unknown;
+	try { value = JSON.parse(body); } catch { return "answer is not one JSON object"; }
+	if (!value || typeof value !== "object" || Array.isArray(value)) return "answer is not one JSON object";
+	const keys = Object.keys(value);
+	if (keys.length !== 1 || keys[0] !== "instances" || !Array.isArray((value as { instances: unknown }).instances)) return "answer must be {\"instances\":[...]} and nothing else";
+	const out: Instance[] = [];
+	for (const [i, raw] of ((value as { instances: unknown[] }).instances).entries()) {
+		if (!raw || typeof raw !== "object" || Array.isArray(raw)) return `instance ${i} is not an object`;
+		const o = raw as Record<string, unknown>;
+		const extra = Object.keys(o).filter((k) => !["description", "reads", "writes", "expand"].includes(k));
+		if (extra.length) return `instance ${i} has unknown field(s) ${extra.join(", ")}`;
+		if (typeof o.description !== "string" || !o.description.trim() || o.description.length > 4000) return `instance ${i} needs a nonempty description of at most 4000 characters`;
+		const list = (k: "reads" | "writes") => o[k] === undefined || (Array.isArray(o[k]) && (o[k] as unknown[]).every((s) => typeof s === "string" && s.length > 0));
+		if (!list("reads") || !list("writes")) return `instance ${i} reads/writes must be arrays of nonempty strings`;
+		if (o.expand !== undefined && typeof o.expand !== "boolean") return `instance ${i} expand must be a boolean`;
+		out.push({ description: o.description, ...(o.reads ? { reads: o.reads as string[] } : {}), ...(o.writes ? { writes: o.writes as string[] } : {}), ...(o.expand ? { expand: true } : {}) });
+	}
+	return out;
+}
+
+/**
+ * The spawn transition of expand node `id` with answer `result` (runtime checks R1–R5). R1 1 ≤ n ≤ max; R2 each
+ * instance's scopes lie inside the template envelope; R3 an instance expands again only while depth > 1, with its own
+ * narrowed scopes as the envelope; R4 spawn credit and the total node cap; R5 the instantiated plan passes every
+ * static check. On success the run's plan holds instances `id/0..n-1` between `id` and its children (any previous
+ * expansion of `id` is replaced) and Φ' strictly decreased. Returns the rejection and whether it is deterministic.
+ */
+function instantiate(run: RunState, id: string, result: string): { error: string; final: boolean } | undefined {
+	const node = nodeOf(run, id);
+	const spawn = node.spawn!;
+	const parsed = readInstances(result);
+	if (typeof parsed === "string") return { error: parsed, final: false };
+	const n = parsed.length;
+	if (n < 1 || n > spawn.max) return { error: `R1: ${n} instance(s); the template allows 1..${spawn.max}`, final: false };
+	const t = spawn.template;
+	const depth = spawn.depth ?? 1;
+	for (const [i, inst] of parsed.entries()) {
+		for (const k of ["reads", "writes"] as const) {
+			const outside = (inst[k] ?? []).filter((s) => !(t[k] ?? []).some((e) => scopeWithin(s, e)));
+			if (outside.length) return { error: `R2: instance ${i} ${k} ${outside.join(", ")} outside the template envelope [${(t[k] ?? []).join(", ")}]`, final: false };
+		}
+		if (inst.expand && depth <= 1) return { error: `R3: instance ${i} cannot expand again: depth budget exhausted`, final: false };
+	}
+	const old = new Set(instancesOf(run.plan, id));
+	const spent = run.spawned ?? 0;
+	if (spent + n > SPAWN_CREDIT) return { error: `R4: spawn credit exhausted (${spent}/${SPAWN_CREDIT} used, ${n} requested)`, final: true };
+	if (run.plan.nodes.length - old.size + n > MAX_PLAN_NODES) return { error: `R4: ${n} instance(s) would exceed ${MAX_PLAN_NODES} plan nodes`, final: true };
+	const kept = run.plan.nodes.filter((p) => !old.has(p.id));
+	const children = run.plan.edges.filter(([a, b]) => a === id && !old.has(b)).map(([, b]) => b);
+	const made: PlanNode[] = parsed.map((inst, k) => {
+		const reads = inst.reads ?? t.reads;
+		const writes = inst.writes ?? t.writes;
+		const base = { id: `${id}/${k}`, origin: id, description: inst.description, ...(t.cost !== undefined ? { cost: t.cost } : {}), ...(node.route ? { route: node.route } : {}) };
+		return inst.expand
+			? { ...base, kind: "expand" as const, ...(reads ? { reads } : {}), spawn: { template: { ...t, ...(reads ? { reads } : {}), ...(writes ? { writes } : {}) }, max: spawn.max, depth: depth - 1 } }
+			: { ...base, kind: t.kind, ...(reads ? { reads } : {}), ...(writes ? { writes } : {}) };
+	});
+	const plan: Plan = {
+		...run.plan,
+		nodes: [...kept, ...made],
+		edges: [...run.plan.edges.filter(([a, b]) => !old.has(a) && !old.has(b)), ...made.flatMap((m) => [[id, m.id] as [string, string], ...children.map((c) => [m.id, c] as [string, string])])],
+	};
+	const compiled = compilePlan(plan);
+	if (!compiled.ok) return { error: `R5: instantiated plan does not compile: ${compiled.diagnostics.map((d) => `${d.check}: ${d.message}`).join("; ").slice(0, 2000)}`, final: false };
+	const before = spawnPotential(run);
+	run.plan = plan;
+	run.compiled = compiled.compiled;
+	for (const o of old) delete run.nodes[o];
+	for (const m of made) run.nodes[m.id] = { status: "pending", attempt: 0, facts: [], runs: 0 };
+	run.spawned = spent + n;
+	const after = spawnPotential(run);
+	if (!lessThan3(after, before)) throw new Error(`spawn potential did not decrease: ${before} → ${after}`);
+	(run.spawnPotential ??= []).push(after);
+	return undefined;
 }
 
 export function createRun(id: string, plan: Plan, now: number, replanBudget = DEFAULT_REPLAN_BUDGET, owner?: RunState["owner"]): RunState {
@@ -284,6 +404,12 @@ export function frontier(run: RunState): string[] {
 	const succeeded = new Set(Object.entries(run.nodes).filter(([, s]) => s.status === "succeeded").map(([id]) => id));
 	const blocked = new Set(Object.entries(run.nodes).filter(([, s]) => s.status === "running" || s.status === "waiting" || s.status === "failed" || s.status === "skipped").map(([id]) => id));
 	for (const node of run.plan.nodes) if (!run.owner && node.kind === "verify" && (node.covers ?? []).some(req => run.rejectedArtifacts?.includes(artifactBinding(run,node.id,[req])))) blocked.add(node.id);
+	// A re-expansion replaces the previous instances; it waits until none of them is executing.
+	const origin = new Map(run.plan.nodes.flatMap((n) => n.origin !== undefined ? [[n.id, n.origin] as const] : []));
+	if (origin.size) for (const [id, s] of Object.entries(run.nodes)) {
+		if (s.status !== "running" && s.status !== "waiting") continue;
+		for (let up = origin.get(id); up !== undefined; up = origin.get(up)) blocked.add(up);
+	}
 	return readyNodes(run.compiled, succeeded, blocked);
 }
 
@@ -358,6 +484,19 @@ export function succeed(run: RunState, id: string, result: string, now: number, 
 		}
 		run.nodes[id]!.proof = { key: currentKey(run, id), attempt: run.nodes[id]!.attempt };
 		delete run.nodes[id]!.protocolFeedback;
+	}
+	if (nodeOf(run, id).spawn) {
+		const rejected = instantiate(run, id, result);
+		const state = run.nodes[id]!;
+		if (rejected) {
+			state.spawnFeedback = rejected.error.slice(0, 2000);
+			fail(run, id, `spawn rejected: ${rejected.error}`, now);
+			// Credit and node cap do not change by retrying the planner.
+			if (rejected.final && state.status === "pending") { state.status = "failed"; settle(run, now); }
+			if (!deferRepair) settleRepairs(run, now);
+			return;
+		}
+		delete state.spawnFeedback;
 	}
 	completeNode(run, id, result, now);
 	if (!deferRepair) settleRepairs(run, now);
@@ -572,10 +711,13 @@ export function replan(run: RunState, plan: Plan, now: number): ReplanResult {
 	if (!firstCompile && run.replanBudget <= 0) return { ok: false, reason: "replan budget exhausted" };
 	const removed = run.plan.goal.requirements.filter((req) => !plan.goal.requirements.includes(req));
 	if (removed.length) return { ok: false, reason: `goal is not monotone; removed requirements: ${removed.join(", ")}` };
+	if (plan.nodes.some((n) => n.origin !== undefined)) return { ok: false, reason: "spawned instances are host-owned; submit the plan without them" };
+	const carried = firstCompile ? { plan, reset: [] } : carryExpansions(run, plan);
+	plan = carried.plan;
 	const compiled = compilePlan(plan);
 	if (!compiled.ok) return { ok: false, reason: "plan does not compile", diagnostics: compiled.diagnostics };
 	const draft: RunState = JSON.parse(JSON.stringify(run));
-	const invalidated = firstCompile ? compileFirst(draft, plan, now) : applyReplan(draft, plan, compiled.compiled, now);
+	const invalidated = firstCompile ? compileFirst(draft, plan, now) : applyReplan(draft, plan, compiled.compiled, now, carried.reset);
 	const dead = deadRequirements(draft);
 	if (dead.length) {
 		return { ok: false, reason: `replan leaves requirement(s) no verifier can ever certify: ${describeDead(dead)}. Add or re-run an ancestor that declares writes and changes the artifact, or replace the failed verification` };
@@ -583,6 +725,29 @@ export function replan(run: RunState, plan: Plan, now: number): ReplanResult {
 	for (const key of Object.keys(run)) if (!(key in draft)) delete (run as Record<string, unknown>)[key];
 	Object.assign(run, draft);
 	return { ok: true, invalidated };
+}
+
+/**
+ * C1: a replan keeps an expansion only when its spawner keeps the same template and the same children, so every carried
+ * instance still sits where its checks put it; carried instances are not charged again. Any other expansion is dropped
+ * and a succeeded spawner is reset to plan again (C2: dropping never refunds spawn credit).
+ */
+function carryExpansions(run: RunState, plan: Plan): { plan: Plan; reset: string[] } {
+	const spawners = run.plan.nodes.filter((n) => n.spawn && n.origin === undefined && instancesOf(run.plan, n.id).length);
+	if (!spawners.length) return { plan, reset: [] };
+	const nodes = [...plan.nodes];
+	const edges = [...plan.edges];
+	const reset: string[] = [];
+	const childSet = (p: Plan, id: string) => JSON.stringify(p.edges.filter(([a, b]) => a === id && p.nodes.find((x) => x.id === b)?.origin === undefined).map(([, b]) => b).sort());
+	for (const old of spawners) {
+		const next = plan.nodes.find((n) => n.id === old.id);
+		if (!next) continue;
+		if (JSON.stringify(next.spawn ?? null) !== JSON.stringify(old.spawn) || next.kind !== old.kind || childSet(plan, old.id) !== childSet(run.plan, old.id)) { reset.push(old.id); continue; }
+		const ids = new Set(instancesOf(run.plan, old.id));
+		nodes.push(...run.plan.nodes.filter((n) => ids.has(n.id)));
+		edges.push(...run.plan.edges.filter(([a, b]) => ids.has(a) || ids.has(b)));
+	}
+	return { plan: { ...plan, nodes, edges }, reset };
 }
 
 function compileFirst(run: RunState, plan: Plan, now: number): string[] {
@@ -593,7 +758,7 @@ function compileFirst(run: RunState, plan: Plan, now: number): string[] {
 	return [];
 }
 
-function applyReplan(run: RunState, plan: Plan, compiled: CompiledPlan, now: number): string[] {
+function applyReplan(run: RunState, plan: Plan, compiled: CompiledPlan, now: number, reset: readonly string[] = []): string[] {
 	const before = potential(run);
 	run.plan = plan;
 	run.replanBudget--;
@@ -604,6 +769,13 @@ function applyReplan(run: RunState, plan: Plan, compiled: CompiledPlan, now: num
 		const state = run.nodes[node.id];
 		if (!state) run.nodes[node.id] = { status: "pending", attempt: 0, facts: [], runs: 0 };
 		else if ((state.status === "failed" || state.status === "skipped") && (run.owner || node.kind !== "verify")) { state.status = "pending"; state.attempt = 0; delete state.error; }
+	}
+	// A spawner whose expansion was dropped plans again; the new generation changes its key and so its descendants'.
+	for (const id of reset) {
+		const s = run.nodes[id];
+		if (!s || s.status !== "succeeded") continue;
+		Object.assign(s, { status: "pending", attempt: 0, generation: (s.generation ?? 0) + 1 });
+		delete s.result; delete s.error; delete s.receipt; delete s.proof;
 	}
 	run.compiled = compiled;
 	// An approval covers exactly the irreversible contracts it was asked for. A replan that adds an irreversible
@@ -708,13 +880,39 @@ export function impact(run: RunState, id: string): string[] {
 	return run.compiled ? [id, ...descendants(run.compiled, id)] : [id];
 }
 
+/**
+ * κ settlement: the orchestrator sees one receipt of at most KAPPA bytes per expansion (counts by status plus the first
+ * failing or live instances), not one line per instance, so its context grows with the static plan only. Full instance
+ * state stays in the run (dag_status details) and flows to consumers through the bounded node prompt.
+ */
+export function expansionReceipt(run: RunState, id: string): string | undefined {
+	const ids = instancesOf(run.plan, id);
+	if (!ids.length) return undefined;
+	const counts: Record<string, number> = {};
+	for (const i of ids) { const st = run.nodes[i]?.status ?? "pending"; counts[st] = (counts[st] ?? 0) + 1; }
+	const digest = createHash("sha256").update(JSON.stringify(ids.map((i) => [i, run.nodes[i]?.key ?? "", run.nodes[i]?.status ?? ""]))).digest("hex").slice(0, 12);
+	let line = `  ${id}/* <spawned> ${ids.length} instance(s) ${Object.entries(counts).map(([k, v]) => `${k}=${v}`).join(" ")} receipt=${digest}`;
+	for (const i of ids) {
+		const s = run.nodes[i]!;
+		if (s.status !== "failed" && s.status !== "running" && s.status !== "waiting") continue;
+		const item = `; ${i} ${s.status}${s.error ? ` ! ${s.error.slice(0, 80)}` : ""}`;
+		if (Buffer.byteLength(line + item) > KAPPA - 16) { line += "; …"; break; }
+		line += item;
+	}
+	return line;
+}
+
 export function summarize(run: RunState): string {
-	const lines = [`run ${run.id} semantics=${run.owner ? "research-receipts" : run.semantics === 2 ? "strict-v2" : "legacy (historical, not strict proof)"} repairs=${run.repairsUsed ?? 0}/2 rev ${run.revision} [${run.status}] Φ=(${potential(run).join(",")}) unmet=${unmet(run).join(",") || "∅"} budget=${run.replanBudget}${run.reason ? ` — ${run.reason}` : ""}`];
+	const spawning = run.spawned !== undefined || run.plan.nodes.some((n) => n.spawn);
+	const lines = [`run ${run.id} semantics=${run.owner ? "research-receipts" : run.semantics === 2 ? "strict-v2" : "legacy (historical, not strict proof)"} repairs=${run.repairsUsed ?? 0}/2 rev ${run.revision} [${run.status}] Φ=(${potential(run).join(",")})${spawning ? ` Φ'=(${spawnPotential(run).join(",")})` : ""} unmet=${unmet(run).join(",") || "∅"} budget=${run.replanBudget}${run.reason ? ` — ${run.reason}` : ""}`];
 	if (run.compiled) {
 		for (const id of run.compiled.order) {
 			const s = run.nodes[id]!;
 			const node = nodeOf(run, id);
+			if (node.origin !== undefined) continue;
 			lines.push(`  ${id} <${node.kind}> ${s.status}${s.attempt ? ` #${s.attempt}` : ""}${s.handle ? ` ${s.handle}` : ""}${s.ask ? ` ask ${s.ask.id}` : ""}${s.error ? ` ! ${s.error.slice(0, 120)}` : ""}`);
+			const receipt = node.spawn ? expansionReceipt(run, id) : undefined;
+			if (receipt) lines.push(receipt);
 		}
 		lines.push(`  critical path: ${run.compiled.criticalPath.join(" → ")} (${run.compiled.criticalCost}/${run.compiled.totalCost})`);
 	}
