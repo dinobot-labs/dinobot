@@ -207,7 +207,7 @@ describe("/setup", () => {
 			["tui", true, true], ["telegram", false, false], ["slack", false, true], ["discord", false, true],
 		]);
 		const features = asked.find((prompt) => title(prompt) === "설정 4/5 · 기능")!;
-		expect(features.type === "checklist" && features.options.map((option) => [option.id, option.checked, option.disabled ?? false])).toEqual([["web", true, true], ["computer", false, false], ["browser", false, false], ["google", false, false]]);
+		expect(features.type === "checklist" && features.options.map((option) => [option.id, option.checked, option.disabled ?? false])).toEqual([["web", true, true], ["computer", false, false], ["browser", false, false], ["google", false, false], ["calendar", false, false]]);
 		const printed = outputs(events);
 		expect(printed).toContain("모델: faux/faux-1");
 		expect(printed).toContain("https://t.me/FauxSetupBot?start=" + w.telegram.code);
@@ -373,6 +373,40 @@ describe("/setup", () => {
 		expect(manifest.plugins.map((plugin) => plugin.id)).toContain("google");
 		expect(request.summary).toContain("✓ Features: Web search · Google (Gmail · Calendar · Drive)");
 		expect(await readFile(w.manifestPath, "utf8")).toBe(w.base);
+	});
+
+	test("`/setup plugins` turns the calendar on as `plugins.calendar: {}` the daemon would boot, and off again (ko)", async () => {
+		const w = await world({ loggedIn: true });
+		const events = await drive(w.commands, "plugins", (prompt) => {
+			if (prompt.type === "checklist") {
+				expect(prompt.options.find((option) => option.id === "calendar")).toMatchObject({ checked: false, label: "Calendar (reminders)" });
+				return ["web", "calendar"];
+			}
+			if (prompt.type === "select") return "apply";
+			throw new Error(`unexpected ${prompt.type}`);
+		});
+		expect(w.installs).toEqual([]);
+		const request = applied(events)!;
+		expect(request.changes).toEqual(["+ plugins.calendar"]);
+		expect((Bun.YAML.parse(request.candidate) as { plugins: unknown }).plugins).toEqual({ calendar: {} });
+		const manifest = await parseManifest(Bun.YAML.parse(request.candidate), { channels: channelCatalog, plugins: pluginCatalog });
+		expect(manifest.plugins.map((plugin) => plugin.id)).toContain("calendar");
+		expect(request.summary).toContain("✓ Features: Web search · Calendar (reminders)");
+
+		const on = await world({
+			loggedIn: true,
+			manifest: (home) => defaultManifest(home).replace(/^plugins: \{\}.*$/m, ["plugins:", "  calendar:", "    timeZone: Asia/Seoul"].join("\n")),
+		});
+		const off = await drive(on.commands, "plugins", (prompt) => {
+			if (prompt.type === "checklist") {
+				expect(prompt.options.find((option) => option.id === "calendar")).toMatchObject({ checked: true, label: "캘린더 (일정 알림)" });
+				return ["web"];
+			}
+			if (prompt.type === "select") return "apply";
+			throw new Error(`unexpected ${prompt.type}`);
+		}, { locale: "ko_KR.UTF-8" });
+		expect(applied(off)!.changes).toEqual(["− plugins.calendar"]);
+		expect((Bun.YAML.parse(applied(off)!.candidate) as { plugins: unknown }).plugins).toEqual({});
 	});
 
 	test("`/setup plugins` shows a configured Google on (ko) and turning it off stages a removal", async () => {

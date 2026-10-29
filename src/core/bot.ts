@@ -38,22 +38,22 @@ import { createMemoryRecall } from "./memory/recall.ts";
 import { createMemoryRetro, markRetroDisabled, type MemoryRetro } from "./memory/retro.ts";
 import { sessionsExtension } from "../extensions/sessions.ts";
 import { skillsExtension } from "../extensions/skills.ts";
-import { type AgentDefinition, subagentsExtension, type SubagentSpawner, type WakeDeliver, WakeDoc } from "../extensions/subagents.ts";
+import { type AgentDefinition, PLUGIN_WAKE_REQUEST_PREFIX, subagentsExtension, type SubagentSpawner, type WakeDeliver, WakeDoc, type WakeHandOver } from "../extensions/subagents.ts";
 import { livenessExtension } from "../extensions/liveness.ts";
-import { pluginHooksExtension } from "../extensions/plugin-hooks.ts";
+import { pluginContinuationPrefix, pluginHooksExtension } from "../extensions/plugin-hooks.ts";
 import { todoExtension } from "../extensions/todo.ts";
 import { verificationExtension } from "../extensions/verification.ts";
-import type { LoadedPlugin } from "../plugins/types.ts";
+import type { LoadedPlugin, PluginWake, PluginWakeResult } from "../plugins/types.ts";
 import { withDefaultSkills } from "../plugins/skills/index.ts";
 import { openSessionIndex, type SessionIndex } from "./search.ts";
 import { LspManager, type LspOptions } from "./lsp.ts";
 import { FAST_ROUTER, fastExtension, type FastRouter } from "./fast.ts";
-import { conversationForThread, pruneEmptyThreadsOnce, threadOfConversation, withThreadAdmission } from "./threads.ts";
+import { conversationForThread, liveThreadKey, pruneEmptyThreadsOnce, rootConversation, threadBinding, threadOfConversation, withThreadAdmission } from "./threads.ts";
 import { validChannelName } from "./channel-identity.ts";
 import { repairingRegistry } from "./argument-repair.ts";
 import { AttachmentStorageError, materializeFiles } from "./message-files.ts";
 import { formatInput, formatInputContent } from "./input.ts";
-import { recoverQueuedTransfers } from "./queue.ts";
+import { recoverQueuedTransfers, withConversationAdmission } from "./queue.ts";
 import { type ToolMode, toolExtensions } from "./toolmode.ts";
 import { providerLoginResolver } from "./provider-login.ts";
 import { activateEvaluatedSkill, SkillStore } from "./skills/store.ts";
@@ -140,6 +140,10 @@ const REDELIVERY_LIMIT = 3;
 const WAKE_MERGE_GRACE_MS = 5_000;
 /** ADR 0096: how long a woken answer a user's reply took along waits for that reply to reach the thread. */
 const WAKE_MERGE_CONFIRM_MS = 60_000;
+/** ADR 0106: how long a registered plugin wake waits for its input to be admitted (see `wake` in openBot). */
+const PLUGIN_WAKE_ADMISSION_GRACE_MS = 60_000;
+const PLUGIN_WAKE_KEY = /^[A-Za-z0-9:._-]{1,200}$/;
+const PLUGIN_WAKE_MAX_TEXT_BYTES = 16_384;
 
 export interface Bot {
 	readonly harness: Harness;
@@ -365,6 +369,8 @@ export async function openBot(options: BotOptions, context: Context): Promise<Bo
 		const thread = await threadOfConversation(opened, delivery.conversationId, context);
 		if (!thread) return "done";
 		const record = await opened.commit((tx) => tx.submissionByRequest(delivery.conversationId, delivery.requestId), context);
+		// A plugin wake registers its hand-over just before it submits the input (ADR 0106): wait for that admission briefly.
+		if (!record && delivery.requestId.startsWith(PLUGIN_WAKE_REQUEST_PREFIX) && Date.now() - delivery.since < PLUGIN_WAKE_ADMISSION_GRACE_MS) return "pending";
 		if (!record || record.type !== "input") return "done";
 		if (record.status !== "done" && record.status !== "unanswered") return "pending";
 		const sink = hostSinks.get(thread.channel);
@@ -416,11 +422,12 @@ export async function openBot(options: BotOptions, context: Context): Promise<Bo
 		}
 	};
 	const wakeRecovery: { current?: (context: Context) => Promise<void> } = {};
+	const wakeHandOver: { current?: WakeHandOver } = {};
 	const spawner: { current?: SubagentSpawner } = {};
 	registry.install(subagentsExtension(() => {
 		if (!openedHarness) throw new Error("Bot harness is not open");
 		return openedHarness;
-	}, work, options.agents, spawner, options.taskOutputMaxWaitMs, { deliver: (delivery, context) => deliverWake(delivery, context), recovery: wakeRecovery, ...(options.wakeDeliveryRetryMs ? { retryMs: options.wakeDeliveryRetryMs } : {}) }));
+	}, work, options.agents, spawner, options.taskOutputMaxWaitMs, { deliver: (delivery, context) => deliverWake(delivery, context), recovery: wakeRecovery, handOver: wakeHandOver, ...(options.wakeDeliveryRetryMs ? { retryMs: options.wakeDeliveryRetryMs } : {}) }));
 	registry.install(dagExtension(work, spawner, options.models, onOutcome));
 	const ordinaryDag = dagContinuation(() => openedHarness!);
 	registry.install(ordinaryDag.extension);
@@ -527,6 +534,89 @@ export async function openBot(options: BotOptions, context: Context): Promise<Bo
 	await ordinaryDag.recover(context);
 	await wakeRecovery.current?.(context);
 	harness.resume();
+	/**
+	 * ADR 0106: one host-started turn for a plugin (a calendar reminder that came due), into the live conversation of the
+	 * thread `request.conversationId` belongs to. `plugin-wake:<pluginId>:<key>` is the input's request id, so one key
+	 * starts at most one turn, ever, across restarts and /new rotations.
+	 *
+	 * Crash windows: the channel hand-over is registered (and the wake watcher armed) BEFORE the input is submitted. A crash
+	 * after the registration leaves a hand-over without input; deliverWake waits PLUGIN_WAKE_ADMISSION_GRACE_MS for it and
+	 * then drops it, and the plugin's retry (its reminder is still pending, since it never saw "admitted") submits and
+	 * registers again. A crash after the submission leaves both. The reverse order would leave an admitted turn whose
+	 * answer never reaches the channel when the crash fell between the two commits and the turn settled before a retry.
+	 * Admission runs on the thread's admission line, so /new cannot rotate the thread between resolution and submission.
+	 */
+	let closed = false;
+	async function wake(pluginId: string, request: PluginWake): Promise<PluginWakeResult> {
+		if (typeof request.key !== "string" || !PLUGIN_WAKE_KEY.test(request.key)) throw new Error("plugin wake key must match [A-Za-z0-9:._-]{1,200}");
+		if (typeof request.text !== "string" || request.text.trim() === "") throw new Error("plugin wake text must not be empty");
+		if (Buffer.byteLength(request.text, "utf8") > PLUGIN_WAKE_MAX_TEXT_BYTES) throw new Error(`plugin wake text exceeds ${PLUGIN_WAKE_MAX_TEXT_BYTES} bytes`);
+		if (closed) return "unavailable";
+		try {
+			return await admitPluginWake(pluginId, request);
+		} catch (error) {
+			if (closed) return "unavailable";
+			throw error;
+		}
+	}
+	const GONE = Symbol("gone");
+	async function admitPluginWake(pluginId: string, request: PluginWake): Promise<PluginWakeResult> {
+		const context = botContext;
+		if (!/^\d+$/.test(request.conversationId)) return "gone";
+		const root = await rootConversation(harness, Number(request.conversationId) as ConversationId, context);
+		if (root === undefined || !(await harness.conversation(root, context))) return "gone";
+		const requestId = `${PLUGIN_WAKE_REQUEST_PREFIX}${pluginId}:${request.key}`;
+		const admit = async (target: Conversation, lineage: readonly ConversationId[]): Promise<PluginWakeResult> => {
+			const existing = await harness.commit(async (tx) => {
+				for (const id of [target.id, ...lineage]) {
+					const found = await tx.submissionByRequest(id, requestId);
+					if (found) return found;
+				}
+				return undefined;
+			}, context);
+			if (existing) {
+				// Admitted before. Only a turn of the live conversation that has not settled may still need its hand-over (an
+				// earlier call stopped between the two steps); a settled one was handed over or taken along by a reply already.
+				// A still queued input restarts the admission grace of its registration; a placed one may have opened asks.
+				if (existing.conversationId === target.id && existing.type === "input" && (existing.status === "queued" || existing.status === "placed")) {
+					await wakeHandOver.current?.(target.id, requestId, context, { restartGrace: existing.status === "queued" });
+				}
+				return "duplicate";
+			}
+			// A registration left by a crash before its submission is re-registered with a fresh admission grace, so the
+			// watcher cannot drop it between this commit and the submission below.
+			await wakeHandOver.current?.(target.id, requestId, context, { restartGrace: true });
+			await target.submit({ type: "input", content: `${pluginContinuationPrefix(pluginId)}\n${request.text}`, requestId }, context);
+			return "admitted";
+		};
+		const key = await liveThreadKey(harness, root, context);
+		try {
+			if (key === undefined) {
+				const target = await harness.conversation(root, context);
+				if (!target) return "gone";
+				return await withConversationAdmission(harness, root, () => admit(target, []));
+			}
+			return await withThreadAdmission(harness, key, async () => {
+				const bound = (await threadBinding(harness, key, context)).conversationId;
+				const target = bound === undefined ? undefined : await harness.conversation(bound, context);
+				if (!target) throw GONE;
+				return target;
+			}, context, (target, binding) => admit(target, binding.lineage));
+		} catch (error) {
+			if (error === GONE) return "gone";
+			throw error;
+		}
+	}
+	// ADR 0106: plugins start their background work once the bot recovered and before channels start. main.ts closes them
+	// after the bot, so a late timer may still call wake after close: it gets "unavailable".
+	for (const plugin of plugins) {
+		if (!plugin.start) continue;
+		try {
+			await plugin.start({ wake: (request) => wake(plugin.id, request) });
+		} catch (error) {
+			console.error(`plugin ${plugin.id} start failed:`, error instanceof Error ? error.message : error);
+		}
+	}
 	if (memory.auto.enabled) await memoryCurator.start(harness, context);
 	else await markCuratorDisabled(harness, context);
 	if (memory.retro.enabled) await memoryRetro.start(harness, context);
@@ -674,6 +764,7 @@ export async function openBot(options: BotOptions, context: Context): Promise<Bo
 			};
 		},
 		close(context) {
+			closed = true;
 			return closeTask ??= Promise.resolve().then(async () => {
 				const errors: unknown[] = [];
 				for (const close of [

@@ -21,6 +21,7 @@ describe("redactString: detects and removes", () => {
 		["aws key", "AKIA" + "IOSFODNN7EXAMPLE", "AKIA" + "IOSFODNN7EXAMPLE"],
 		["github token", "ghp_" + "abcdefghijklmnopqrstuvwxyz0123456789", "ghp_" + "abcdefghijklmnopqrstuvwxyz0123456789"],
 		["slack token", "xoxb-1234567890-abcdefghij", "xoxb-1234567890-abcdefghij"],
+		["telegram token in an API URL (daemon log)", "GET https://api.telegram.org/bot123456789:AAHfakeTelegramTokenValue0123456789abcdef/getUpdates", "AAHfakeTelegramTokenValue"],
 		["anthropic key", "sk-" + "ant-api03-AbCdEfGhIjKlMnOpQrStUv", "sk-" + "ant-api03-AbCdEfGhIjKlMnOpQrStUv"],
 		["google key", "AIzaSyA-1234567890abcdefghijklmnopqrstu", "AIzaSyA-1234567890abcdefghijklmnopqrstu"],
 		["jwt", "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.dozjgNryP4J3jVmNHl0w5N_XgL0n3I9PlFUP0THsR8U", "eyJhbGciOiJIUzI1NiJ9"],
@@ -85,7 +86,14 @@ test("redactValue blanks secret-named fields and scans nested strings and keys",
 	expect(counts.credential).toBe(3);
 });
 
+test("version strings with a pre-release suffix are not addresses", () => {
+	expect(run("v8 13.2.152.17-electron.0").out).toBe("v8 13.2.152.17-electron.0");
+	expect(run("host 10.20.30.40 up").out).toBe("host [ip omitted] up");
+});
+
 test("redaction is idempotent", () => {
-	const once = run("key=abcdefgh 010-1234-5678 /home/roach/x").out;
-	expect(run(once).out).toBe(once);
+	for (const input of ["key=abcdefgh 010-1234-5678 /home/roach/x", "token: file mode 0644", "token = abcdefghijk; password: hunter22"]) {
+		const once = run(input).out;
+		expect(run(once).out).toBe(once);
+	}
 });

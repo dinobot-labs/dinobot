@@ -306,7 +306,7 @@ function reader(state: { runs?: RunState[]; seen?: Record<string, string>; seenA
 		topLevel: async () => state.top ?? true,
 	};
 }
-const ask = (id: string, extra: Partial<AskRecord>): AskRecord => ({ id, from: { conversationId: 1 as never }, to: "main", kind: "decision", refs: [], question: "which?", default: "a", createdAt: 0, deadlineAt: 1, state: "open", ...extra });
+const ask = (id: string, extra: Partial<AskRecord>): AskRecord => ({ id, from: { conversationId: 1 as never }, to: "main", kind: "decision", refs: [], question: "which?", default: "a", createdAt: 0, deadlineAt: Date.UTC(2100, 0), state: "open", ...extra });
 
 test("scan: blocked and verified runs are events, a cancellation (only the model cancels) is not; running runs keep the watcher alive", async () => {
 	const runs = [blocked("b"), blocked("v", { status: "verified" }), blocked("c", { status: "cancelled", reason: "goal epoch changed" }), blocked("r", { status: "running" })];

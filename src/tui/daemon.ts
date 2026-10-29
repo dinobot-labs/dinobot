@@ -28,8 +28,11 @@ export async function ensureDaemon(manifest: Manifest, manifestPath: string): Pr
 		if (await client.healthy()) return { client, startedPid: child.pid, logPath };
 		await Bun.sleep(100);
 	}
-	throw new Error(`dinobot daemon did not come up on ${client.base} (log: ${logPath})\n${await daemonLogTail(manifest.dataDir)}`);
+	throw new Error(`dinobot daemon did not come up on ${client.base} (log: ${logPath})\n${await daemonLogTail(manifest.dataDir)}\n${reportHint(manifestPath)}`);
 }
+
+/** Names the offline report command; it works while the daemon cannot start (ADR 0103). */
+export const reportHint = (manifestPath: string) => `To send this failure to the dinobot developer: dinobot report send --trigger daemon-start-failed --config ${JSON.stringify(resolve(manifestPath))}`;
 
 export const daemonLogPath = (dataDir: string) => join(dataDir, "dinobot.log");
 

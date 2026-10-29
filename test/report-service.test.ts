@@ -100,8 +100,11 @@ describe("manual report", () => {
 		const manifest = JSON.parse(manifestLine!) as Record<string, unknown>;
 		expect(manifest).toMatchObject({ kind: "manual", tier: "T2", trigger: null, client: { dinobotVersion: "0.7.2", model: "faux/faux-1" }, consent: { version: CONSENT_VERSION, collect: true, transfer: true, age14: true } });
 		expect(String(manifest.note)).not.toContain("me@example.com");
-		const entries = entryLines.map((line) => JSON.parse(line) as { kind: string });
-		expect(entries.map((e) => e.kind)).toEqual(["pi.user", "pi.assistant"]); // system prompt never included
+		const entries = entryLines.map((line) => JSON.parse(line) as { kind: string; section?: string });
+		// Manual client reports lead with diagnostics, then the projected conversation.
+		const sections = entries.filter((e) => e.kind === "diagnostic").map((e) => e.section);
+		expect(sections).toEqual(expect.arrayContaining(["report", "system", "runtime", "install", "config", "daemon", "logs", "dataDir", "channels", "network", "context"]));
+		expect(entries.filter((e) => e.kind !== "diagnostic").map((e) => e.kind)).toEqual(["pi.user", "pi.assistant"]); // system prompt never included
 		expect(content).toContain("확인했습니다");
 		expect(content).not.toContain("sk-proj-abcdefghijklmnopqrstuvwx");
 		if (process.platform !== "win32") expect((await stat(join(root, "report", "state.json"))).mode & 0o777).toBe(0o600); // POSIX permissions; not Windows ACL acceptance

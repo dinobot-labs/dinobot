@@ -50,6 +50,35 @@ export type PluginTurnEnd = {
 	readonly runningDagRuns: number;
 };
 
+/**
+ * ADR 0106: one host-started turn a plugin asks for (a calendar reminder that came due). The host submits `text` as a
+ * host input framed `<from host="plugin:<id>"/>` to the conversation and hands the turn's answer to that conversation's
+ * channel thread (Slack, Telegram, Discord) like any woken answer (ADR 0096).
+ */
+export type PluginWake = {
+	/**
+	 * A {@link PluginToolCall.conversationId} the plugin recorded. A subagent conversation resolves to its top-level
+	 * conversation; a thread that `/new` moved to a newer conversation resolves to that newer one.
+	 */
+	readonly conversationId: string;
+	/** Idempotency key, unique within the plugin (`[A-Za-z0-9:._-]{1,200}`): one key starts at most one turn, ever. */
+	readonly key: string;
+	/** Instruction for the woken turn (at most 16 KiB). */
+	readonly text: string;
+};
+
+/**
+ * `admitted`: the turn is queued (it runs after any turn in progress) and its answer will be handed to the thread;
+ * `duplicate`: this key was admitted before (nothing new happens); `gone`: the conversation no longer exists;
+ * `unavailable`: the host cannot take it now (shutting down); ask again later.
+ */
+export type PluginWakeResult = "admitted" | "duplicate" | "gone" | "unavailable";
+
+/** Host services that exist only once the bot is open; handed to {@link PluginInstance.start}. */
+export type PluginRuntime = {
+	wake(request: PluginWake): Promise<PluginWakeResult>;
+};
+
 /** What the host tells a tool about the call. */
 export type PluginToolCall = {
 	/** The calling conversation's durable id. Undefined when the host cannot attribute the call (tests, embedding). */
@@ -171,6 +200,12 @@ export type PluginInstance = {
 	 * Throwing lets the turn end; the host reports the error.
 	 */
 	onTurnEnd?(turn: PluginTurnEnd): Promise<string | undefined>;
+	/**
+	 * Called once after the bot opened and recovered (ADR 0106), before channels start; background work (timers) starts
+	 * here, not in `load`, and stops in `close`. Must return promptly. Throwing is reported and leaves the plugin's tools
+	 * usable.
+	 */
+	start?(runtime: PluginRuntime): void | Promise<void>;
 	close?(): Promise<void>;
 };
 
@@ -208,6 +243,7 @@ export type LoadedPlugin = {
 	/** The plugin's declared `providerLogins`; the host resolves only these for its tools. */
 	readonly providerLogins?: readonly string[];
 	onTurnEnd?(turn: PluginTurnEnd): Promise<string | undefined>;
+	start?(runtime: PluginRuntime): void | Promise<void>;
 	close?(): Promise<void>;
 };
 
@@ -253,6 +289,7 @@ export async function loadPlugin(plugin: Plugin, rawConfig: unknown, host: Plugi
 		...(instance.storagePaths !== undefined ? { storagePaths: instance.storagePaths } : {}),
 		...(plugin.providerLogins?.length ? { providerLogins: Object.freeze([...plugin.providerLogins]) } : {}),
 		...(instance.onTurnEnd !== undefined ? { onTurnEnd: instance.onTurnEnd.bind(instance) } : {}),
+		...(instance.start !== undefined ? { start: instance.start.bind(instance) } : {}),
 		...(instance.close !== undefined ? { close: instance.close.bind(instance) } : {}),
 	};
 }

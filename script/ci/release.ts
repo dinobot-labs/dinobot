@@ -73,7 +73,7 @@ export async function selectRelease(env: ReleaseEnvironment, command: ReleaseCom
 	const tag = releaseTag(env.INPUT_TAG);
 	const sha = await resolveTag(tag, command);
 	await commandOutput(command, ["git", "merge-base", "--is-ancestor", sha, "origin/main"]);
-	const release = object(parseJson(await commandOutput(command, ["gh", "api", "--method", "GET", "repos/tmdgusya/dinobot/releases/tags/" + tag])));
+	const release = object(parseJson(await commandOutput(command, ["gh", "api", "--method", "GET", "repos/dinobot-labs/dinobot/releases/tags/" + tag])));
 	if (release.tag_name !== tag || release.draft !== false || release.prerelease !== false
 		|| typeof release.published_at !== "string" || !Number.isFinite(Date.parse(release.published_at))) {
 		throw new Error("Expected a published stable GitHub release for the exact tag");

@@ -10,6 +10,7 @@ import { openNodeSqliteStorage } from "@earendil-works/pi-durable/storage/sqlite
 import { openBot } from "../src/core/bot.ts";
 import { skillsPlugin, withDefaultSkills } from "../src/plugins/skills/index.ts";
 import { type LoadedPlugin, loadPlugin } from "../src/plugins/types.ts";
+import { PROOF_SKILLS } from "../src/plugins/skills/proof-skills/note.ts";
 
 const context = BACKGROUND_CONTEXT;
 const DESCRIPTION = "Extract text and tables from PDF files.";
@@ -36,6 +37,32 @@ async function pdfSkills(): Promise<LoadedPlugin> {
 }
 
 describe("skills plugin", () => {
+	test("proofSkills opts in bundled proof skills with complete licenses and companions", async () => {
+		dir = await mkdtemp(join(tmpdir(), "dinobot-skills-"));
+		const plugin = await loadPlugin(skillsPlugin, { proofSkills: true });
+		if (Array.isArray(plugin)) throw new Error(plugin.join("\n"));
+		expect(plugin.catalog?.map((skill) => skill.name).slice(-4)).toEqual([...PROOF_SKILLS]);
+		for (const name of PROOF_SKILLS) {
+			const proof = plugin.skillPackages!.find((skill) => skill.name === name)!;
+			expect(proof.source).toBe(`bundled:${name}`);
+			expect(proof.body.startsWith("## Running this skill in dinobot")).toBe(true);
+			expect(proof.files.LICENSE).toContain("MIT License");
+			expect(proof.files.LICENSE).toContain("Copyright (c) 2026 Opum AI");
+			expect(proof.files.LICENSE).toContain("THE SOFTWARE IS PROVIDED \"AS IS\"");
+			expect(Object.keys(proof.files).length).toBeGreaterThan(5);
+			for (const path of Object.keys(proof.files)) expect(path.endsWith(".txt"), path).toBe(false);
+		}
+	});
+
+	test("proof skills stay disabled unless explicitly enabled", async () => {
+		dir = await mkdtemp(join(tmpdir(), "dinobot-skills-"));
+		for (const config of [{}, { proofSkills: false }]) {
+			const plugin = await loadPlugin(skillsPlugin, config);
+			if (Array.isArray(plugin)) throw new Error(plugin.join("\n"));
+			for (const name of PROOF_SKILLS) expect(plugin.catalog?.some((skill) => skill.name === name)).toBe(false);
+		}
+	});
+
 	test("bundled sources are embedded without filesystem dependencies", async () => {
 		dir = await mkdtemp(join(tmpdir(), "dinobot-skills-"));
 		const [skills] = await withDefaultSkills([]);

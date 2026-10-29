@@ -15,7 +15,8 @@ import { channelHandler } from "./core/channel-handler.ts";
 import { createNativeModelHandler } from "./core/native-model-commands.ts";
 import { openBot } from "./core/bot.ts";
 import { DaemonLifecycle } from "./core/daemon-lifecycle.ts";
-import type { DaemonControl, DaemonOwner } from "./core/daemon-info.ts";
+import { busyThreads, type DaemonControl, type DaemonOwner } from "./core/daemon-info.ts";
+import { sessionsSnapshot } from "./core/sessions.ts";
 import { acquireDaemonLock, type DaemonLock, DaemonLockError } from "./core/daemon-lock.ts";
 import { detectSupervisor, HANDOFF_ENV, startSuccessor, successorArgv, takeOverDaemonLock } from "./core/daemon-restart.ts";
 import { parseManifest, type Manifest } from "./manifest.ts";
@@ -32,6 +33,8 @@ Usage: dinobot [tui|serve] [--config <path>] [--thread <name> | --resume]
        dinobot setup [model|channels|plugins|report] [--config <path>]
        dinobot quarantine-recovery --database <existing.sqlite> --request <request.json> [--apply]
        dinobot update [--no-restart] [--config <path>]
+       dinobot restart [--force] [--config <path>]
+       dinobot report consent|agree <version>|send|status [--config <path>] [--json]
        dinobot init [--check] [--config <path>] [<dependency>...]
        dinobot telegram connect --token-file <path> --pairing-file <path>
        dinobot telegram run --token-file <path> --pairing-file <path> --database <path> --core-url http://127.0.0.1:8787
@@ -41,6 +44,11 @@ Usage: dinobot [tui|serve] [--config <path>] [--thread <name> | --resume]
   setup   open the setup wizard in the TUI: model, chat channels, features, problem reports
   update  check for and install the latest release using the current global package manager, then restart the
           running daemon of the manifest once on the new version (--no-restart skips it; running work is interrupted)
+  restart safely restart the daemon of the manifest: the new daemon must be ready before the old one stops, so a
+          failed start leaves the old daemon running; starts one when none is running. Busy threads block it unless
+          --force; daemons under systemd, launchd or a container are refused with the manager's command
+  report  send a problem report with diagnostics to the dinobot developer, also when the daemon cannot start
+          (dinobot report send --note "..."; consent first: dinobot report consent, then dinobot report agree <version>)
   init    bootstrap this machine: install the pinned external programs plugins run (e.g. cua-driver
           for the computer plugin) and create the default manifest when none exists
   (none)  tui in a terminal, serve otherwise
@@ -59,6 +67,12 @@ The customer manifest is the first of:
 if (process.argv[2] === "quarantine-recovery") {
  const { runQuarantineRecovery } = await import("./cli/quarantine-recovery.ts");
  process.exit(await runQuarantineRecovery(process.argv.slice(3)));
+}
+
+// Problem reports must work when the manifest or the daemon is broken: nothing below is loaded (ADR 0103).
+if (process.argv[2] === "report") {
+	const { runReport } = await import("./cli/report.ts");
+	process.exit(await runReport(process.argv.slice(3)));
 }
 
 // Bootstrap runs before loading a manifest: it may create the default one and installs plugin dependencies.
@@ -102,6 +116,7 @@ const { values: args, positionals } = parseArgs({
 		help: { type: "boolean", short: "h" },
 		version: { type: "boolean", short: "v" },
 		"no-restart": { type: "boolean" },
+		force: { type: "boolean" },
 	},
 });
 // A restarted daemon reruns its own argv from here, so relative --config paths keep their meaning.
@@ -117,7 +132,7 @@ if (args.version) {
 
 const command = positionals[0] ?? (process.stdin.isTTY && process.stdout.isTTY ? "tui" : "serve");
 const setupSection = command === "setup" ? (positionals[1] ?? "") : undefined;
-if ((command !== "tui" && command !== "serve" && command !== "update" && command !== "setup") || positionals.length > (command === "setup" ? 2 : 1)) {
+if ((command !== "tui" && command !== "serve" && command !== "update" && command !== "setup" && command !== "restart") || positionals.length > (command === "setup" ? 2 : 1)) {
 	console.error(`dinobot: unknown command ${positionals.join(" ")}\n\n${USAGE}`);
 	process.exit(2);
 }
@@ -132,7 +147,15 @@ const manifestPath = await resolveManifestPath();
 // Read once: the daemon reports the hash of exactly the text it booted from, so a restart can tell whether it is current.
 const manifestText = await Bun.file(manifestPath).text();
 const manifestSha256 = createHash("sha256").update(manifestText, "utf8").digest("hex");
-const manifest = await parseManifest(Bun.YAML.parse(manifestText), { channels: channelCatalog, plugins: pluginCatalog });
+const manifest = await (async () => {
+	try {
+		return await parseManifest(Bun.YAML.parse(manifestText), { channels: channelCatalog, plugins: pluginCatalog });
+	} catch (error) {
+		console.error(error);
+		console.error(`dinobot: to send this failure to the developer: dinobot report send --trigger daemon-start-failed --config ${JSON.stringify(manifestPath)}`);
+		process.exit(1);
+	}
+})();
 
 if (!manifest.enabled) {
 	console.log(`dinobot disabled by ${manifestPath}`);
@@ -145,6 +168,15 @@ if (command === "setup" && !(process.stdin.isTTY && process.stdout.isTTY)) {
 	process.exit(2);
 }
 if (command === "tui" || command === "setup") await runTui({ manifest, manifestPath, ...(args.thread ? { thread: args.thread } : args.resume ? { thread: "main" } : {}), ...(setupSection !== undefined ? { setup: setupSection } : {}) });
+else if (command === "restart") {
+	// The client API is the coordination channel of a safe restart: without it the daemon cannot hand over.
+	if (!manifest.api) {
+		console.error(`${manifestPath} has no api section; add \`api: { port: 8786 }\` so dinobot restart can coordinate the daemon`);
+		process.exit(2);
+	}
+	const { restartDependencies, runRestart } = await import("./cli/restart.ts");
+	process.exit(await runRestart(restartDependencies(manifest.api.port, manifest.dataDir, manifestPath, args.force === true)));
+}
 else await serve(manifest);
 
 async function serve(manifest: Manifest) {
@@ -234,7 +266,28 @@ async function serve(manifest: Manifest) {
 		const runningBot = bot;
 
 		// Session reports (ADR 0073): nothing is sent without a consent receipt recorded through /report.
-		const report = manifest.commands.disabled.includes("report") ? undefined : createReportService(runningBot, manifest.dataDir, packageJson.version, context);
+		const report = manifest.commands.disabled.includes("report")
+			? undefined
+			: createReportService(runningBot, manifest.dataDir, packageJson.version, context, {}, {
+				manifestPath: bootedManifestPath,
+				live: async () => ({
+					pid: process.pid,
+					startedAt,
+					uptimeSeconds: Math.round(process.uptime()),
+					memory: process.memoryUsage(),
+					owner,
+					model: `${manifest.model.provider}/${manifest.model.modelId}`,
+					toolMode: manifest.toolMode,
+					promptProfile: manifest.promptProfile,
+					channels: manifest.channels.map((channel) => channel.name),
+					plugins: manifest.plugins.map((plugin) => ({ id: plugin.id, tools: plugin.tools.length })),
+					agents: manifest.agents.length,
+					api: manifest.api ? { port: manifest.api.port } : null,
+					auth: await auth.status().then((list) => list.map((entry) => ({ provider: entry.key, type: entry.type }))).catch((error) => ({ error: String(error) })),
+					busy: await sessionsSnapshot(runningBot.harness, runningBot.index, context).then(busyThreads).catch((error) => ({ error: String(error) })),
+					setup: await readSetupState(manifest.dataDir).catch(() => undefined),
+				}),
+			});
 		if (report) await lifecycle.start({ name: "session reports", start: () => report.start(), stop: () => report.stop() });
 		const commands = createCommands({
 			bot, models, auth, plugins: manifest.plugins, disabled: manifest.commands.disabled, ...(report ? { report } : {}),
@@ -299,6 +352,7 @@ async function serve(manifest: Manifest) {
 	} catch (error) {
 		const result = await lifecycle.stop();
 		console.error(new AggregateError([error, ...result.errors], "Daemon startup failed"));
+		console.error(`dinobot: to send this failure to the developer: dinobot report send --trigger daemon-start-failed --config ${JSON.stringify(manifestPath)}`);
 		process.exit(1);
 	}
 }

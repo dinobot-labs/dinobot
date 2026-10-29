@@ -5,7 +5,7 @@ import { createHash } from "node:crypto";
  * Any wording change must bump CONSENT_VERSION: receipts bind the version and the text hash,
  * and a receipt for another version asks again. Keep it in sync with the server's /privacy page.
  */
-export const CONSENT_VERSION = "report-consent-ko-v1";
+export const CONSENT_VERSION = "report-consent-ko-v2";
 export const DEFAULT_REPORT_URL = "https://report.dinobot.workers.dev";
 
 export const CONSENT_TEXT = `dinobot 세션 보고(/report) 안내
@@ -19,6 +19,7 @@ export const CONSENT_TEXT = `dinobot 세션 보고(/report) 안내
   ② 자동 보고: 감지 직전 최대 10턴의 내 메시지와 dinobot 응답, 도구 호출, 도구 결과(항목당 최대 약 2KB)
   ③ 수동 보고(/report): 해당 세션 전체 대화와 하위 에이전트 대화, 직접 입력한 메모
   ④ 동의 기록(문구 버전, 동의 시각)
+  ⑤ 진단 정보(보고할 때만): 운영체제·하드웨어 요약(CPU·메모리·디스크 여유), 실행 환경(런타임 버전, 환경변수 이름, PATH), 설치 정보, 설정 파일(비밀값은 지우고 구조와 연결된 파일의 존재·권한·크기만), 데몬 상태, dinobot 로그의 최근 부분, 데이터 폴더의 파일 목록(이름·크기·시각, 내용 제외), 외부 서비스 연결 확인 결과, 데스크톱 앱 상태와 로그의 최근 부분
 - 보내지 않는 정보: 시스템 프롬프트와 모델 내부 추론, 이미지·파일 원본, API 키·토큰·비밀번호, 주민등록번호·외국인등록번호·여권·운전면허번호, 카드번호, 이메일·전화번호, 다른 참여자의 메시지 본문. 내 컴퓨터에서 보내기 전에 지우고 서버에서 한 번 더 지웁니다. 자동 탐지는 완벽하지 않으므로 수동 보고는 보내기 전에 미리보기로 확인할 수 있습니다.
 - 보유 기간: 접수 후 90일 뒤 자동 파기. 동의 철회나 삭제 요청 시 즉시 파기. 동의 기록은 철회 또는 마지막 보고 파기 후 1년까지 보관.
 - 동의하지 않을 권리가 있으며, 거부해도 보고 기능만 쓸 수 없고 dinobot의 다른 기능은 그대로 쓸 수 있습니다.
@@ -36,7 +37,7 @@ export const CONSENT_TEXT = `dinobot 세션 보고(/report) 안내
 [선택] 4. 자동 보고(TUI에서만): 대화 중 욕설이나 강한 불만 표현이 감지되면 묻지 않고 보고를 예약합니다. 예약 직후 알림이 뜨고, 약 30초 뒤 전송하며 그 전에 /report undo <id>로 취소할 수 있습니다. 같은 대화에서는 30분에 한 번만 보냅니다. /report auto off로 언제든 끕니다.
 
 개인정보처리자 겸 보호책임자: 정승현 · dev0jsh@gmail.com
-명령: /report [메모] 보내기 · /report list · /report undo <id> · /report withdraw · /report auto on|off`;
+명령: /report [메모] 보내기 · 보고 버튼(데스크톱)과 dinobot report 명령 · /report list · /report undo <id> · /report withdraw · /report auto on|off`;
 
 export const CONSENT_TEXT_SHA256 = createHash("sha256").update(CONSENT_TEXT).digest("hex");
 

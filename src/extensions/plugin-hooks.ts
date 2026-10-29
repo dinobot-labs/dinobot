@@ -3,7 +3,7 @@ import { defineDoc, defineExtension, GenerationTask, type Harness, hook, type Ho
 import { AsksDoc, LinkDoc } from "../core/ask.ts";
 import { RunDoc } from "../core/dag.ts";
 import type { LoadedPlugin, PluginSubagent, PluginTurnEnd } from "../plugins/types.ts";
-import { AgentsDoc, ProgressDoc, WAKE_REQUEST_PREFIX } from "./subagents.ts";
+import { AgentsDoc, ProgressDoc, isHostWakeRequest } from "./subagents.ts";
 
 /**
  * Plugin turn-end hooks (ADR 0105). When a top-level conversation ends its turn with a final answer, every loaded plugin
@@ -84,7 +84,7 @@ export function pluginHooksExtension(getHarness: () => Harness, plugins: readonl
 				if (text === undefined || from === undefined) return undefined;
 				const first = (await api.snapshot(LiveDoc, id, context))?.run?.inputs?.[0];
 				const record = first === undefined ? undefined : await (await getHarness().submission(first, context))?.status(context);
-				const host = record?.requestId?.startsWith(WAKE_REQUEST_PREFIX) === true;
+				const host = isHostWakeRequest(record?.requestId);
 				const run = String(first ?? "");
 				const count = await getHarness().commit(async (tx) => {
 					const doc = await tx.doc(PluginHookDoc, id);

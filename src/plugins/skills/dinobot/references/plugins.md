@@ -2,8 +2,9 @@
 
 Source: src/plugins/index.ts, src/plugins/types.ts, src/manifest.ts, src/plugins/<id>/index.ts, src/deps/index.ts,
 src/cli/init.ts, openwiki/architecture/plugins.md, web-search.md, image-gen.md, github.md, google.md, mcp.md, computer-use.md, skills.md,
-aside.md, browser.md, openwiki/decisions/0018-opt-in-builtin-integrations.md, 0058-default-on-keyless-web-search.md, 0059-dinobot-init-and-computer-use.md,
-0077-google-workspace-oauth.md, 0078-google-rest-apis.md, 0088-codex-login-image-generation.md, 0093-browser-plugin.md.
+aside.md, browser.md, pm.md, calendar.md, openwiki/decisions/0018-opt-in-builtin-integrations.md, 0058-default-on-keyless-web-search.md, 0059-dinobot-init-and-computer-use.md,
+0077-google-workspace-oauth.md, 0078-google-rest-apis.md, 0088-codex-login-image-generation.md, 0093-browser-plugin.md,
+0105-pm-ledger-plugin.md, 0106-calendar-plugin-and-plugin-wake.md.
 
 ## Overview
 
@@ -23,6 +24,7 @@ has no built-in plugin, connect it through the `mcp` plugin or let the agent use
 | `computer` | off (opt-in) | none | `cua-driver` 0.34.0 (installed by `dinobot init`) | `computer_use` |
 | `browser` | off (opt-in) | none; dedicated mode keeps its own Chrome profile, attach mode uses the user's Chrome logins | an installed Chrome/Edge (not installed by dinobot); Patchright is a package dependency | `browser_use` |
 | `pm` | off (opt-in) | none | `git` on PATH when a ledger names a repo | `pm_create_ledger`, `pm_list_ledgers`, `pm_add_items`, `pm_transition`, `pm_run_check`, `pm_record_decision`, `pm_set_status`, `pm_status`, `pm_verify`, `pm_export_markdown` |
+| `calendar` | off (opt-in) | none (local SQLite store; Google/Apple sync is not implemented) | none | `calendar_create_event`, `calendar_list_events`, `calendar_get_event`, `calendar_update_event`, `calendar_delete_event`, `calendar_import_events` |
 
 To see what actually loaded, run `/plugins` (TUI or http channel). Each line is `<id>: <tool names>`. The serve log
 also prints a startup line `dinobot up: ... plugins=image_gen(1 tools),web(1 tools),skills(0 tools)`.
@@ -448,7 +450,7 @@ Setup: run `dinobot init` (or `dinobot init --check` to verify), add `computer: 
 
 ## `pm`: mechanically checked project ledger for long multi-worker work (opt-in)
 
-Source: src/plugins/pm/, src/extensions/plugin-hooks.ts, openwiki/architecture/pm.md, openwiki/decisions/0105-pm-ledger-plugin.md.
+Source: src/plugins/pm/, src/extensions/plugin-hooks.ts, docs/wiki/architecture/pm.md, docs/wiki/decisions/0105-pm-ledger-plugin.md.
 
 ```yaml
 plugins:
@@ -473,6 +475,47 @@ plugins:
 - `pm_status` gives counts, the ready frontier, the critical path and an ETA from recorded timestamps. `pm_export_markdown`
   writes a read-only Markdown view for people.
 
+## `calendar`: local calendar with reminders delivered to the conversation (opt-in)
+
+Source: src/plugins/calendar/, src/core/bot.ts (plugin wake), openwiki/architecture/calendar.md,
+openwiki/decisions/0106-calendar-plugin-and-plugin-wake.md.
+
+```yaml
+plugins:
+  calendar: {}        # events in <dataDir>/calendar.sqlite, reminders checked every 5 minutes
+  # calendar:
+  #   timeZone: Asia/Seoul
+  #   checkIntervalMinutes: 5
+  #   quietHours: { start: "22:00", end: "08:00" }   # or false
+  #   databasePath: /srv/dinobot/calendar.sqlite
+```
+
+| Field | Type | Required | Default | Notes |
+| --- | --- | --- | --- | --- |
+| `timeZone` | IANA zone name | no | the process zone | local times, quiet hours and display; an unknown zone fails the load |
+| `checkIntervalMinutes` | integer | no | `5` | 1 to 60; the engine also wakes exactly at the next due reminder |
+| `quietHours` | `{start, end}` (`HH:MM`) or `false` | no | `{start: "22:00", end: "08:00"}` | reminders 3 h or more ahead that fall inside move out of it; `false` turns it off |
+| `databasePath` | string | no | `<dataDir>/calendar.sqlite` | host-owned storage (agent file tools cannot touch it); without a data dir it is required |
+
+| Tool | Read-only | Arguments (summary) |
+| --- | --- | --- |
+| `calendar_create_event` | no | `title`, `start` (RFC 3339, local `YYYY-MM-DDTHH:mm` in `timeZone`, or a date for all-day), `end`, `timeZone`, `location`, `description`, `category` (meeting/presentation/deadline/task/travel/personal/other), `importance` (low/normal/high), `preparation`, `reminders` (`[{minutes, action: notify\|prepare, note}]`, replaces the automatic plan; `[]` none), `key`. Same key (or title + start) in the same conversation returns the existing event |
+| `calendar_list_events` | yes | `from`, `to` (default now to +14 days), `query`, `includeCancelled`; at most 200, `truncated` flag |
+| `calendar_get_event` | yes | `id`; every reminder with its state (pending, fired, skipped + reason) |
+| `calendar_update_event` | no | `id` plus any create field; `null` clears an optional field. Pending reminders are replanned, fired ones never fire again |
+| `calendar_delete_event` | no | `id`; cancels the event and skips its pending reminders |
+| `calendar_import_events` | no | `items` (1 to 200 create-shaped items, give each a stable `key` such as a WBS id), `defaults` (`category`, `importance`, `timeZone`); per-item created/updated/unchanged/error |
+
+- Reminders go to the conversation that registered the event: when one comes due the host starts a turn there (input
+  framed `<from host="plugin:calendar"/>`) and posts its answer to that Slack/Telegram/Discord thread once.
+- `prepare` reminders ask the agent to research and draft the material named in `preparation` (files in the
+  workspace); `notify` reminders are a short heads-up. Without explicit `reminders` the plan depends on category and
+  importance (presentations and deadlines days ahead, meetings minutes ahead).
+- A new or moved event that is already over is refused with the current time (models misjudge "today"); read
+  `now` from `calendar_list_events` when unsure.
+- The check loop calls no model; only a due reminder starts a turn. One reminder starts at most one turn, also across
+  restarts.
+
 ## `skills`: skill source importer (always on)
 
 Source: src/plugins/skills/index.ts, src/plugins/skills/bundled.ts, openwiki/architecture/skills.md.
@@ -480,6 +523,7 @@ Source: src/plugins/skills/index.ts, src/plugins/skills/bundled.ts, openwiki/arc
 | Field | Type | Required | Default | Notes |
 | --- | --- | --- | --- | --- |
 | `dirs` | array of non-empty strings | no | `[]` (bundled skills only) | parent directories of extra Agent Skills |
+| `proofSkills` | boolean | no | `false` | adds the bundled formal verification skills `formal-verify`, `tlaplus-model`, `lean-model`, `proof-simplify` (opum-ai/proof-skills, MIT) |
 
 - Bundled skills are always imported: `programming`, `optimization`, `debugging`, `clarification`, `research`, `dinobot`.
 - Each **direct subdirectory** of a dir that contains `SKILL.md` is one skill. Other entries are ignored. Rules:
@@ -501,7 +545,11 @@ Source: src/plugins/skills/index.ts, src/plugins/skills/bundled.ts, openwiki/arc
 plugins:
   skills:
     dirs: [/srv/dinobot/skills, ./team-skills]
+    proofSkills: true
 ```
+
+- `proofSkills: true` turns on TLA+/Lean 4 bug hunting. The skills install their own tools (Java TLC, elan) under
+  `~/.cache/proof-skills` on first use. Do not also point `dirs` at a proof-skills checkout: the names would collide.
 
 ## Common answers
 

@@ -22,3 +22,33 @@ Reviewed src/plugins/skills catalog and companion files for source/adaptation/li
 - vendor/answer-me-with-html and web adaptations: explicit existing licenses/attributions retained as listed above.
 
 The replacement instructions are part of this project under its license. No rights to the removed upstream text are asserted.
+
+## Opt-in proof skills
+
+`src/plugins/skills/proof-skills/` contains the MIT-licensed opum-ai/proof-skills instructions, references, scripts and model assets, with a dinobot loader and integration note. The complete license remains in `LICENSE.txt` and in every loaded skill package as `LICENSE`. These four skills are disabled by default (`plugins.skills.proofSkills: false`) and require explicit opt-in. The setup scripts are companion text, not executed by loading the package; externally installed tools have their own licenses. No removed unknown-license prose was restored.
+
+The full notice below is also collected into release packages by the existing release builder:
+
+```text
+MIT License
+
+Copyright (c) 2026 Opum AI
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```

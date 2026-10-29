@@ -338,6 +338,7 @@ class SetupSession {
 		const computerOn = on("computer");
 		const browserOn = on("browser");
 		const googleOn = on("google");
+		const calendarOn = on("calendar");
 		const webOn = view.plugins.web !== false;
 		const checked = await this.checklist(`${label}\n${copy.pluginsMessage}`, [
 			// Web search needs no consent (ADR 0058): shown locked with its real state.
@@ -347,6 +348,8 @@ class SetupSession {
 			{ id: "browser", label: copy.browser, description: copy.browserHint, ...(browserOn ? { tag: copy.browserMode(browserMode(view.plugins.browser)) } : {}), checked: browserOn },
 			// Read-only defaults; the account is linked on first use through the plugin's own login link.
 			{ id: "google", label: copy.google, description: copy.googleHint, checked: googleOn },
+			// Local store, no account (ADR 0106): turning it on is the empty block.
+			{ id: "calendar", label: copy.calendar, description: copy.calendarHint, checked: calendarOn },
 		]);
 		const wantComputer = checked.includes("computer");
 		if (wantComputer && !computerOn) {
@@ -360,6 +363,9 @@ class SetupSession {
 		const wantGoogle = checked.includes("google");
 		if (wantGoogle && !googleOn) this.stage({ section: "plugins", key: "google", value: {} });
 		else if (!wantGoogle && googleOn) this.stage({ section: "plugins", key: "google", value: undefined });
+		const wantCalendar = checked.includes("calendar");
+		if (wantCalendar && !calendarOn) this.stage({ section: "plugins", key: "calendar", value: {} });
+		else if (!wantCalendar && calendarOn) this.stage({ section: "plugins", key: "calendar", value: undefined });
 	}
 
 	/**
@@ -484,7 +490,7 @@ class SetupSession {
 	private async summary(text: string): Promise<string[]> {
 		const { copy } = this;
 		const view = parseView(text);
-		const names: Record<string, string> = { telegram: copy.telegram, slack: copy.slack, discord: copy.discord, http: "HTTP", computer: copy.computer, browser: copy.browser, google: copy.google, web: copy.web };
+		const names: Record<string, string> = { telegram: copy.telegram, slack: copy.slack, discord: copy.discord, http: "HTTP", computer: copy.computer, browser: copy.browser, google: copy.google, calendar: copy.calendar, web: copy.web };
 		const channels = [copy.terminal, ...Object.keys(view.channels).map((key) => names[key] ?? key)];
 		const features = [
 			...(view.plugins.web === false ? [] : [copy.web]),

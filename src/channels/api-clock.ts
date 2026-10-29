@@ -29,7 +29,41 @@ let native: (() => bigint) | undefined;
 export function systemClock(): GateClock {
  if (process.platform === "linux" && ["x64", "arm64"].includes(process.arch)) return linuxClock();
  if (process.platform === "win32" && process.arch === "x64") return windowsClock();
+ if (process.platform === "darwin" && ["x64", "arm64"].includes(process.arch)) return darwinClock();
  throw new GateUnavailable("Unsupported native clock ABI");
+}
+
+let darwinNative: (() => bigint) | undefined;
+let darwinIdentity: string | undefined;
+/** Darwin LP64: CLOCK_UPTIME_RAW is unslewed, system-wide and excludes suspend (like Linux RAW).
+ * The kernel boot UUID, not wall time minus uptime, identifies comparable persisted observations. */
+function darwinClock(): GateClock {
+ if (!darwinNative) {
+  const { dlopen, FFIType, ptr } = createRequire(import.meta.url)("bun:ffi") as typeof import("bun:ffi");
+  const library = dlopen("/usr/lib/libSystem.B.dylib", {
+   clock_gettime: { args: [FFIType.i32, FFIType.ptr], returns: FFIType.i32 },
+   sysctlbyname: { args: [FFIType.ptr, FFIType.ptr, FFIType.ptr, FFIType.ptr, FFIType.u64], returns: FFIType.i32 },
+  });
+  const bytes = new Uint8Array(16), view = new DataView(bytes.buffer);
+  const observe = () => {
+   // Darwin clockid_t CLOCK_UPTIME_RAW=8; time_t and long are signed 64-bit on x64/arm64.
+   if (library.symbols.clock_gettime(8, ptr(bytes)) !== 0) throw new GateUnavailable("clock_gettime failed");
+   const s = view.getBigInt64(0, true), n = view.getBigInt64(8, true);
+   if (s < 0n || n < 0n || n >= 1000000000n) throw new GateUnavailable("Invalid timespec");
+   return s * 1000000000n + n;
+  };
+  observe(); // Fail before publishing a partial native implementation.
+  let identity: string;
+  try {
+   const name = Buffer.from("kern.bootsessionuuid\0"), boot = Buffer.alloc(64), size = new BigUint64Array([64n]);
+   if (library.symbols.sysctlbyname(ptr(name), ptr(boot), ptr(size), null, 0n) !== 0 || size[0] !== 37n || boot[36] !== 0) throw new Error("boot identity");
+   identity = boot.subarray(0, 36).toString("ascii").toLowerCase();
+   if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(identity)) throw new Error("boot identity");
+  } catch { identity = "uncomparable:" + crypto.randomUUID(); }
+  darwinIdentity = identity;
+  darwinNative = observe;
+ }
+ return { frame: "darwin-uptime-raw-v1:" + darwinIdentity, rate: [1n, 1000n], observeNs: darwinNative, timer(fn, ms) { const t = setTimeout(fn, ms); return () => clearTimeout(t); } };
 }
 
 function linuxClock(): GateClock {

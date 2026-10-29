@@ -1,12 +1,14 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
-import { chmod, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { chmod, link, mkdir, open, readFile, rename, rm, stat, unlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { gzipSync } from "node:zlib";
 import type { JsonValue } from "@earendil-works/chord";
 import { projectEntries, type Projection, type Tier } from "./bundle.ts";
-import { type ConsentReceipt, currentReceipt, DEFAULT_REPORT_URL, newReceipt } from "./consent.ts";
+import { CONSENT_TEXT, CONSENT_TEXT_SHA256, CONSENT_VERSION, type ConsentReceipt, currentReceipt, DEFAULT_REPORT_URL, newReceipt } from "./consent.ts";
 import type { DetectionRule } from "./detect.ts";
-import { redactValue } from "./redact.ts";
+import type { ReportClient, ReportMode } from "./diagnostics.ts";
+import { pidAlive } from "./diagnostics.ts";
+import { redactValue, type RedactionCounts } from "./redact.ts";
 
 /**
  * Client side of dinobot session reports (ADR 0073). State lives in `<dataDir>/report/`:
@@ -26,6 +28,9 @@ const LIMIT_COMPRESSED = 10 * 1024 * 1024;
 const LIMIT_ENTRIES = 20_000;
 const LIMIT_LINE = 512 * 1024;
 const NOTE_CHARS = 2_000;
+/** Cross-process state lock (ADR 0103): the daemon and an offline `dinobot report` share state.json. */
+export const STATE_LOCK_STALE_MS = 30_000;
+const STATE_LOCK_WAIT_MS = 20_000;
 
 /** "owner" is the local TUI owner (install-wide); "<channel>:<userId>" a person in a messenger channel. */
 export type Owner = "owner" | `${string}:${string}`;
@@ -57,6 +62,9 @@ export type ReportRecord = {
 	entries?: number;
 	/** The thread's model ref when the bundle was built. */
 	model?: string;
+	/** Number of leading diagnostic lines in the bundle; kept when the bundle is trimmed to the size limit. */
+	diagnostics?: number;
+	client?: string;
 };
 
 type State = {
@@ -79,8 +87,10 @@ export type ReportServiceOptions = {
 	readonly now?: () => Date;
 	readonly version: string;
 	readonly os?: string;
-	/** Visible export of a thread: root conversation id, entries (incl. subagents) and the thread's model ref. */
-	readonly capture: (channel: string, threadKey: string) => Promise<CaptureResult>;
+	/** Visible export of a thread: root conversation id, entries (incl. subagents) and the thread's model ref. Absent offline. */
+	readonly capture?: (channel: string, threadKey: string, options?: { mustExist?: boolean }) => Promise<CaptureResult>;
+	/** Diagnostic entry lines (src/report/diagnostics.ts), already scrubbed; only for the install owner's manual reports. */
+	readonly diagnostics?: (request: DiagnosticRequest) => Promise<{ lines: string[]; redactions: RedactionCounts }>;
 	readonly log?: (message: string) => void;
 };
 
@@ -88,16 +98,58 @@ export type Preview = {
 	readonly id: string;
 	readonly path: string;
 	readonly entries: number;
+	/** Leading diagnostic lines (ADR 0103). */
+	readonly diagnostics: number;
 	readonly compressedBytes: number;
 	readonly redactions: Record<string, number>;
 	readonly omitted: Projection["omitted"];
 };
+
+export type DiagnosticRequest = { readonly trigger: string; readonly client: ReportClient; readonly mode?: ReportMode; readonly context?: unknown };
+
+export type SubmitInput = {
+	readonly owner: Owner;
+	readonly trigger: string;
+	readonly client: ReportClient;
+	readonly note?: string;
+	/** With threadKey: the conversation to include when a capture is available (daemon mode). */
+	readonly channel?: string;
+	readonly threadKey?: string;
+	readonly reporter?: string;
+	readonly context?: unknown;
+};
+
+export type SubmitResult = {
+	readonly id: string;
+	readonly shortId: string;
+	readonly status: "sent" | "pending" | "failed";
+	readonly error?: string;
+	/** Entry lines in the bundle (diagnostic lines plus conversation entries). */
+	readonly entries: number;
+	readonly diagnostics: number;
+	readonly compressedBytes: number;
+	readonly redactions: Record<string, number>;
+};
+
+export class ConsentRequiredError extends Error {
+	readonly code = "consent_required";
+	constructor() {
+		super("consent required: agree to the current report consent first (dinobot report consent)");
+	}
+}
+
+export type ConsentInfo = { version: string; text: string; textSha256: string; consented: boolean; receipt?: ConsentReceipt; auto: boolean };
 
 export type AutoResult = { scheduled: true; id: string; sendAt: string } | { scheduled: false; reason: "no_consent" | "auto_off" | "cooldown" | "daily_limit" };
 
 const token = () => randomBytes(32).toString("base64url");
 const sha256 = (value: string | Uint8Array) => createHash("sha256").update(value).digest("hex");
 export const shortId = (id: string) => id.slice(0, 8);
+const RULE = /^[a-z0-9][a-z0-9._-]{0,63}$/;
+function validRule(rule: string): string {
+	if (!RULE.test(rule)) throw new Error(`invalid report trigger ${JSON.stringify(rule.slice(0, 80))}`);
+	return rule;
+}
 
 export class ReportService {
 	private readonly dir: string;
@@ -110,11 +162,14 @@ export class ReportService {
 	private timer: ReturnType<typeof setInterval> | undefined;
 	private flushing: Promise<void> | undefined;
 	private flushAgain = false;
+	private readonly uploading = new Set<string>();
+	private readonly lockPath: string;
 
 	constructor(private readonly options: ReportServiceOptions) {
 		this.dir = join(options.dataDir, "report");
 		this.statePath = join(this.dir, "state.json");
 		this.outbox = join(this.dir, "outbox");
+		this.lockPath = join(this.dir, "state.lock");
 		this.url = (options.url ?? DEFAULT_REPORT_URL).replace(/\/+$/, "");
 		this.fetch = options.fetch ?? globalThis.fetch;
 		this.now = options.now ?? (() => new Date());
@@ -122,16 +177,89 @@ export class ReportService {
 
 	// ---- state ---------------------------------------------------------------------------------
 
-	/** Serialise every state mutation; reads inside see the latest committed file. */
+	/**
+	 * Serialise every state mutation; reads inside see the latest committed file. In-process calls queue on a promise chain;
+	 * across processes (daemon + offline CLI) the load-modify-save runs under `report/state.lock`.
+	 */
 	private locked<T>(fn: (state: State) => Promise<T> | T): Promise<T> {
-		const run = this.chain.then(async () => {
-			const state = await this.load();
-			const result = await fn(state);
-			await this.save(state);
-			return result;
-		});
+		const run = this.chain.then(() =>
+			this.withFileLock(async () => {
+				const state = await this.load();
+				const result = await fn(state);
+				await this.save(state);
+				return result;
+			}),
+		);
 		this.chain = run.catch(() => undefined);
 		return run;
+	}
+
+	/**
+	 * Exclusive-create lock file holding `{pid, at, nonce}`. A lock is stale when its pid is dead or it is older than
+	 * STATE_LOCK_STALE_MS (critical sections take milliseconds). Breaking renames the stale file aside first and checks that
+	 * the renamed file is the one judged stale; a fresh lock taken by mistake is linked back (link fails if the path is taken).
+	 */
+	private async withFileLock<T>(fn: () => Promise<T>): Promise<T> {
+		await mkdir(this.dir, { recursive: true, mode: 0o700 });
+		const nonce = randomUUID();
+		const content = JSON.stringify({ pid: process.pid, at: Date.now(), nonce });
+		const deadline = Date.now() + STATE_LOCK_WAIT_MS;
+		for (;;) {
+			try {
+				const handle = await open(this.lockPath, "wx", 0o600);
+				try {
+					await handle.writeFile(content);
+				} finally {
+					await handle.close();
+				}
+				break;
+			} catch (error) {
+				const code = (error as NodeJS.ErrnoException).code;
+				// Windows reports EPERM/EBUSY while another process renames or deletes the file.
+				if (code !== "EEXIST" && code !== "EPERM" && code !== "EBUSY") throw error;
+				if (code === "EEXIST" && (await this.breakStaleLock())) continue;
+				if (Date.now() > deadline) throw new Error(`report state is locked by another process (${this.lockPath})`);
+				await Bun.sleep(5 + Math.random() * 20);
+			}
+		}
+		try {
+			return await fn();
+		} finally {
+			const current = await readFile(this.lockPath, "utf8").catch(() => undefined);
+			if (current === content) await unlink(this.lockPath).catch(() => undefined);
+		}
+	}
+
+	/** True when the lock path was freed (released meanwhile or a stale lock was removed); false when a live holder has it. */
+	private async breakStaleLock(): Promise<boolean> {
+		let observed: string;
+		let mtimeMs: number;
+		try {
+			observed = await readFile(this.lockPath, "utf8");
+			mtimeMs = (await stat(this.lockPath)).mtimeMs;
+		} catch {
+			return true;
+		}
+		let holder: { pid?: unknown; at?: unknown } | undefined;
+		try {
+			holder = JSON.parse(observed) as { pid?: unknown; at?: unknown };
+		} catch {
+			holder = undefined; // being written right now, or garbage
+		}
+		const age = Date.now() - (typeof holder?.at === "number" ? holder.at : mtimeMs);
+		const alive = typeof holder?.pid === "number" && pidAlive(holder.pid);
+		if (holder ? alive && age <= STATE_LOCK_STALE_MS : age <= STATE_LOCK_STALE_MS) return false;
+		const aside = `${this.lockPath}.stale.${randomUUID()}`;
+		try {
+			await rename(this.lockPath, aside);
+		} catch {
+			return false;
+		}
+		const moved = await readFile(aside, "utf8").catch(() => undefined);
+		if (moved !== observed) await link(aside, this.lockPath).catch(() => undefined);
+		await unlink(aside).catch(() => undefined);
+		this.options.log?.(`report: removed a stale state lock (${holder ? `pid ${String(holder.pid)}` : "unreadable"})`);
+		return true;
 	}
 
 	private async load(): Promise<State> {
@@ -167,6 +295,12 @@ export class ReportService {
 		});
 	}
 
+	/** The current consent text and this owner's receipt (GET /v1/report/consent, `dinobot report consent --json`). */
+	async consentInfo(owner: Owner): Promise<ConsentInfo> {
+		const { receipt, auto } = await this.consent(owner);
+		return { version: CONSENT_VERSION, text: CONSENT_TEXT, textSha256: CONSENT_TEXT_SHA256, consented: receipt !== undefined, ...(receipt ? { receipt } : {}), auto };
+	}
+
 	async recordConsent(owner: Owner, auto: boolean): Promise<ConsentReceipt> {
 		return this.locked((state) => {
 			const receipt = newReceipt(this.now());
@@ -191,7 +325,7 @@ export class ReportService {
 	// ---- manual reports ------------------------------------------------------------------------
 
 	/** Build the bundle now so the person can inspect exactly what would be sent. Stays a draft until confirmed. */
-	async prepare(input: { owner: Owner; channel: string; threadKey: string; reporter: string; excludeOthers: boolean; note?: string }): Promise<Preview> {
+	async prepare(input: { owner: Owner; channel: string; threadKey: string; reporter: string; excludeOthers: boolean; note?: string; trigger?: string; context?: unknown }): Promise<Preview> {
 		await this.locked((state) => {
 			if (!this.receipt(state, input.owner)) throw new Error("consent required: run /report setup first");
 		});
@@ -206,21 +340,77 @@ export class ReportService {
 			reporter: input.reporter,
 			excludeOthers: input.excludeOthers,
 			...(input.note?.trim() ? { note: input.note.trim().slice(0, NOTE_CHARS) } : {}),
+			...(input.trigger ? { trigger: { rule: validRule(input.trigger) } } : {}),
+			...(input.owner === "owner" ? { client: "tui" } : {}),
 			deleteToken: token(),
 			status: "draft",
 			createdAt: this.now().toISOString(),
 			notBefore: this.now().toISOString(),
 			attempts: 0,
 		};
-		const built = await this.build(record);
+		const built = await this.build(record, { context: input.context, mode: "daemon" });
 		if (built.projection.entries.length === 0) {
 			await this.discard(input.owner, id);
 			throw new Error("보낼 대화가 없습니다. 이 대화에는 아직 기록이 없어서 보고를 만들지 않았습니다.");
 		}
 		await this.locked((state) => {
-			state.reports.push({ ...record, bundle: built.file, redactions: built.projection.redactions as Record<string, number>, entries: built.projection.entries.length, ...(built.model ? { model: built.model } : {}) });
+			state.reports.push({ ...record, bundle: built.file, redactions: built.redactions, entries: built.entries, diagnostics: built.diagnostics, ...(built.model ? { model: built.model } : {}) });
 		});
-		return { id, path: join(this.outbox, `${id}.preview.ndjson`), entries: built.projection.entries.length, compressedBytes: built.bytes, redactions: built.projection.redactions as Record<string, number>, omitted: built.projection.omitted };
+		return { id, path: join(this.outbox, `${id}.preview.ndjson`), entries: built.entries, diagnostics: built.diagnostics, compressedBytes: built.bytes, redactions: built.redactions, omitted: built.projection.omitted };
+	}
+
+	/**
+	 * One-step report (button, CLI, POST /v1/report): diagnostics plus the conversation when one is named and can be
+	 * captured, stored as pending and uploaded at once. A failed upload stays pending for the outbox retries.
+	 */
+	async submit(input: SubmitInput): Promise<SubmitResult> {
+		const rule = validRule(input.trigger);
+		await this.locked((state) => {
+			if (!this.receipt(state, input.owner)) throw new ConsentRequiredError();
+		});
+		const now = this.now().toISOString();
+		const id = randomUUID();
+		const record: ReportRecord = {
+			id,
+			owner: input.owner,
+			kind: "manual",
+			tier: "T2",
+			channel: input.channel ?? input.client,
+			threadKey: input.threadKey ?? "",
+			reporter: input.reporter ?? "reporter",
+			excludeOthers: input.owner !== "owner",
+			trigger: { rule },
+			client: input.client,
+			...(input.note?.trim() ? { note: input.note.trim().slice(0, NOTE_CHARS) } : {}),
+			deleteToken: token(),
+			status: "pending",
+			createdAt: now,
+			notBefore: now,
+			attempts: 0,
+		};
+		const built = await this.build(record, { context: input.context, optionalConversation: true, ...(this.options.capture ? { mode: "daemon" as const } : { mode: "offline" as const }) });
+		await this.locked((state) => {
+			state.reports.push({ ...record, bundle: built.file, redactions: built.redactions, entries: built.entries, diagnostics: built.diagnostics, ...(built.model ? { model: built.model } : {}) });
+		});
+		try {
+			await this.uploadOne(id);
+		} catch (error) {
+			this.options.log?.(`report ${shortId(id)}: ${error instanceof Error ? error.message : String(error)}`);
+		}
+		const after = await this.locked((state) => state.reports.find((r) => r.id === id));
+		const status = after?.status === "sent" ? "sent" : after?.status === "pending" ? "pending" : "failed";
+		return { id, shortId: shortId(id), status, ...(after?.error && status !== "sent" ? { error: after.error } : {}), entries: built.entries, diagnostics: built.diagnostics, compressedBytes: built.bytes, redactions: built.redactions };
+	}
+
+	/** A setup apply that failed within `maxAgeMs` (written by the TUI, src/tui/app.ts recordSetupFailure). */
+	async recentSetupFailure(maxAgeMs = 3_600_000): Promise<{ at: string; status: string } | undefined> {
+		try {
+			const parsed = JSON.parse(await readFile(join(this.dir, "last-setup.json"), "utf8")) as { at?: unknown; status?: unknown };
+			if (typeof parsed.at !== "string" || typeof parsed.status !== "string") return undefined;
+			return this.now().getTime() - Date.parse(parsed.at) <= maxAgeMs ? { at: parsed.at, status: parsed.status } : undefined;
+		} catch {
+			return undefined;
+		}
 	}
 
 	async drafts(owner: Owner): Promise<string[]> {
@@ -407,6 +597,17 @@ export class ReportService {
 	}
 
 	private async uploadOne(id: string): Promise<void> {
+		// submit() and a flush pass may reach the same report; one upload at a time per process.
+		if (this.uploading.has(id)) return;
+		this.uploading.add(id);
+		try {
+			await this.uploadOnce(id);
+		} finally {
+			this.uploading.delete(id);
+		}
+	}
+
+	private async uploadOnce(id: string): Promise<void> {
 		const ready = await this.locked((state) => {
 			const record = state.reports.find((r) => r.id === id);
 			if (!record || record.status !== "pending") return undefined;
@@ -424,7 +625,7 @@ export class ReportService {
 		if (!file) {
 			const built = await this.build(record);
 			file = built.file;
-			record = { ...record, bundle: file, redactions: built.projection.redactions as Record<string, number>, entries: built.projection.entries.length, ...(built.model ? { model: built.model } : {}), ...(built.projection.lastUserEntryId !== undefined && record.trigger ? { trigger: { ...record.trigger, entryId: String(built.projection.lastUserEntryId) } } : {}) };
+			record = { ...record, bundle: file, redactions: built.redactions, entries: built.entries, ...(built.model ? { model: built.model } : {}), ...(built.projection.lastUserEntryId !== undefined && record.trigger ? { trigger: { ...record.trigger, entryId: String(built.projection.lastUserEntryId) } } : {}) };
 			const stillPending = await this.locked((state) => {
 				const found = state.reports.find((r) => r.id === id);
 				if (!found || found.status !== "pending") return false; // undone while building
@@ -491,30 +692,68 @@ export class ReportService {
 			consent: receipt,
 			...(record.note ? { note: redactValue(record.note) as string } : {}),
 		};
-		let lines = entriesText === "" ? [] : entriesText.split("\n");
+		const all = entriesText === "" ? [] : entriesText.split("\n");
+		// Diagnostics lead the bundle and are kept; the conversation is trimmed first, then log parts.
+		let head = all.slice(0, record.diagnostics ?? 0);
+		let lines = all.slice(record.diagnostics ?? 0);
 		for (;;) {
-			const body = gzipSync([JSON.stringify(manifest), ...lines].join("\n") + "\n");
-			if (body.byteLength <= LIMIT_COMPRESSED || lines.length === 0) return new Uint8Array(body);
-			lines = lines.slice(Math.ceil(lines.length / 4)); // keep the most recent three quarters
+			const body = gzipSync([JSON.stringify(manifest), ...head, ...lines].join("\n") + "\n");
+			if (body.byteLength <= LIMIT_COMPRESSED) return new Uint8Array(body);
+			if (lines.length > 0) {
+				lines = lines.slice(Math.ceil(lines.length / 4)); // keep the most recent three quarters
+				continue;
+			}
+			const log = head.findIndex((line) => line.startsWith('{"kind":"diagnostic","section":"logs"'));
+			if (log < 0) return new Uint8Array(body);
+			head = [...head.slice(0, log), ...head.slice(log + 1)];
 		}
 	}
 
-	/** Capture, project and store a record's entries as outbox/<id>.gz (entry lines only, no manifest). */
-	private async build(record: ReportRecord): Promise<{ file: string; bytes: number; projection: Projection; model?: string }> {
-		const captured = await this.options.capture(record.channel, record.threadKey);
-		const projection = projectEntries(captured.entries, { tier: record.tier, root: captured.root, reporter: record.reporter, excludeOthers: record.excludeOthers });
+	/**
+	 * Diagnostics (the install owner's manual reports only: a channel person cannot consent for the owner's machine), then
+	 * the captured, projected conversation; stored as outbox/<id>.gz (entry lines only, no manifest).
+	 */
+	private async build(record: ReportRecord, extra: { context?: unknown; mode?: ReportMode; optionalConversation?: boolean } = {}): Promise<{ file: string; bytes: number; projection: Projection; redactions: Record<string, number>; entries: number; diagnostics: number; model?: string }> {
+		const redactions: Record<string, number> = {};
+		const add = (counts: RedactionCounts) => {
+			for (const [kind, n] of Object.entries(counts)) redactions[kind] = (redactions[kind] ?? 0) + (n ?? 0);
+		};
+		let head: string[] = [];
+		if (record.kind === "manual" && record.owner === "owner" && this.options.diagnostics) {
+			try {
+				const collected = await this.options.diagnostics({ trigger: record.trigger?.rule ?? "manual", client: (record.client ?? "tui") as ReportClient, ...(extra.mode ? { mode: extra.mode } : {}), ...(extra.context !== undefined ? { context: extra.context } : {}) });
+				head = collected.lines;
+				add(collected.redactions);
+			} catch (error) {
+				head = [JSON.stringify({ kind: "diagnostic", section: "report", error: redactValue(error instanceof Error ? error.message : String(error)) })];
+			}
+		}
+		let projection: Projection = { entries: [], redactions: {}, omitted: { nudges: 0, participants: 0, summaries: 0, truncated: 0, outsideWindow: 0 } };
+		let model: string | undefined;
+		if (this.options.capture && record.channel && record.threadKey) {
+			try {
+				const captured = await this.options.capture(record.channel, record.threadKey, extra.optionalConversation ? { mustExist: true } : undefined);
+				projection = projectEntries(captured.entries, { tier: record.tier, root: captured.root, reporter: record.reporter, excludeOthers: record.excludeOthers });
+				model = captured.model;
+			} catch (error) {
+				if (!extra.optionalConversation) throw error;
+				head.push(JSON.stringify({ kind: "diagnostic", section: "conversation", error: redactValue(error instanceof Error ? error.message : String(error)) }));
+			}
+		}
+		add(projection.redactions);
 		let lines = projection.entries.map((entry) => {
 			const line = JSON.stringify(entry);
 			return line.length <= LIMIT_LINE ? line : JSON.stringify({ id: entry.id, conversationId: entry.conversationId, kind: entry.kind, truncated: true });
 		});
-		if (lines.length > LIMIT_ENTRIES) lines = lines.slice(lines.length - LIMIT_ENTRIES);
+		if (lines.length + head.length > LIMIT_ENTRIES) lines = lines.slice(Math.max(0, lines.length - (LIMIT_ENTRIES - head.length)));
+		lines = [...head, ...lines];
 		const text = lines.join("\n");
 		const file = `${record.id}.gz`;
 		await mkdir(this.outbox, { recursive: true, mode: 0o700 });
 		const gz = gzipSync(text);
 		await writeFile(join(this.outbox, file), gz, { mode: 0o600 });
 		if (record.status === "draft") await writeFile(join(this.outbox, `${record.id}.preview.ndjson`), text + "\n", { mode: 0o600 });
-		return { file, bytes: gz.byteLength, projection, ...(captured.model ? { model: captured.model } : {}) };
+		return { file, bytes: gz.byteLength, projection, redactions, entries: lines.length, diagnostics: head.length, ...(model ? { model } : {}) };
 	}
 
 	/** Forget local records whose server copy has expired anyway; tokens are useless after that. */

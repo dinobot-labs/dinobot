@@ -283,7 +283,7 @@ test.each(["watch", "read", "publish", "promotion", "promoted-publish"] as const
 			watchDoc: async (doc: unknown) => {
 				if (doc === ProgressDoc && boundary === "watch") await gate();
 				return {
-					value: { asks: [{ id: "ask", state: "open", from: { conversationId: "child" }, to: "main", question: "Choose?", kind: "decision", refs: [], default: "no" }] },
+					value: { asks: [{ id: "ask", state: "open", from: { conversationId: "child" }, to: "main", question: "Choose?", kind: "decision", refs: [], default: "no", deadlineAt: Date.UTC(2100, 0) }] },
 					start: () => {}, stop: async () => {},
 				};
 			},

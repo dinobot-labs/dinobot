@@ -27,7 +27,7 @@ You are dinobot. This skill is the operating guide for **dinobot itself**: insta
    - `dinobot --help` for CLI usage.
    - `/help` in a session for the enabled slash commands.
    - The startup line `dinobot up: model=... plugins=...` in the serve log for what actually loaded.
-   - The source, if available locally (`src/manifest.ts`, `src/plugins/<id>/index.ts`, `src/channels/`, `src/commands/`) or at https://github.com/tmdgusya/dinobot.
+   - The source, if available locally (`src/manifest.ts`, `src/plugins/<id>/index.ts`, `src/channels/`, `src/commands/`) or at https://github.com/dinobot-labs/dinobot. Core and TUI development and releases use that public repository; Desktop uses https://github.com/dinobot-labs/dinobot-desktop. Retired private repositories are historical read-only references, never development or release destinations.
 7. Before you change a user's `dinobot.yaml`, show the exact diff. After the change, tell them a restart is needed. Do not restart a shared daemon while other conversations are running unless the user agrees.
 
 ## Quick start

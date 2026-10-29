@@ -64,6 +64,7 @@ test("signed thread types 10/11/12 admit parent-only configuration and keep topi
  expect(sent.map(s => s.path)).toEqual(["91", "92", "91"].map(id => "/webhooks/123/token-" + id + "/messages/@original"));
  for (const s of sent) {
   expect(s.method).toBe("PATCH"); expect(s.payload.content).toBe("@everyone answer");
+  expect(s.payload.embeds).toBeUndefined(); expect(s.payload.components).toBeUndefined();
   expect(s.payload.allowed_mentions).toEqual({ parse: [], users: [], roles: [], replied_user: false });
  }
 });
@@ -126,6 +127,107 @@ test("I3 I5 I7 Discord buttons use signed component admission and one PATCH incl
  expect((await post(c,{...click,user:{id:"8"}})).status).toBe(403);expect((await post(c,{...click,data:{component_type:2,custom_id:"bad"}})).status).toBe(400);expect((await post(c,click,true)).status).toBe(401);
  expect(await(await post(c,click)).json()).toEqual({type:5,data:{flags:64}});await post(c,click);await until(()=>c.health().done===1);expect(seen).toHaveLength(1);expect(seen[0]).toMatchObject({threadKey:"123:91:7",choice:{askId:ask.id,option:1}});
  await post(c,{...event(),type:3,data:click.data});await until(()=>c.health().done===2);expect(payloads).toHaveLength(2);
- for(const p of payloads){expect(p.components).toHaveLength(1);expect(p.components[0].components[0]).toMatchObject({type:2,style:1,label:"SQLite (기본값)",custom_id:"da:"+ask.id+":0"});}
- expect(payloads[0].attachments).toEqual([]);expect(payloads[1].attachments).toEqual([{id:0,filename:"answer.txt"}]);
+ for(const p of payloads){expect(p.components).toHaveLength(1);expect(p.components[0].components[0]).toMatchObject({type:2,style:1,label:"Q1 1. SQLite (기본값)",custom_id:"da:"+ask.id+":0"});}
+ expect(payloads[0].attachments).toEqual([{id:0,filename:"questions.txt"}]);expect(payloads[1].attachments).toEqual([{id:0,filename:"answer.txt"},{id:1,filename:"questions.txt"}]);
+});
+
+for (const text of ["", "answer", "x".repeat(2001)]) test("Discord ask cards retain question and free-text/default guidance with " + (text.length > 2000 ? "attached" : text ? "inline" : "empty") + " answer", async () => {
+ const asks = [0, 1, 2].map(n => ({id: String(n).repeat(32), question: "질문 " + n + "?", options: ["예", "아니요"], default: "설명과 함께 보류", deadlineAt: Date.now() + 60000}));
+ const sent: {payload: any; attachment: string | null}[] = [];
+ const c = channel(config(), async req => {
+  const form = await req.formData(); const file = text.length > 2000 ? form.get("files[0]") : null;
+  sent.push({payload: JSON.parse(String(form.get("payload_json"))), attachment: file instanceof Blob ? await file.text() : null});
+  return Response.json({id: "99"});
+ });
+ await c.start(async () => ({status: "answered", text, asks}));
+ expect(await (await post(c, event())).json()).toEqual({type: 5, data: {flags: 64}});
+ await until(() => c.health().done === 1);
+ expect(sent).toHaveLength(1); // one PATCH; no second ask message overwrites the answer
+ const {payload, attachment} = sent[0]!;
+ expect(payload.embeds).toHaveLength(3);
+ for (const [n, ask] of asks.entries()) {
+  expect(payload.embeds[n].title).toBe("Q" + (n + 1) + " " + ask.question);
+  expect(payload.embeds[n].description).toContain("/ask prompt:");
+  expect(payload.embeds[n].footer.text).toContain(ask.default);
+  expect(payload.components[n].components[0].label).toBe("Q" + (n + 1) + " 1. 예");
+  expect(payload.components[n].components[0].custom_id).toBe("da:" + ask.id + ":0");
+ }
+ expect(payload.allowed_mentions).toEqual({parse: [], users: [], roles: [], replied_user: false});
+ expect(payload.content).toBe(text.length > 2000 ? "Response attached as plain text." : text || "(empty response)");
+ expect(attachment).toBe(text.length > 2000 ? text : null);
+});
+
+test("Discord ask card maximum Unicode inputs fit embed and component payload limits", async () => {
+ const asks = [0, 1, 2].map(n => ({id: String(n).repeat(32), question: "😀".repeat(2000), options: ["A", "B", "C", "D"], default: "😀".repeat(1000), deadlineAt: Date.now() + 60000}));
+ let payload: any;
+ const c = channel(config(), async req => {payload = JSON.parse(String((await req.formData()).get("payload_json"))); return Response.json({id: "99"});});
+ await c.start(async () => ({status: "answered", text: "answer", asks}));
+ await post(c, event()); await until(() => c.health().done === 1);
+ expect(payload.embeds).toHaveLength(3);
+ let total = 0;
+ for (const embed of payload.embeds) {
+  expect(embed.title.length).toBeLessThanOrEqual(256);
+  expect(embed.description.length).toBeLessThanOrEqual(4096);
+  expect(embed.footer.text.length).toBeLessThanOrEqual(2048);
+  expect(embed.title).toEndWith("…"); expect(embed.footer.text).toContain("…");
+  expect(embed.title).not.toMatch(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])/);
+  total += embed.title.length + embed.description.length + embed.footer.text.length;
+ }
+ expect(total).toBeLessThanOrEqual(6000);
+ expect(payload.components).toHaveLength(3);
+ expect(payload.components.every((row: any) => row.components.length === 4)).toBe(true);
+ expect(payload.content).toBe("answer");
+});
+
+for (const answer of ["", "inline", "x".repeat(2001)]) test("full ask attachment preserves maximum inputs and numbered choices: " + answer.length, async () => {
+ const asks = [0, 1, 2].map(n => ({id: String(n).repeat(32), question: "q".repeat(3999) + n, default: "d".repeat(1999) + n, options: ["😀".repeat(249) + "AA", "😀".repeat(249) + "BB"], deadlineAt: Date.now() + 60000}));
+ let form: Awaited<ReturnType<Request["formData"]>> | undefined; let sends = 0;
+ const c = channel(config(), async req => {sends++; expect(req.method).toBe("PATCH"); form = await req.formData(); return Response.json({id:"99"});});
+ await c.start(async () => ({status:"answered", text:answer, asks}));
+ await post(c,event()); await until(() => c.health().done === 1);
+ expect(sends).toBe(1);
+ const payload = JSON.parse(String(form!.get("payload_json")));
+ const entry = payload.attachments.find((a: any) => a.filename === "questions.txt");
+ expect(entry).toBeDefined();
+ const file = form!.get("files[" + entry.id + "]") as File;
+ expect(file.name).toBe("questions.txt"); const full = await file.text();
+ for (const [i, ask] of asks.entries()) {
+  expect(full).toContain("Q" + (i + 1)); expect(full).toContain(ask.question); expect(full).toContain(ask.default);
+  for (const [j, option] of ask.options.entries()) expect(full).toContain((j + 1) + ". " + option);
+  expect(payload.embeds[i].description).toContain("Q" + (i + 1));
+  expect(payload.embeds[i].description).toContain("같은 사용자");
+  expect(payload.embeds[i].description).toContain("채널/스레드");
+ }
+ expect(payload.attachments).toHaveLength(answer.length > 2000 ? 2 : 1);
+ for (const a of payload.attachments) expect((form!.get("files[" + a.id + "]") as File).name).toBe(a.filename);
+ if (answer.length > 2000) expect(await (form!.get("files[0]") as File).text()).toBe(answer);
+});
+
+test("Discord numbered emoji button labels fit 80 UTF16 units with default and Q prefixes", async () => {
+ const options = ["😀".repeat(249) + "AA", "😀".repeat(249) + "BB"];
+ const asks = [0,1,2].map(n => ({id:String(n).repeat(32), question:"choose", options, default:options[0]!, deadlineAt:Date.now()+60000}));
+ let payload:any;
+ const c=channel(config(),async req=>{payload=JSON.parse(String((await req.formData()).get("payload_json")));return Response.json({id:"99"});});
+ await c.start(async()=>({status:"answered",text:"",asks}));await post(c,event());await until(()=>c.health().done===1);
+ for (const [i,row] of payload.components.entries()) {
+  expect(new Set(row.components.map((b:any)=>b.label)).size).toBe(2);
+  for (const [j,b] of row.components.entries()) {
+   expect(b.label.length).toBeLessThanOrEqual(80); expect(b.label).toStartWith("Q"+(i+1)+" "+(j+1)+". ");
+   expect(b.label.isWellFormed()).toBe(true);
+   if(j===0) expect(b.label).toContain("기본값");
+  }
+ }
+});
+
+test("Discord unsafe question Markdown uses plain-text fallback instead of embed link", async () => {
+ const question="[click](javascript:alert)";
+ let form: Awaited<ReturnType<Request["formData"]>> | undefined;
+ const c=channel(config(),async req=>{form=await req.formData();return Response.json({id:"99"});});
+ await c.start(async()=>({status:"answered",text:"",asks:[{id:"0".repeat(32),question,options:["yes","no"],default:"no",deadlineAt:Date.now()+60000}]}));
+ await post(c,event());await until(()=>c.health().done===1);
+ const payload=JSON.parse(String(form!.get("payload_json")));
+ expect(payload.embeds[0].title).not.toContain(question);
+ expect(payload.embeds[0].url).toBeUndefined();
+ const a=payload.attachments.find((a:any)=>a.filename==="questions.txt");
+ expect(await (form!.get("files["+a.id+"]") as File).text()).toContain(question);
 });

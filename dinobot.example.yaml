@@ -255,6 +255,7 @@ plugins: {}                     # extra plugin config; built-in skills are alway
 # /skills pending, /skills diff <id>, /skills publish <id>, /skills reject <id>.
 #  skills:
 #    dirs: ["./skills"]
+#    proofSkills: true   # opt in: formal-verify, tlaplus-model, lean-model, proof-simplify (TLA+/Lean 4)
 
 # Agent directories: load subagent definitions from these paths.
 # agents:

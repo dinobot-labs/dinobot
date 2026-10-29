@@ -74,11 +74,13 @@ export async function setupTui(service: ReportService, invocation: CommandInvoca
 async function manualTui(service: ReportService, invocation: CommandInvocation, note: string): Promise<void> {
 	const { io } = invocation;
 	if (!(await service.consent("owner")).receipt && !(await setupTui(service, invocation))) return;
-	io.print("보고를 만드는 중… (내 컴퓨터에서 비밀값·개인정보를 지운 뒤 미리보기)");
-	const preview = await service.prepare({ owner: "owner", channel: invocation.channel, threadKey: invocation.threadKey, reporter: invocation.userId, excludeOthers: false, ...(note ? { note } : {}) });
+	io.print("보고를 만드는 중… (진단 정보를 모으고 내 컴퓨터에서 비밀값·개인정보를 지운 뒤 미리보기)");
+	// Right after a failed /setup apply the report is about that failure (ADR 0103); its outcome rides in the context section.
+	const setupFailure = await service.recentSetupFailure();
+	const preview = await service.prepare({ owner: "owner", channel: invocation.channel, threadKey: invocation.threadKey, reporter: invocation.userId, excludeOthers: false, ...(note ? { note } : {}), ...(setupFailure ? { trigger: "setup-failed" } : {}) });
 	io.print([
 		`보고 ${shortId(preview.id)} 미리보기`,
-		`- 항목 ${preview.entries}개, 압축 ${(preview.compressedBytes / 1024).toFixed(1)} KiB`,
+		`- 항목 ${preview.entries}개 (진단 ${preview.diagnostics}줄 포함), 압축 ${(preview.compressedBytes / 1024).toFixed(1)} KiB`,
 		`- 지운 정보: ${redactionSummary(preview.redactions)}`,
 		`- 제외: 주입 메시지 ${preview.omitted.nudges}, 다른 참여자 ${preview.omitted.participants}, 잘린 긴 값 ${preview.omitted.truncated}`,
 		`- 보낼 내용 전체: ${preview.path}`,

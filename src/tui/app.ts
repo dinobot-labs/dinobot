@@ -11,7 +11,9 @@ import { checkForUpdate, CURRENT_VERSION, type UpdateInfo } from "../update.ts";
 import { ApiClient, HttpError } from "./client.ts";
 import { ensureDaemon } from "./daemon.ts";
 import { applyPorts } from "./setup-apply.ts";
-import { realpath } from "node:fs/promises";
+import { mkdir, realpath, rename, writeFile } from "node:fs/promises";
+import { dirname } from "node:path";
+import { lastSetupPath } from "../report/diagnostics.ts";
 import { LoginCard, openInBrowser, osc52 } from "./login-card.ts";
 import { MODAL_MARGIN, modalOverlayOptions, type OverlaySize } from "./modal.ts";
 import { activityLabel } from "./blocks/subagents.ts";
@@ -172,6 +174,16 @@ export function describeApply(outcome: ApplyOutcome, copy: SetupCopy, request: M
 		case "failed":
 			return { text: text.failed(outcome.reason, outcome.log), level: "error" };
 	}
+}
+
+/** Write the failed apply where the report collectors look for it (src/report/diagnostics.ts lastSetupPath), mode 0600. */
+export async function recordSetupFailure(dataDir: string, outcome: ApplyOutcome, manifestPath: string, now = new Date()): Promise<void> {
+	const path = lastSetupPath(dataDir);
+	await mkdir(dirname(path), { recursive: true, mode: 0o700 });
+	const tmp = `${path}.${process.pid}.tmp`;
+	const detail = outcome.status === "failed" || outcome.status === "rolled_back" ? { reason: outcome.reason, log: outcome.log.slice(-64 * 1024) } : outcome.status === "stuck" ? { pid: outcome.pid } : {};
+	await writeFile(tmp, JSON.stringify({ at: now.toISOString(), status: outcome.status, manifestPath, ...detail }), { mode: 0o600 });
+	await rename(tmp, path);
 }
 
 const usageOf = (command: CommandInfo): string => `/${command.name}${command.usage === undefined ? "" : ` ${command.usage}`}`;
@@ -430,7 +442,7 @@ export class ChatApp {
 		this.client
 			.events(CHANNEL, thread, (event) => state.apply(event), controller.signal)
 			.then(() => {
-				if (!controller.signal.aborted) state.notice("disconnected from dinobot daemon; restart the TUI", "error");
+				if (!controller.signal.aborted) state.notice("disconnected from dinobot daemon; restart the TUI. To report the problem: dinobot report send --trigger daemon-down", "error");
 			})
 			.catch((error) => {
 				if (!controller.signal.aborted) this.error(error);
@@ -1063,7 +1075,14 @@ export class ChatApp {
 		}
 		if (this.updateCheck.signal.aborted) return;
 		this.attach(this.thread);
-		const { text, level } = describeApply(outcome, copy, request);
+		const described = describeApply(outcome, copy, request);
+		let text = described.text;
+		const { level } = described;
+		if (outcome.status === "failed" || outcome.status === "rolled_back" || outcome.status === "stuck") {
+			// A later /report (daemon) or `dinobot report send` (offline) carries this outcome as context (ADR 0103).
+			await recordSetupFailure(this.manifest.dataDir, outcome, request.manifestPath).catch(() => undefined);
+			text = `${text}\n${copy.applyOutcome.reportHint(request.manifestPath)}`;
+		}
 		this.noticeAfterSnapshot(level === "success" ? color.accentSuccess(text) : text, level === "error" ? "error" : "info");
 	}
 

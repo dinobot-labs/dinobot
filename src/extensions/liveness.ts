@@ -3,7 +3,7 @@ import { defineDoc, defineExtension, GenerationTask, type Harness, hook, type Ho
 import { AsksDoc, LinkDoc } from "../core/ask.ts";
 import { RunDoc } from "../core/dag.ts";
 import { type Goal, GoalDoc, type GoalCriterion } from "../core/goal.ts";
-import { AgentsDoc, ProgressDoc, scanWake, WAKE_REQUEST_PREFIX, wakeReader } from "./subagents.ts";
+import { AgentsDoc, ProgressDoc, scanWake, isHostWakeRequest, wakeReader } from "./subagents.ts";
 
 /**
  * Liveness at the end of a turn (ADR 0096). A turn may end while work is unfinished; that is safe only if something will
@@ -77,7 +77,7 @@ export function livenessExtension(getHarness: () => Harness) {
 				// wakes and continuations cannot chain without a human (ADR 0096). A run's first input identifies it.
 				const first = (await api.snapshot(LiveDoc, id, context))?.run?.inputs?.[0];
 				const record = first === undefined ? undefined : await (await getHarness().submission(first, context))?.status(context);
-				const host = record?.requestId?.startsWith(WAKE_REQUEST_PREFIX) === true;
+				const host = isHostWakeRequest(record?.requestId);
 				const run = String(first ?? "");
 				const count = await getHarness().commit(async (tx) => {
 					const doc = await tx.doc(LivenessDoc, id);

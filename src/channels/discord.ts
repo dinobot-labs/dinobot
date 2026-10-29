@@ -1,4 +1,4 @@
-import { encodeChoice, decodeChoice, choiceLabel, choiceFallbackText } from "./ask-buttons.ts";
+import { encodeChoice, decodeChoice, choiceFallbackText } from "./ask-buttons.ts";
 import type { AskPrompt } from "./types.ts";
 import { hasUnsafeLinks } from "./rich-text.ts";
 import { NativeCooldown } from "./native-cooldown.ts";
@@ -8,6 +8,19 @@ import { Type } from "@earendil-works/pi-ai";
 import type { Static } from "typebox";
 import { Value } from "typebox/value";
 import { messagingChannel, messagingProperties, type MessagingChannel, type MessagingDependencies } from "./messaging.ts";
+
+// Conservatively enforce Discord's 80-character limit in UTF-16 units; reserve the ellipsis.
+function discordPreview(text: string, limit: number): string {
+ if (text.length <= limit) return text;
+ let result = "";
+ for (const point of text) { if (result.length + point.length > limit - 1) break; result += point; }
+ return result + "…";
+}
+function discordChoiceLabel(ask: AskPrompt, option: number, index: number): string {
+ const prefix = `Q${index + 1} ${option + 1}. `;
+ const suffix = ask.options[option] === ask.default ? " (기본값)" : "";
+ return prefix + discordPreview(ask.options[option]!, 80 - prefix.length - suffix.length) + suffix;
+}
 
 const ASK_PART = "\u0000discord-ask:";
 const destinationIds = Type.Array(Type.String({ pattern: "^[0-9]+$" }), { minItems: 1, maxItems: 1000, uniqueItems: true });
@@ -119,11 +132,40 @@ export function discordChannel(config: DiscordConfig, dependencies: MessagingDep
   delivery(target, part) {
    let asks: readonly AskPrompt[] | undefined;
    if (part.startsWith(ASK_PART)) { const decoded = JSON.parse(part.slice(ASK_PART.length)); part = decoded.text; asks = decoded.asks; }
-   const components = asks?.map((ask,index)=>({type:1,components:ask.options.map((option,n)=>({type:2,style:option===ask.default?1:2,label:choiceLabel(ask,n,index,asks!.length),custom_id:encodeChoice(ask.id,n)}))}));
+   const components = asks?.map((ask,index)=>({type:1,components:ask.options.map((option,n)=>({type:2,style:option===ask.default?1:2,label:discordChoiceLabel(ask,n,index),custom_id:encodeChoice(ask.id,n)}))}));
+   // Keep question context visible even when the answer is empty or becomes answer.txt.
+   // Title Markdown uses the same unsafe-link fallback as answer content; footer is plain text.
+   // Full untrusted text always remains available in questions.txt.
+   // Three cards stay below Discord's 6000 UTF-16-unit aggregate embed limit, even for astral text.
+   const embeds = asks?.map((ask,index) => {
+    const question = Array.from(ask.question), fallback = Array.from(ask.default);
+    const title = `Q${index + 1} ` + question.slice(0,120).join("") + (question.length > 120 ? "…" : "");
+    return {
+     title: hasUnsafeLinks(ask.question) || hasUnsafeLinks(title) ? `Q${index + 1} 질문 (questions.txt 참고)` : title,
+     description: "전체 질문·번호별 선택지·기본값은 questions.txt에 있습니다. 버튼으로 답하거나 같은 사용자로 같은 채널/스레드에서 `/ask prompt:Q" + (index + 1) + " 답변`처럼 Q 번호를 적어 주세요.",
+     footer: {text: "응답이 없으면 기본값 「" + fallback.slice(0,600).join("") + (fallback.length > 600 ? "…" : "") + "」로 진행합니다."},
+    };
+   });
    const form = new FormData();
    const inline = part.length <= 2000 && !hasUnsafeLinks(part);
-   form.set("payload_json", JSON.stringify({ ...(components ? {components} : {}), content: inline ? part || "(empty response)" : "Response attached as plain text.", allowed_mentions: { parse: [], users: [], roles: [], replied_user: false }, attachments: inline ? [] : [{ id: 0, filename: "answer.txt" }] }));
-   if (!inline) form.set("files[0]", new Blob([part], { type: "text/plain; charset=utf-8" }), "answer.txt");
+   const attachments: {id: number; filename: string}[] = [];
+   const attach = (filename: string, text: string) => {
+    const id = attachments.length;
+    attachments.push({id, filename});
+    form.set(`files[${id}]`, new Blob([text], {type: "text/plain; charset=utf-8"}), filename);
+   };
+   if (!inline) attach("answer.txt", part);
+   if (asks?.length) attach("questions.txt", asks.map((ask, index) =>
+    `Q${index + 1}
+${ask.question}
+
+선택지:
+${ask.options.map((option, n) => `${n + 1}. ${option}`).join("\n")}
+
+기본값:
+${ask.default}`
+   ).join("\n\n---\n\n"));
+   form.set("payload_json", JSON.stringify({ ...(components ? {components, embeds} : {}), content: inline ? part || "(empty response)" : "Response attached as plain text.", allowed_mentions: { parse: [], users: [], roles: [], replied_user: false }, attachments }));
    return { idempotent: true, url: (dependencies.apiBase ?? "https://discord.com/api/v10") + "/webhooks/" + config.applicationId + "/" + target.token + "/messages/@original", init: { method: "PATCH", body: form } };
   },
   success: () => true,

@@ -63,6 +63,14 @@ Local state lives in `<dataDir>/report/` (`state.json`, mode 0600, and `outbox/`
 before sending (`src/report/redact.ts`: secrets, Korean resident and card numbers, phones, emails, IPs, home paths)
 and again on the server. `DINOBOT_REPORT_URL` points the daemon at another ingest endpoint (tests).
 
+Problem reports with diagnostics (ADR 0103): the TUI's `/report` and the one-step `dinobot report send` add diagnostic
+sections (system, runtime, install, config with secrets masked and file permissions, daemon probe, log tails, data
+folder listing, channels, network checks, live daemon state, client context). `dinobot report` works without a running
+daemon: `dinobot report consent`, `dinobot report agree <version> [--auto]`, `dinobot report send [--note <text>]
+[--trigger button|cli|setup-failed|daemon-down|daemon-start-failed|crash] [--client cli|tui|desktop] [--context-file <path>]
+[--thread <channel>:<thread>] [--offline] [--json]`, `dinobot report status`. Exit codes: 0 sent or pending, 1 failed,
+2 usage or consent version mismatch, 3 consent required. The desktop app's "문제 보고" button runs the same command.
+
 ### `/skills` subcommands
 
 Source: src/commands/skills.ts.
@@ -145,6 +153,7 @@ Source: src/extensions/skills.ts, src/plugins/skills/, src/core/skills/, openwik
 
 - **Sources:**
   - Bundled skills, always on: `programming`, `optimization`, `debugging`, `clarification`, `research`, `dinobot`.
+  - Opt-in bundled formal verification skills with `plugins.skills.proofSkills: true` (see plugins.md).
   - External directories from `plugins.skills.dirs` (see plugins.md).
   - Agent-created skills.
 - **Tools:** `skills_list`, `skills_load`, `skills_read_file`, `skills_inspect`, `skills_propose`, `skills_diff`,

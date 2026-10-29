@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { chmod, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, rm } from "node:fs/promises";
 import { readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -10,6 +10,7 @@ import { parseManifest } from "../src/manifest.ts";
 import { channelCatalog, TelegramConfigSchema } from "../src/channels/index.ts";
 import { pluginCatalog } from "../src/plugins/index.ts";
 import { editManifestEntry, ManifestEditError, type ManifestSection } from "../src/setup/manifest-edit.ts";
+import { createPrivateFile } from "../src/telegram-private-files/index.ts";
 
 const HOME = "/home/someone";
 const DEFAULT = defaultManifest(HOME);
@@ -72,10 +73,8 @@ describe("default manifest", () => {
 		dirs.push(dir);
 		const token = join(dir, "t.token");
 		const pairing = join(dir, "p.json");
-		await writeFile(token, "123456:abcDEF_-x\n", { mode: 0o600 });
-		await writeFile(pairing, JSON.stringify({ botId: "123456", userId: "42", chatIds: ["42"] }), { mode: 0o600 });
-		await chmod(token, 0o600);
-		await chmod(pairing, 0o600);
+		createPrivateFile(token, "123456:abcDEF_-x\n");
+		createPrivateFile(pairing, JSON.stringify({ botId: "123456", userId: "42", chatIds: ["42"] }));
 		const config = { mode: "polling", botTokenFile: token, pairingPath: pairing, databasePath: join(dir, "i.sqlite") };
 		const result = editManifestEntry(DEFAULT, "channels", "telegram", config);
 		const manifest = await parseManifest(parse(result), catalogs);

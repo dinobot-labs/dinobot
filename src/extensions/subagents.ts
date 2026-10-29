@@ -5,7 +5,7 @@ import {
 	configure, ConversationBusy, type ConversationId, defineDoc, defineDocFamily, defineExtension, defineTask, defineTool, type DocumentReader, GenerationTask, hook,
 	type Harness, InboxDoc, LiveDoc, type Tx, type InboxState, type ModelRef, ProviderDoc, type ToolRegistration, type SnapshotEvent, type Submission, type SubmissionRecord, type TaskId, type ToolExecutionApi, watchEvents,
 } from "@earendil-works/pi-durable";
-import { type AskRecord, AsksDoc, describeAsk, LinkDoc, openAsksFrom } from "../core/ask.ts";
+import { type AskRecord, AsksDoc, describeAsk, LinkDoc, openAsksFrom, withdrawAsksFrom } from "../core/ask.ts";
 import { DagSeenDoc, RunDoc, runCanProgress, type RunState, runStateKey, unmet } from "../core/dag.ts";
 import { conversationArchived } from "../core/threads.ts";
 import { FastDoc } from "../core/fast.ts";
@@ -125,6 +125,22 @@ export type WakeDeliver = (delivery: WakeDelivery & { conversationId: Conversati
 export const WAKE_PREFIX = "<from host=\"subagents\"/>";
 /** Request id prefix of a wake input: a run it starts was started by the host, not by a person. */
 export const WAKE_REQUEST_PREFIX = "subagent-wake:";
+/** Request id prefix of a plugin wake (ADR 0106, `plugin-wake:<pluginId>:<key>`): also started by the host. */
+export const PLUGIN_WAKE_REQUEST_PREFIX = "plugin-wake:";
+/**
+ * Whether an input with this request id was started by the host (a subagent or plugin wake), not by a person: such a run
+ * keeps counting against the continuation budget of the human input before it (ADR 0096, ADR 0106).
+ */
+export const isHostWakeRequest = (requestId: string | undefined): boolean =>
+	requestId !== undefined && (requestId.startsWith(WAKE_REQUEST_PREFIX) || requestId.startsWith(PLUGIN_WAKE_REQUEST_PREFIX));
+/**
+ * ADR 0106: registers the answer of a host input another component submitted (`requestId`) for the channel hand-over of
+ * woken answers, and makes sure the conversation's wake watcher runs to hand it over once its turn settles.
+ * `restartGrace`: an existing, unclaimed registration gets `since` = now, so the admission grace of a registration that
+ * waits for its input restarts. Only for an input that has not entered the transcript yet: `since` also bounds which
+ * human asks the hand-over shows, and a running turn may have opened some already.
+ */
+export type WakeHandOver = (conversationId: ConversationId, requestId: string, context: Context, options?: { restartGrace?: boolean }) => Promise<void>;
 const CHILD_EXCLUDED_TOOLS = new Set([TASK_TOOL, TASK_OUTPUT_TOOL, KILL_TASK_TOOL, TASK_MESSAGE_TOOL, ANSWER_TOOL]);
 /** Deliberately finite: plugins and arbitrary execution are not reviewer capabilities. */
 export const RESEARCH_READ_TOOLS: ReadonlySet<string> = new Set(["read", "grep", "find", "ls"]);
@@ -133,11 +149,11 @@ type Wake = { kind: "settled" } | { kind: "timeout" } | { kind: "ask"; asks: Ask
 
 /**
  * OR-wait of the orchestrator (ADR 0030): settle on child termination (all listed children, or with `any` the first
- * of them), an open ask from one of these children, or the timeout. Never blocks on a child that is itself blocked on
+ * of them), an open ask from one of these children or from `askers`, or the timeout. Never blocks on a child that is itself blocked on
  * this conversation.
  */
-async function waitForChildrenOrAsk(api: ToolExecutionApi, refs: readonly AgentRef[], context: Context, timeoutMs?: number, any = false): Promise<Wake> {
-	const children = new Set(refs.map((ref) => ref.conversationId));
+async function waitForChildrenOrAsk(api: ToolExecutionApi, refs: readonly AgentRef[], context: Context, timeoutMs?: number, any = false, askers: readonly AgentRef[] = refs): Promise<Wake> {
+	const children = new Set([...refs, ...askers].map((ref) => ref.conversationId));
 	let watch = await api.watchDoc(AsksDoc, api.conversationId, context);
 	if (!watch) {
 		await api.commit(async (tx) => { await tx.doc(AsksDoc, api.conversationId); return undefined; }, context);
@@ -420,7 +436,7 @@ export function collectionLine(state: { subagent: SubagentProgress; answer?: str
 	return `${s.taskId} [${s.status}]: ${body}`;
 }
 
-export function subagentsExtension(getHarness: () => Harness, work: WorkService, agents: readonly AgentDefinition[] = [], spawner?: { current?: SubagentSpawner }, maxWaitMs = TASK_OUTPUT_MAX_TIMEOUT_MS, wake: { deliver?: WakeDeliver; retryMs?: number; recovery?: { current?: (context: Context) => Promise<void> } } = {}) {
+export function subagentsExtension(getHarness: () => Harness, work: WorkService, agents: readonly AgentDefinition[] = [], spawner?: { current?: SubagentSpawner }, maxWaitMs = TASK_OUTPUT_MAX_TIMEOUT_MS, wake: { deliver?: WakeDeliver; retryMs?: number; recovery?: { current?: (context: Context) => Promise<void> }; handOver?: { current?: WakeHandOver } } = {}) {
 	const { deliver, retryMs = WAKE_DELIVERY_RETRY_MS } = wake;
 	const definitions = new Map(agents.map((agent) => [agent.name, agent]));
 	/** Foreground cancellation emulation for conversation-owned children. */
@@ -708,6 +724,11 @@ export function subagentsExtension(getHarness: () => Harness, work: WorkService,
 				const waiter = withCancel(context);
 				const asks = await runtime.watchDoc(AsksDoc, id, context);
 				const runs = await runtime.watchDoc(RunDoc, id, context);
+				// A delivery another component registered (ADR 0106 plugin wake) while this watcher waits on unrelated work.
+				const handOvers = await runtime.watchDoc(WakeDoc, id, context);
+				const deliveryIds = (value: { deliveries?: WakeDelivery[] } | null | undefined) => JSON.stringify((value?.deliveries ?? []).map((item) => item.requestId).sort());
+				const deliveriesBefore = deliveryIds(handOvers?.value);
+				const deliveriesChanged = (value: { deliveries?: WakeDelivery[] } | null | undefined) => { if (deliveryIds(value) !== deliveriesBefore) wake.resolve(); };
 				const openAsks = (value: { asks: AskRecord[] } | null | undefined) => JSON.stringify(value?.asks.filter((ask) => ask.state === "open").map((ask) => ask.id) ?? []);
 				const runStates = (value: { runs: RunState[] } | null | undefined) => JSON.stringify(value?.runs.map((run) => [run.id, run.status, run.revision]) ?? []);
 				const asksBefore = openAsks(asks?.value), runsBefore = runStates(runs?.value);
@@ -720,10 +741,12 @@ export function subagentsExtension(getHarness: () => Harness, work: WorkService,
 					if (context.abortSignal?.aborted) onAbort();
 					asks?.start(async (value) => asksChanged(value));
 					runs?.start(async (value) => runsChanged(value));
+					handOvers?.start(async (value) => deliveriesChanged(value));
 					for (const runner of on) runtime.waitForTask(runner, waiter.context).then(() => wake.resolve(), () => {});
 					// Asks, runs or settlements committed before the watches started are seen by this re-check.
 					asksChanged(await runtime.snapshot(AsksDoc, id, context));
 					runsChanged(await runtime.snapshot(RunDoc, id, context));
+					deliveriesChanged(await runtime.snapshot(WakeDoc, id, context));
 					// An event committed between the check and these watches is part of their baseline: scan for it.
 					if ((await scanWake(wakeReader(runtime, id, context))).events.length) wake.resolve();
 					if (!on.length && timer === undefined && !runs?.value?.runs.some((run) => !run.owner && run.status === "running")) wake.resolve();
@@ -734,6 +757,7 @@ export function subagentsExtension(getHarness: () => Harness, work: WorkService,
 					waiter.cancel();
 					await asks?.stop();
 					await runs?.stop();
+					await handOvers?.stop();
 				}
 				await runtime.commit(() => ({ status: "running", checkpoint: { phase: "check" } }), context);
 			},
@@ -802,6 +826,19 @@ export function subagentsExtension(getHarness: () => Harness, work: WorkService,
 			page = await harness.commit((tx) => tx.scanConversations({}, 128, page.next!), context);
 		}
 	};
+	if (wake.handOver) wake.handOver.current = async (conversationId, requestId, context, options = {}) => {
+		await getHarness().commit(async (tx) => {
+			const doc = await tx.doc(WakeDoc, conversationId);
+			const existing = (doc.deliveries ?? []).find((item) => item.requestId === requestId);
+			if (deliver && !existing) {
+				doc.deliveries = [...(doc.deliveries ?? []), { requestId, since: Date.now(), asks: [] }];
+			} else if (existing && options.restartGrace && !existing.claimed && existing.mergedInto === undefined) {
+				existing.since = Date.now();
+			}
+			await armWake(tx, conversationId);
+			return undefined;
+		}, context);
+	};
 	return defineExtension({
 		name: "subagents",
 		tasks: [runner, wakeWatcher],
@@ -853,7 +890,10 @@ export function subagentsExtension(getHarness: () => Harness, work: WorkService,
 							watch.start(async (state) => {
 								if (state?.subagent) { latest = clone(state.subagent); await publish(); }
 							});
-							const wake = await waitForChildrenOrAsk(api, [ref], context);
+							// Any ask from any child of this conversation returns the wait (ADR 0030), not only the awaited child's:
+							// otherwise a background child's ask silently runs into its default while main waits here.
+							const siblings = (await api.snapshot(AgentsDoc, api.conversationId, context))?.agents ?? [];
+							const wake = await waitForChildrenOrAsk(api, [ref], context, undefined, false, [ref, ...siblings]);
 							await watch.stop();
 							if (wake.kind === "ask") {
 								// Promote: the child keeps running as a background subagent while this conversation answers.
@@ -940,6 +980,8 @@ export function subagentsExtension(getHarness: () => Harness, work: WorkService,
 					// The same admission line as task_message: a note is admitted either before this abort (and withdrawn by it) or after.
 					await withConversationAdmission(getHarness(), ref.conversationId, () => getHarness().abortTask(ref.runnerId, context));
 					await api.waitForTask(ref.runnerId, context);
+					// The cancelled child no longer waits for an answer: its open asks must not be shown as pending.
+					await api.commit(async (tx) => { withdrawAsksFrom(await tx.doc(AsksDoc, api.conversationId), ref.conversationId, "system:cancelled", Date.now()); return undefined; }, context);
 					const state = await readProgress(api, ref, context);
 					// The caller already knows how this child ended; the idle wake must not announce it again.
 					await markDelivered(api, [ref], context);

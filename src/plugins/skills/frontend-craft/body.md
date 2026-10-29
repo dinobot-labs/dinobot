@@ -2,7 +2,7 @@
 
 Use this skill when someone asks for a landing page, waitlist page, marketing site, product page or similar public frontend. It works well when they ask for "polished", "like an SF startup", "fun animation" or a performance bar (for example 120 FPS). It produces a researched design system, brand assets, the page, real QA numbers and a deployment, not a template page.
 
-Worked example: the dinobot waitlist site (https://www.dinobot.workers.dev, repo tmdgusya/dinobot services/landing, ADR 0086). Its docs/BRIEF.md, docs/references/*.md, docs/design-system.md and qa/*.mjs are the reference implementation. Read them when you can.
+Use the target project's own design brief, reference inventory, design system and QA scripts when available. No private landing-service source or operational QA artifacts ship with this repository.
 
 ## Companion files
 

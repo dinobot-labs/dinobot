@@ -1,6 +1,7 @@
 import type { Plugin } from "./types.ts";
 import { asidePlugin } from "./aside/index.ts";
 import { browserPlugin } from "./browser/index.ts";
+import { calendarPlugin } from "./calendar/index.ts";
 import { computerPlugin } from "./computer/index.ts";
 import { githubPlugin } from "./github/index.ts";
 import { googlePlugin } from "./google/index.ts";
@@ -14,6 +15,7 @@ import { webPlugin } from "./web/index.ts";
 export const pluginCatalog: Readonly<Record<string, Plugin>> = {
 	[asidePlugin.id]: asidePlugin,
 	[browserPlugin.id]: browserPlugin,
+	[calendarPlugin.id]: calendarPlugin,
 	[computerPlugin.id]: computerPlugin,
 	[githubPlugin.id]: githubPlugin,
 	[googlePlugin.id]: googlePlugin,

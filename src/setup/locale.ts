@@ -95,6 +95,8 @@ type Copy = {
 	readonly browserAttachOff: string;
 	readonly google: string;
 	readonly googleHint: string;
+	readonly calendar: string;
+	readonly calendarHint: string;
 	readonly installing: (what: string) => string;
 	readonly installed: (what: string) => string;
 	readonly installFailed: (what: string, message: string) => string;
@@ -139,6 +141,8 @@ type Copy = {
 		readonly rolledBack: (reason: string, log: string) => string;
 		readonly failed: (reason: string, log: string) => string;
 		readonly recovered: string;
+		/** Offered after a failed apply: send a problem report with the outcome (ADR 0103). */
+		readonly reportHint: (manifestPath: string) => string;
 	};
 };
 
@@ -203,6 +207,8 @@ const en: Copy = {
 	browserAttachOff: "Computer use could not be installed, so the browser stays off. Run /setup plugins again, or choose the bot's own Chrome.",
 	google: "Google (Gmail · Calendar · Drive)",
 	googleHint: "read your mail, events and files · the agent sends a sign-in link on first use",
+	calendar: "Calendar (reminders)",
+	calendarHint: "keeps your events and reminds you in the same chat, preparing material ahead · no account needed",
 	installing: (what) => `Installing ${what}…`,
 	installed: (what) => `${what} installed.`,
 	installFailed: (what, message) => `${what} could not be installed (${message}). Computer use stays off; try again later with \`dinobot init\`.`,
@@ -248,6 +254,7 @@ const en: Copy = {
 		rolledBack: (reason, log) => `dinobot could not start with the new settings (${reason}). The previous settings were restored and dinobot is running again.${log ? `\n${log}` : ""}`,
 		failed: (reason, log) => `dinobot could not start (${reason}). The previous settings are restored on disk; open dinobot again.${log ? `\n${log}` : ""}`,
 		recovered: "An earlier setup was interrupted; dinobot.yaml was brought back in line with the running daemon.",
+		reportHint: (path) => `To send this problem to the dinobot developer with diagnostics: /report (or in a terminal: dinobot report send --trigger setup-failed --config ${JSON.stringify(path)})`,
 	},
 };
 
@@ -312,6 +319,8 @@ const ko: Copy = {
 	browserAttachOff: "컴퓨터 사용을 설치하지 못해서 브라우저는 꺼 둔 채로 두었어요. /setup plugins를 다시 실행하거나 봇 전용 Chrome을 고르세요.",
 	google: "Google (Gmail · 캘린더 · 드라이브)",
 	googleHint: "메일·일정·파일 읽기 · 처음 쓸 때 에이전트가 로그인 링크를 보내요",
+	calendar: "캘린더 (일정 알림)",
+	calendarHint: "일정을 기억했다가 같은 대화로 미리 알리고 준비 자료를 만들어요 · 계정 연결 필요 없음",
 	installing: (what) => `${what} 설치하는 중…`,
 	installed: (what) => `${what} 설치됨.`,
 	installFailed: (what, message) => `${what}를 설치하지 못했어요 (${message}). 컴퓨터 사용은 꺼 둔 채로 두고, 나중에 \`dinobot init\`으로 다시 시도하세요.`,
@@ -357,6 +366,7 @@ const ko: Copy = {
 		rolledBack: (reason, log) => `새 설정으로 dinobot을 시작하지 못했어요 (${reason}). 이전 설정으로 되돌렸고 dinobot이 다시 실행 중이에요.${log ? `\n${log}` : ""}`,
 		failed: (reason, log) => `dinobot을 시작하지 못했어요 (${reason}). 디스크에는 이전 설정을 복구했어요. dinobot을 다시 여세요.${log ? `\n${log}` : ""}`,
 		recovered: "이전 설정 작업이 중간에 끊겨서, dinobot.yaml을 실행 중인 데몬과 같은 상태로 맞췄어요.",
+		reportHint: (path) => `이 문제를 진단 정보와 함께 개발자에게 보내려면: /report (터미널에서는 dinobot report send --trigger setup-failed --config ${JSON.stringify(path)})`,
 	},
 };
 

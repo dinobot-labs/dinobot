@@ -4,6 +4,7 @@ import { Type } from "@earendil-works/pi-ai";
 import type { SkillPackage } from "../../core/skills/store.ts";
 import { definePlugin, loadPlugin, type LoadedPlugin } from "../types.ts";
 import { bundledSkills } from "./bundled.ts";
+import { proofSkills } from "./proof-skills/index.ts";
 
 const NAME = /^[a-z0-9]+(-[a-z0-9]+)*$/;
 const FRONTMATTER = /^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)([\s\S]*)$/;
@@ -56,9 +57,13 @@ async function readPackage(root: string): Promise<Record<string, string>> {
 /** Configuration/source importer only. The harness owns all versioned skills_* tools. */
 export const skillsPlugin = definePlugin({
 	id: "skills",
-	config: Type.Object({ dirs: Type.Optional(Type.Array(Type.String({ minLength: 1 }))) }),
-	load: async ({ dirs = [] }) => {
-		const skills = new Map<string, SkillPackage>(bundledSkills.map((skill) => [skill.name, { files: {}, ...skill, source: `bundled:${skill.name}` }]));
+	config: Type.Object({
+		dirs: Type.Optional(Type.Array(Type.String({ minLength: 1 }))),
+		/** Opt-in bundled formal verification skills (opum-ai/proof-skills): their catalog lines and ~230 KB of companion files would otherwise burden every deployment. */
+		proofSkills: Type.Optional(Type.Boolean()),
+	}),
+	load: async ({ dirs = [], proofSkills: proof = false }) => {
+		const skills = new Map<string, SkillPackage>([...bundledSkills, ...(proof ? proofSkills : [])].map((skill) => [skill.name, { files: {}, ...skill, source: `bundled:${skill.name}` }]));
 		const errors: string[] = [];
 		for (const parent of dirs) {
 			for (const entry of await readdir(parent, { withFileTypes: true })) {

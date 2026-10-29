@@ -1,7 +1,8 @@
 import { afterAll, afterEach, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
+import { readdir, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, relative } from "node:path";
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import { createModels } from "@earendil-works/pi-ai/models";
 import { fauxAssistantMessage, fauxProvider, fauxToolCall, type FauxResponseFactory } from "@earendil-works/pi-ai/providers/faux";
@@ -151,3 +152,24 @@ test("pm tools run from codemode with the calling conversation attributed, so ow
 	expect((await (await parent.submit({ type: "input", content: "make a ledger" }, context)).wait(context)).status).toBe("done");
 	expect(result).toMatch(new RegExp(`owner\\W+${String(parent.id)}\\W`));
 }, 30_000);
+
+test("separability: the pm plugin imports only its directory and ../types.ts, and only the catalog imports it", async () => {
+	const srcRoot = join(import.meta.dir, "..", "src");
+	const files: string[] = [];
+	const walk = async (path: string): Promise<void> => {
+		for (const entry of await readdir(path, { withFileTypes: true })) {
+			if (entry.isDirectory()) await walk(join(path, entry.name));
+			else if (entry.name.endsWith(".ts")) files.push(join(path, entry.name));
+		}
+	};
+	await walk(srcRoot);
+	for (const path of files) {
+		const name = relative(srcRoot, path).replaceAll("\\", "/");
+		const specs = [...(await readFile(path, "utf8")).matchAll(/from "([^"]+)"/g)].map((match) => match[1]!);
+		if (name.startsWith("plugins/pm/")) {
+			for (const spec of specs.filter((value) => value.startsWith("."))) expect(spec.startsWith("./") || spec === "../types.ts").toBe(true);
+		} else if (name !== "plugins/index.ts") {
+			expect(specs.filter((value) => value.includes("/pm/"))).toEqual([]);
+		}
+	}
+});

@@ -82,7 +82,7 @@ const RULES: readonly Rule[] = [
 				"\\bsk-(?:ant-|proj-)?[A-Za-z0-9_-]{16,}", // OpenAI / Anthropic style
 				"\\bAIza[0-9A-Za-z_-]{35}", // Google API key
 				"\\bnpm_[A-Za-z0-9]{36}", // npm
-				"\\b\\d{8,10}:AA[A-Za-z0-9_-]{30,}", // Telegram bot token
+				"(?:\\b|(?<=\\/bot))\\d{8,10}:AA[A-Za-z0-9_-]{30,}", // Telegram bot token, also inside api.telegram.org/bot<token>/ URLs
 				"\\b(?:Bearer|Basic)\\s+[A-Za-z0-9._~+/-]{16,}=*", // Authorization header values
 			].join("|"),
 			"g",
@@ -92,7 +92,7 @@ const RULES: readonly Rule[] = [
 	{
 		kind: "credential",
 		// key = value / key: value / "key": "value" (value must look like a literal, not a type name)
-		pattern: new RegExp(`(["']?(?<![A-Za-z0-9])(?:[A-Za-z0-9]+[_-])*${SECRET_KEY}(?![A-Za-z0-9])["']?\\s*[:=]\\s*)(?!\\s*(?:str|string|int|number|bool|boolean|null|None|undefined|true|false)\\b)("(?:[^"\\\\\\n]|\\\\.){4,}"|'(?:[^'\\\\\\n]|\\\\.){4,}'|[^\\s,;)\\]}'"]{4,})`, "gi"),
+		pattern: new RegExp(`(["']?(?<![A-Za-z0-9])(?:[A-Za-z0-9]+[_-])*${SECRET_KEY}(?![A-Za-z0-9])["']?\\s*[:=]\\s*)(?!\\s*(?:str|string|int|number|bool|boolean|null|None|undefined|true|false)\\b)(?!\\[[a-z-]+ omitted\\])("(?:[^"\\\\\\n]|\\\\.){4,}"|'(?:[^'\\\\\\n]|\\\\.){4,}'|[^\\s,;)\\]}'"]{4,})`, "gi"),
 		replace: (m) => `${m[1]}${marker("credential")}`,
 	},
 	{
@@ -126,7 +126,8 @@ const RULES: readonly Rule[] = [
 	},
 	{
 		kind: "ip",
-		pattern: /(?<![\d.])(?:\d{1,3}\.){3}\d{1,3}(?![\d.])/g,
+		// A four-part version with a pre-release suffix (V8 `13.2.152.17-electron.0`) is not an address.
+		pattern: /(?<![\d.])(?:\d{1,3}\.){3}\d{1,3}(?![\d.]|-[A-Za-z])/g,
 		replace: (m) => (plausibleIpv4(m[0]) ? marker("ip") : undefined),
 	},
 	{

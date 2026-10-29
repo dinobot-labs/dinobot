@@ -26,7 +26,9 @@ import { currentThreadModel } from "../core/reasoning.ts";
 import type { ClientSnapshotEvent, DagStatusEvent, QueueStatusEvent, SubagentProgress, SubagentProgressEvent, WorkflowStatusEvent } from "../core/ui-contract.ts";
 import { listThreads } from "../core/threads.ts";
 import { detectFrustration } from "../report/detect.ts";
-import type { ReportService } from "../report/service.ts";
+import { CONSENT_VERSION } from "../report/consent.ts";
+import { REPORT_CLIENTS, REPORT_TRIGGERS, type ReportClient } from "../report/diagnostics.ts";
+import { ConsentRequiredError, type ReportService } from "../report/service.ts";
 import { AgentsDoc, ProgressDoc } from "../extensions/subagents.ts";
 import { createUsageService, type UsageService } from "./usage.ts";
 
@@ -70,6 +72,12 @@ import { createUsageService, type UsageService } from "./usage.ts";
  *                                                      | 500 { status: failed, error: successor, detail }; 404 without control
  *        Used by `dinobot update`: any owner, busy or not (running work is interrupted). The successor is started first and
  *        this daemon stops only once it is ready; on failure this daemon keeps running untouched.
+ *   GET  /v1/report/consent                            -> { version, text, textSha256, consented, receipt?, auto } of the local owner (ADR 0103)
+ *   POST /v1/report/consent                            { version, collect: true, transfer: true, age14: true, auto? } -> 200 { receipt }
+ *                                                      | 409 { error: version } | 400; 404 { error: report_disabled } without reports
+ *   POST /v1/report                                    { trigger?, client?, note?, channel?, thread?, context? } -> 200 SubmitResult
+ *        { id, shortId, status: sent | pending | failed, error?, entries, diagnostics, compressedBytes, redactions } | 403 { error: consent_required }
+ *        Diagnostics in daemon mode (live state, conversation of channel/thread when given), stored and uploaded at once.
  */
 export type ClientApi = { readonly url: URL; stop(): Promise<void> };
 
@@ -80,6 +88,7 @@ export function startClientApi(bot: Bot, port: number, context: Context, command
 	// Without a credential store (tests, embedders) the summary still works and limits list no provider.
 	const usageService = usage ?? createUsageService({ harness: bot.harness, index: bot.index, context });
 	const unknownCommand = (name: string) => Response.json({ error: `unknown command /${name}` }, { status: 404 });
+	const reportDisabled = () => Response.json({ error: "report_disabled" }, { status: 404 });
 	const noControl = () => Response.json({ error: "daemon control is not available on this server" }, { status: 404 });
 	let stopping = false;
 	/** A restart is waiting for its successor; a plain shutdown now would leave the successor running alone. */
@@ -146,6 +155,31 @@ export function startClientApi(bot: Bot, port: number, context: Context, command
 						}
 					}
 					return Response.json({ status: "stopping" } satisfies ShutdownResult, { status: 202 });
+				},
+			},
+			"/v1/report/consent": {
+				GET: async () => (report ? Response.json(await report.consentInfo("owner")) : reportDisabled()),
+				POST: async (request) => {
+					if (!report) return reportDisabled();
+					const body = (await request.json().catch(() => undefined)) as Record<string, unknown> | undefined;
+					if (typeof body !== "object" || body === null || typeof body.version !== "string") return Response.json({ error: "body must be { version, collect: true, transfer: true, age14: true, auto? }" }, { status: 400 });
+					if (body.version !== CONSENT_VERSION) return Response.json({ error: "version", version: CONSENT_VERSION }, { status: 409 });
+					if (body.collect !== true || body.transfer !== true || body.age14 !== true) return Response.json({ error: "collect, transfer and age14 must all be true" }, { status: 400 });
+					if (body.auto !== undefined && typeof body.auto !== "boolean") return Response.json({ error: "auto must be a boolean" }, { status: 400 });
+					return Response.json({ receipt: await report.recordConsent("owner", body.auto === true) });
+				},
+			},
+			"/v1/report": {
+				POST: async (request) => {
+					if (!report) return reportDisabled();
+					const body = parseReport(await request.json().catch(() => undefined));
+					if (typeof body === "string") return Response.json({ error: body }, { status: 400 });
+					try {
+						return Response.json(await report.submit({ owner: "owner", reporter: "local", ...body }));
+					} catch (error) {
+						if (error instanceof ConsentRequiredError) return Response.json({ error: "consent_required", version: CONSENT_VERSION }, { status: 403 });
+						return Response.json({ error: error instanceof Error ? error.message : String(error) }, { status: 500 });
+					}
 				},
 			},
             "/v1/conversations/:id/export/verify": { POST: async request => {
@@ -677,6 +711,29 @@ function parseAnswer(body: unknown): PromptAnswer | string {
 type SendBody = { choice?: AskChoice; text: string; userId?: string; messageId?: string; whenBusy?: "followUp" | "steer"; images: readonly InboundImage[] };
 
 /** Parse the send body; exported for the admission tests. The images field obeys the shared message bounds. */
+type ReportBody = { trigger: string; client: ReportClient; note?: string; channel?: string; threadKey?: string; context?: unknown };
+
+/** POST /v1/report body; the trigger and client come from fixed lists (the wire rule of dinobot.report/v1 is stricter anyway). */
+export function parseReport(body: unknown): ReportBody | string {
+	if (body === undefined) body = {};
+	if (typeof body !== "object" || body === null || Array.isArray(body)) return "body must be an object";
+	const raw = body as Record<string, unknown>;
+	const trigger = raw.trigger ?? "button";
+	const client = raw.client ?? "tui";
+	if (typeof trigger !== "string" || !(REPORT_TRIGGERS as readonly string[]).includes(trigger)) return `trigger must be one of ${REPORT_TRIGGERS.join(", ")}`;
+	if (typeof client !== "string" || !(REPORT_CLIENTS as readonly string[]).includes(client)) return `client must be one of ${REPORT_CLIENTS.join(", ")}`;
+	if (raw.note !== undefined && typeof raw.note !== "string") return "note must be a string";
+	if ((raw.channel === undefined) !== (raw.thread === undefined)) return "channel and thread go together";
+	if (raw.channel !== undefined && (typeof raw.channel !== "string" || typeof raw.thread !== "string" || !raw.channel || !raw.thread)) return "channel and thread must be non-empty strings";
+	return {
+		trigger,
+		client: client as ReportClient,
+		...(typeof raw.note === "string" ? { note: raw.note } : {}),
+		...(typeof raw.channel === "string" ? { channel: raw.channel, threadKey: raw.thread as string } : {}),
+		...(raw.context !== undefined ? { context: raw.context } : {}),
+	};
+}
+
 export function parseSend(body: unknown): SendBody | string {
 	if (typeof body !== "object" || body === null) return "body must be a JSON object";
 	const record = body as Record<string, unknown>;

@@ -54,6 +54,9 @@ export function toolExtensions(
 				name: "codemode-routing",
 				hooks: [
 					hook(GenerationTask, {
+						// Codemode-only tools are never offered to the provider, so neither their additions nor their removals
+						// may reach it: a removal of a never-added tool is rejected (Anthropic `tool_reference_unresolved`),
+						// and the stored entry would replay that rejection on every later request of the thread.
 						beforeRequest: ({ messages }) => ({
 							messages: messages.map((message) =>
 								message.role !== "system"
@@ -62,6 +65,9 @@ export function toolExtensions(
 											...message,
 											...(message.toolsAdded
 												? { toolsAdded: message.toolsAdded.filter((tool) => !names.has(tool.name)) }
+												: {}),
+											...(message.toolsRemoved
+												? { toolsRemoved: message.toolsRemoved.filter((tool) => !names.has(tool.name)) }
 												: {}),
 										},
 							),

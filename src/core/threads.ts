@@ -201,6 +201,47 @@ export async function conversationArchived(reader: Pick<DocumentReader, "snapsho
 	return archived;
 }
 
+/**
+ * The top-level conversation of `conversationId`: subagent conversations follow their `LinkDoc.parent` chain. Undefined
+ * when the chain is cyclic or deeper than 64 links. Does not check that the conversation exists. Read-only.
+ */
+export async function rootConversation(
+	reader: Pick<DocumentReader, "snapshot">,
+	conversationId: ConversationId,
+	context: Context,
+): Promise<ConversationId | undefined> {
+	let root = conversationId;
+	const seen = new Set<ConversationId>([root]);
+	for (;;) {
+		const parent = (await reader.snapshot(LinkDoc, root, context))?.parent;
+		if (parent === undefined) return root;
+		if (seen.has(parent) || seen.size > 64) return undefined; // `seen` holds the start plus the parents so far
+		seen.add(parent);
+		root = parent;
+	}
+}
+
+/**
+ * ADR 0106: the live `channel:threadKey` a top-level conversation answers in: its own binding, or, when `/new` archived
+ * it (`<key>#<n>`), the key it was archived from, which now names a newer conversation. Undefined for a conversation
+ * bound to no thread key. Read-only.
+ */
+export async function liveThreadKey(
+	reader: Pick<DocumentReader, "snapshot">,
+	conversationId: ConversationId,
+	context: Context,
+): Promise<string | undefined> {
+	const [index, archive] = await Promise.all([reader.snapshot(ThreadIndex, context), reader.snapshot(ThreadArchive, context)]);
+	let origin: string | undefined;
+	for (const [key, bound] of Object.entries(index?.threads ?? {})) {
+		if (bound !== conversationId) continue;
+		const archived = archive?.archived[key];
+		if (archived === undefined) return key;
+		origin ??= archived.key;
+	}
+	return origin !== undefined && index?.threads[origin] !== undefined ? origin : undefined;
+}
+
 /** Every known `channel:threadKey` with its conversation. Read-only. */
 export async function listThreads(harness: Harness, context: Context): Promise<Record<string, ConversationId>> {
 	const index = await harness.snapshot(ThreadIndex, context);
@@ -217,15 +258,8 @@ export async function conversationChannel(
 	conversationId: ConversationId,
 	context: Context,
 ): Promise<string | undefined> {
-	let root = conversationId;
-	const seen = new Set<ConversationId>([root]);
-	for (;;) {
-		const parent = (await reader.snapshot(LinkDoc, root, context))?.parent;
-		if (parent === undefined) break;
-		if (seen.has(parent) || seen.size > 64) return undefined; // `seen` holds the start plus the parents so far
-		seen.add(parent);
-		root = parent;
-	}
+	const root = await rootConversation(reader, conversationId, context);
+	if (root === undefined) return undefined;
 	const index = await reader.snapshot(ThreadIndex, context);
 	for (const [key, bound] of Object.entries(index?.threads ?? {})) {
 		if (bound !== root) continue;

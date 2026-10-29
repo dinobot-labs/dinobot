@@ -114,8 +114,21 @@ export function expireAsks(doc: { asks: AskRecord[] }, now: number): string[] {
 	return expired;
 }
 
-export function openAsksFrom(doc: { asks: AskRecord[] } | null | undefined, conversationIds: ReadonlySet<ConversationId>): AskRecord[] {
-	return (doc?.asks ?? []).filter((ask) => ask.state === "open" && ask.to === "main" && conversationIds.has(ask.from.conversationId));
+/**
+ * Open subagent asks that main can still answer. A record past its deadline is excluded even before a commit defaults
+ * it: its answer is already fixed to the default, so showing it as waiting would be stale.
+ */
+export function openAsksFrom(doc: { asks: AskRecord[] } | null | undefined, conversationIds: ReadonlySet<ConversationId>, now = Date.now()): AskRecord[] {
+	return (doc?.asks ?? []).filter((ask) => ask.state === "open" && ask.deadlineAt > now && ask.to === "main" && conversationIds.has(ask.from.conversationId));
+}
+
+/** Withdraw every open ask of a child that was cancelled: nobody waits for its answer any more. Returns the ids it moved. */
+export function withdrawAsksFrom(doc: { asks: AskRecord[] }, conversationId: ConversationId, by: string, now: number): string[] {
+	const moved: string[] = [];
+	for (const record of doc.asks) {
+		if (record.state === "open" && record.from.conversationId === conversationId && resolveAsk(doc, record.id, { state: "withdrawn", by, now }).changed) moved.push(record.id);
+	}
+	return moved;
 }
 
 export function describeAsk(ask: AskRecord): string {

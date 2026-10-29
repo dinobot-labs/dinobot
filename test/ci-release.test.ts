@@ -46,7 +46,7 @@ test("dispatch resolves exact annotated/lightweight tag commit and verifies ance
 	expect(fixture.calls).toEqual([
 		["git", "rev-parse", "--verify", "refs/tags/v1.2.3^{commit}"],
 		["git", "merge-base", "--is-ancestor", TAG_SHA, "origin/main"],
-		["gh", "api", "--method", "GET", "repos/tmdgusya/dinobot/releases/tags/v1.2.3"],
+		["gh", "api", "--method", "GET", "repos/dinobot-labs/dinobot/releases/tags/v1.2.3"],
 		["git", "show", TAG_SHA + ":package.json"],
 	]);
 });

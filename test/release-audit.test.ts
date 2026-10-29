@@ -43,11 +43,12 @@ function fixture(options: {
 	}
 	options.prepare?.(dir);
 	const path = join(dir, "fixture.tgz");
-	const result = spawnSync("tar", ["--create", "--gzip", "--format=ustar", "--blocking-factor=1", "--file", path,
+	const result = spawnSync("tar", ["--create", "--gzip", "--format=ustar", "--blocking-factor=1", "--file=-",
 		...options.args ?? [], "--", ...options.entries ?? files.map((file) => "package/" + file)], {
 		cwd: dir, env: { PATH: process.env.PATH!, LC_ALL: "C", TZ: "UTC" }, timeout: 10_000,
 	});
 	if (result.status !== 0) throw new Error("fixture tar creation failed");
+	writeFileSync(path, result.stdout);
 	return { path, dir };
 }
 
