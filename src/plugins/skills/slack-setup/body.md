@@ -4,6 +4,8 @@ Connect dinobot to Slack end to end: the user only does what needs their Slack a
 
 The user has exactly three manual jobs: create and install the app from the bundled manifest, copy two tokens, copy their member ID. Never hand them config edits, env commands or a restart command; you do those with your tools. For every `channels.slack` field, load the dinobot skill and read its channels reference.
 
+**Prefer the built-in wizard when the user can open the TUI**: `/setup` → channels → Slack walks them through the same flow (prefilled app-creation link, paste-to-verify tokens, IDs derived automatically, tokens kept in protected files) with no scripts and no env commands. Use this skill when the user asks in chat, cannot use the TUI, or something needs fixing.
+
 ## Companion files
 
 Read them with skills_read_file (same version as skills_load), write them to a private working directory, and run the scripts with `bun`.

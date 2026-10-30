@@ -1,6 +1,7 @@
 import { afterEach, expect, spyOn, test } from "bun:test";
 import { createHmac } from "node:crypto";
 import { mkdtempSync, rmSync } from "node:fs";
+import { createPrivateFile } from "../src/telegram-private-files/index.ts";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Database } from "bun:sqlite";
@@ -35,6 +36,32 @@ test("Slack validates bounded credentials, explicit canonical IDs and required a
  for (const patch of [{ allowedUserIds: ["123"] }, { allowedChannelIds: [] }, { appId: "A:123" }, { teamId: "Tlower" }, { signingSecretEnv: "" }, { botTokenEnv: undefined }, { url: "https://evil.test" }]) expect(() => createSlackChannel({ ...cfg, ...patch } as SlackConfig)).toThrow();
  process.env.SLACK_TEST_BAD = "xoxb-" + "a".repeat(1024); expect(() => createSlackChannel({ ...cfg, botTokenEnv: "SLACK_TEST_BAD" })).toThrow("credential");
  process.env.SLACK_TEST_BAD = "bad secret"; expect(() => createSlackChannel({ ...cfg, signingSecretEnv: "SLACK_TEST_BAD" })).toThrow("credential"); delete process.env.SLACK_TEST_BAD;
+});
+
+test("Slack socket mode reads bot/app credentials from protected files, and exactly one source may be given", () => {
+ const dir = mkdtempSync(join(tmpdir(), "slack-cred-")); dirs.push(dir);
+ const botFile = join(dir, "bot.token"), appFile = join(dir, "app.token");
+ createPrivateFile(botFile, "xoxb-file-token-test-only\n"); createPrivateFile(appFile, "xapp-file-token-test-only\n");
+ // 키를 빼면서 기본값을 고친다(exactOptionalPropertyTypes: 명시적 undefined 금지).
+ const without = <T extends object>(value: T, ...keys: (keyof T)[]): T => { const copy = { ...value }; for (const key of keys) delete copy[key]; return copy; };
+ const socketFiles = () => without(config({ transport: "socket", botTokenFile: botFile, appTokenFile: appFile }), "botTokenEnv", "appTokenEnv", "signingSecretEnv");
+ // Both files: the channel builds and lists them as its storage.
+ const built = channel(socketFiles());
+ expect(built.storagePaths!).toContain(botFile); expect(built.storagePaths!).toContain(appFile);
+ // Exactly one source per token: both env+file, or neither, is a configuration error.
+ expect(() => createSlackChannel({ ...socketFiles(), botTokenEnv: "SLACK_TEST_TOKEN" })).toThrow("Invalid Slack channel configuration");
+ expect(() => createSlackChannel(without(socketFiles(), "botTokenFile"))).toThrow("Invalid Slack channel configuration");
+ expect(() => createSlackChannel(without(socketFiles(), "appTokenFile"))).toThrow("Invalid Slack channel configuration");
+ // A missing or malformed credential file fails closed without falling back to env.
+ const missing = without(config({ transport: "socket", botTokenFile: join(dir, "nope.token"), appTokenFile: appFile }), "botTokenEnv", "appTokenEnv", "signingSecretEnv");
+ expect(() => createSlackChannel(missing)).toThrow("Unable to read Slack credential file");
+ rmSync(botFile); createPrivateFile(botFile, "not-a-token");
+ expect(() => createSlackChannel(socketFiles())).toThrow("credential");
+ rmSync(botFile); createPrivateFile(botFile, "xoxb-file-token-test-only\n");
+ // Env-based socket config keeps working alongside the file option.
+ process.env.SLACK_TEST_APP = "xapp-fake-test-only";
+ expect(() => createSlackChannel(config({ transport: "socket", appTokenEnv: "SLACK_TEST_APP" }))).not.toThrow();
+ delete process.env.SLACK_TEST_APP;
 });
 
 test("Slack signed raw JSON, freshness, duplicate headers and signed bounded challenge", async () => {
