@@ -4,6 +4,7 @@
  * The locale comes from the POSIX variables and, when none is set (Windows, most macOS GUI terminals), from the
  * operating system's language setting, so a Korean Windows gets the Korean onboarding.
  */
+import type { SlackSetupErrorKind, SlackTokenProblem } from "./slack.ts";
 export type SetupLocale = "en" | "ko";
 
 /**
@@ -61,6 +62,42 @@ type Copy = {
 	readonly telegramHint: string;
 	readonly slack: string;
 	readonly slackHint: string;
+	/** ① 봇 이름 → 매니페스트가 채워진 생성 링크. */
+	readonly slackName: string;
+	readonly slackNamePlaceholder: string;
+	readonly slackCreateIntro: string;
+	readonly slackCreateOutro: string;
+	readonly slackCreated: string;
+	readonly slackCreatedNext: string;
+	readonly slackSkip: string;
+	/** ② 봇 토큰(xoxb-) 검증. */
+	readonly slackBotToken: string;
+	readonly slackBotTokenPlaceholder: string;
+	readonly slackVerifying: string;
+	readonly slackBotOk: (team: string, bot: string) => string;
+	readonly slackMissingScopes: (scopes: string) => string;
+	/** ③ 앱 수준 토큰(xapp-) 검증. */
+	readonly slackAppToken: string;
+	readonly slackAppTokenPlaceholder: string;
+	readonly slackAppOk: string;
+	readonly slackNoAppId: string;
+	/** 토큰 입력 전 빠른 검사·서버 검증 오류를 locale 문구로. */
+	readonly slackTokenProblem: (problem: SlackTokenProblem) => string;
+	readonly slackVerifyError: (kind: SlackSetupErrorKind, detail: string) => string;
+	readonly slackFailed: string;
+	readonly slackRetry: string;
+	/** ④ 대화를 허용할 멤버 ID 목록. */
+	readonly slackMemberGuide: string;
+	readonly slackMember: string;
+	readonly slackMemberMore: string;
+	readonly slackMemberPlaceholder: string;
+	readonly slackMemberInvalid: (ids: string) => string;
+	readonly slackMemberNeed: string;
+	readonly slackMemberDone: string;
+	readonly slackMemberAddMore: string;
+	readonly slackMemberFinish: string;
+	readonly slackMemberOk: (count: number) => string;
+	readonly slackInviteHint: string;
 	readonly discord: string;
 	readonly discordHint: string;
 	readonly configuredElsewhere: string;
@@ -171,7 +208,65 @@ const en: Copy = {
 	telegram: "Telegram",
 	telegramHint: "chat from your phone · about 1 minute",
 	slack: "Slack",
-	slackHint: "configure in dinobot.yaml (see the Slack runbook)",
+	slackHint: "call dinobot from any channel or DM · about 2 minutes",
+	slackName: "Pick the bot's display name in Slack (Enter keeps dinobot):",
+	slackNamePlaceholder: "dinobot",
+	slackCreateIntro:
+		"The link below opens Slack's app creation page with the manifest already filled in.\n" +
+		"1. Open the link and pick your workspace\n" +
+		"2. Press Next → Create\n" +
+		"3. Press Install to Workspace → Allow\n",
+	slackCreateOutro: "After installing, copy the Bot User OAuth Token (xoxb-…) on the OAuth & Permissions page.",
+	slackCreated: "App created and bot token copied?",
+	slackCreatedNext: "Yes, continue",
+	slackSkip: "Later",
+	slackBotToken: "Paste the bot token (xoxb-…):",
+	slackBotTokenPlaceholder: "xoxb-…",
+	slackVerifying: "Checking with Slack…",
+	slackBotOk: (team, bot) => `✓ Bot ${bot} in the ${team} workspace verified.`,
+	slackMissingScopes: (scopes) => `⚠️ The bot is missing scopes: ${scopes}. Add them in the app settings and reinstall the app.`,
+	slackAppToken:
+		"Now the app-level token: in the app's Basic Information → App-Level Tokens → Generate Token and Scopes, " +
+		"pick any name, add the connections:write scope, generate, and paste the xapp-… token here:",
+	slackAppTokenPlaceholder: "xapp-…",
+	slackAppOk: "✓ App-level token verified.",
+	slackNoAppId: "Slack did not report the app ID; please try again in a moment.",
+	slackTokenProblem: (problem) =>
+		({
+			empty: "Paste the token itself.",
+			appInBot: "That is an app-level token (xapp-). Paste the Bot User OAuth Token (xoxb-…) here.",
+			userInBot: "That is a user token (xoxp-), which dinobot cannot use. Paste the bot token (xoxb-…).",
+			botInApp: "That is a bot token (xoxb-). Paste the app-level token (xapp-…) here.",
+			userInApp: "That is a user token (xoxp-). Paste the app-level token (xapp-…).",
+			botFormat: "That does not look like a bot token (it should start with xoxb-). Copy it again.",
+			appFormat: "That does not look like an app-level token (it should start with xapp-). Copy it again.",
+		})[problem],
+	slackVerifyError: (kind, detail) =>
+		({
+			network: `Could not reach Slack${detail ? ` (${detail})` : ""}. Check the connection and try again.`,
+			invalidAuth: "Slack rejected the token. Copy it again (the token may have expired).",
+			revoked: "That token was revoked. Generate a new one and paste it.",
+			inactive: "That Slack account is inactive.",
+			missingScope: "The app-level token needs the connections:write scope. Generate it again with that scope.",
+			socketModeOff: "Socket Mode is off in the Slack app. Open the app settings → Socket Mode, turn it on, reinstall the app, and try again.",
+			unexpected: `Slack returned an error${detail ? ` (${detail})` : ""}. Try again.`,
+			badResponse: "Slack answered in an unexpected form. Try again.",
+		})[kind],
+	slackFailed: "Verification failed. What would you like to do?",
+	slackRetry: "Paste again",
+	slackMemberGuide:
+		"Last step: who may talk to dinobot. In Slack open your own profile → ⋮ → Copy member ID, and paste it below. " +
+		"Separate several IDs with commas.",
+	slackMember: "Paste the member ID (starts with U…):",
+	slackMemberMore: "Add another member ID (or leave empty to finish):",
+	slackMemberPlaceholder: "U0123ABCD or U0123ABCD, U0456EFGH",
+	slackMemberInvalid: (ids) => `These do not look like member IDs: ${ids}. Use the profile's Copy member ID value as-is.`,
+	slackMemberNeed: "At least one member ID is required.",
+	slackMemberDone: "Add more people?",
+	slackMemberAddMore: "Add more",
+	slackMemberFinish: "Finish",
+	slackMemberOk: (count) => `✓ ${count} user${count === 1 ? "" : "s"} may talk to dinobot.`,
+	slackInviteHint: "After applying, invite the bot to a channel and mention it, or DM it directly.",
 	discord: "Discord",
 	discordHint: "needs a public HTTPS address (see the messaging runbook)",
 	configuredElsewhere: "configured in dinobot.yaml",
@@ -232,13 +327,13 @@ const en: Copy = {
 	reportOn: (auto) => `on${auto ? " (automatic reports on)" : ""}`,
 	reportOff: "off (/report setup)",
 	summaryAgain: "Run /setup any time to change these.",
-	summaryAdvanced: (path) => `Advanced settings (GitHub, MCP, Slack): ${path}`,
+	summaryAdvanced: (path) => `Advanced settings (GitHub, MCP): ${path}`,
 	contextTip:
 		"One last thing: give the agent as much as you can about yourself and your projects, so it can get to know you. Folders of notes, documents and project files: pour them all in.\n" +
 		"In the chat, attach a folder with @folder:path (or just paste its path) and ask the agent to read it and remember it. It keeps what it learns in memory and uses it in later conversations.",
 	unknownSection: (section, sections) => `unknown setup section "${section}" (available: ${sections})`,
 	needsTui: "/setup needs the terminal (TUI); run `dinobot setup`.",
-	resumeHint: "Setup is not finished: run /setup any time to connect Telegram, computer use, Google or problem reports.",
+	resumeHint: "Setup is not finished: run /setup any time to connect Telegram, Slack, computer use, Google or problem reports.",
 	applying: "Applying setup: saving dinobot.yaml and restarting dinobot…",
 	applied: "Setup applied; dinobot restarted with the new settings.",
 	applyOutcome: {
@@ -283,7 +378,65 @@ const ko: Copy = {
 	telegram: "Telegram",
 	telegramHint: "휴대폰에서 대화 · 약 1분",
 	slack: "Slack",
-	slackHint: "dinobot.yaml에서 설정 (Slack 런북 참고)",
+	slackHint: "어디서든 dinobot 부르기 · 약 2분",
+	slackName: "Slack에서 보일 봇 이름을 정하세요 (그냥 Enter면 dinobot):",
+	slackNamePlaceholder: "dinobot",
+	slackCreateIntro:
+		"아래 링크를 열어면 매니페스트가 채워진 Slack 앱 만들기 페이지가 열려요.\n" +
+		"1. 링크를 열고 워크스페이스를 고르세요\n" +
+		"2. [Next] → [Create] 를 누르세요\n" +
+		"3. [Install to Workspace] → [Allow] 를 누르세요\n",
+	slackCreateOutro: "설치가 끝나면 OAuth & Permissions 페이지의 Bot User OAuth Token(xoxb-...)을 복사해 두세요.",
+	slackCreated: "앱을 만들고 봇 토큰까지 복사했나요?",
+	slackCreatedNext: "네, 복사했어요",
+	slackSkip: "나중에 하기",
+	slackBotToken: "복사한 봇 토큰(xoxb-...)을 붙여 넣으세요:",
+	slackBotTokenPlaceholder: "xoxb-…",
+	slackVerifying: "Slack에 확인하는 중…",
+	slackBotOk: (team, bot) => `✓ ${team} 워크스페이스의 봇 ${bot} 확인됨.`,
+	slackMissingScopes: (scopes) => `⚠️ 봇 권한이 빠져 있어요: ${scopes}. 앱 설정에서 권한을 추가하고 다시 설치해 주세요.`,
+	slackAppToken:
+		"이제 앱 수준 토큰을 만들어요. 앱 관리 페이지의 Basic Information → App-Level Tokens → Generate Token and Scopes에서 " +
+		"이름은 아무거나, scope는 connections:write로 만든 뒤, 나온 xapp-... 토큰을 붙여 넣으세요:",
+	slackAppTokenPlaceholder: "xapp-…",
+	slackAppOk: "✓ 앱 수준 토큰 확인됨.",
+	slackNoAppId: "Slack에서 앱 ID를 알려 주지 않았어요. 잠시 후 다시 시도해 주세요.",
+	slackTokenProblem: (problem) =>
+		({
+			empty: "토큰을 붙여 넣어 주세요.",
+			appInBot: "앱 수준 토큰(xapp-)을 넣으셨네요. 여기엔 봇 토큰(xoxb-...)을 붙여 넣으세요.",
+			userInBot: "사용자 토큰(xoxp-)은 쓸 수 없어요. 봇 토큰(xoxb-...)을 붙여 넣으세요.",
+			botInApp: "봇 토큰(xoxb-)을 넣으셨네요. 여기엔 앱 수준 토큰(xapp-...)을 붙여 넣으세요.",
+			userInApp: "사용자 토큰(xoxp-)은 쓸 수 없어요. 앱 수준 토큰(xapp-...)을 붙여 넣으세요.",
+			botFormat: "봇 토큰 형식이 아니에요 (xoxb-로 시작해야 해요). 다시 복사해 붙여 넣으세요.",
+			appFormat: "앱 수준 토큰 형식이 아니에요 (xapp-로 시작해야 해요). 다시 복사해 붙여 넣으세요.",
+		})[problem],
+	slackVerifyError: (kind, detail) =>
+		({
+			network: `Slack에 연결하지 못했어요${detail ? ` (${detail})` : ""}. 연결을 확인하고 다시 시도해 주세요.`,
+			invalidAuth: "Slack이 토큰을 거부했어요. 토큰을 다시 복사해 붙여 넣으세요 (만료됐을 수 있어요).",
+			revoked: "토큰이 폐기됐어요. 새 토큰을 만들어 붙여 넣으세요.",
+			inactive: "Slack 계정이 비활성 상태예요.",
+			missingScope: "앱 수준 토큰에 connections:write 권한이 필요해요. 그 권한으로 다시 만드세요.",
+			socketModeOff: "Slack 앱에 Socket Mode가 꺼져 있어요. 앱 설정의 Socket Mode를 켜고 앱을 다시 설치한 뒤 시도하세요.",
+			unexpected: `Slack이 오류를 돌려줬어요${detail ? ` (${detail})` : ""}. 다시 시도해 주세요.`,
+			badResponse: "Slack이 이상하게 응답했어요. 다시 시도해 주세요.",
+		})[kind],
+	slackFailed: "확인하지 못했어요. 어떻게 할까요?",
+	slackRetry: "다시 붙여 넣기",
+	slackMemberGuide:
+		"마지막으로 누가 dinobot과 대화할지 정해요. Slack에서 본인 프로필을 열고 ⋮ → Copy member ID를 눌러 복사한 뒤 붙여 넣으세요. " +
+		"여러 명은 쉼표로 구분해서 한 번에 넣을 수 있어요.",
+	slackMember: "허용할 멤버 ID(U...로 시작)를 붙여 넣으세요:",
+	slackMemberMore: "멤버 ID를 더 넣으세요 (그냥 Enter면 끝내기):",
+	slackMemberPlaceholder: "U0123ABCD 또는 U0123ABCD, U0456EFGH",
+	slackMemberInvalid: (ids) => `멤버 ID 형식이 아니에요: ${ids}. 프로필의 Copy member ID 값을 그대로 붙여 넣으세요.`,
+	slackMemberNeed: "한 명 이상의 멤버 ID가 필요해요.",
+	slackMemberDone: "사람을 더 추가할까요?",
+	slackMemberAddMore: "더 추가하기",
+	slackMemberFinish: "끝내기",
+	slackMemberOk: (count) => `✓ 사용자 ${count}명이 dinobot과 대화할 수 있어요.`,
+	slackInviteHint: "적용이 끝나면 Slack에서 봇을 채널에 초대하고 멘션하거나, DM으로 바로 대화할 수 있어요.",
 	discord: "Discord",
 	discordHint: "공개 HTTPS 주소 필요 (메신저 런북 참고)",
 	configuredElsewhere: "dinobot.yaml에서 설정됨",
@@ -344,13 +497,13 @@ const ko: Copy = {
 	reportOn: (auto) => `켜짐${auto ? " (자동 보고 켜짐)" : ""}`,
 	reportOff: "꺼짐 (/report setup)",
 	summaryAgain: "언제든 /setup 으로 다시 설정할 수 있어요.",
-	summaryAdvanced: (path) => `고급 설정 (GitHub, MCP, Slack): ${path}`,
+	summaryAdvanced: (path) => `고급 설정 (GitHub, MCP): ${path}`,
 	contextTip:
 		"마지막으로, 에이전트가 당신을 파악할 수 있게 당신에 대한 정보나 프로젝트에 대한 정보가 담긴 폴더들을 마구마구 넣어 주세요. 메모, 문서, 프로젝트 파일 무엇이든 좋아요.\n" +
 		"대화창에서 @folder:경로 로 폴더를 붙이거나 경로를 그냥 붙여 넣고, 읽고 기억해 달라고 하세요. 에이전트가 알게 된 내용을 기억(memory)에 저장해 두고 이후 대화에서도 참고해요.",
 	unknownSection: (section, sections) => `알 수 없는 설정 단계 "${section}" (가능: ${sections})`,
 	needsTui: "/setup은 터미널(TUI)에서만 쓸 수 있어요. `dinobot setup`을 실행하세요.",
-	resumeHint: "설정이 아직 끝나지 않았어요. 언제든 /setup 으로 텔레그램, 컴퓨터 사용, Google, 문제 보고를 설정할 수 있어요.",
+	resumeHint: "설정이 아직 끝나지 않았어요. 언제든 /setup 으로 텔레그램, 슬랙, 컴퓨터 사용, Google, 문제 보고를 설정할 수 있어요.",
 	applying: "설정을 적용하는 중: dinobot.yaml을 저장하고 dinobot을 재시작해요…",
 	applied: "설정을 적용했어요. dinobot이 새 설정으로 재시작됐어요.",
 	applyOutcome: {

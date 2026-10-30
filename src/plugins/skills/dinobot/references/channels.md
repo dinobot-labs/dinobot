@@ -60,9 +60,11 @@ Source: `src/channels/slack.ts`, `src/channels/slack-socket.ts`, `openwiki/runbo
 | Field | Type | Required | Default / values |
 |---|---|---|---|
 | `transport` | `http` \| `socket` | no | `http` |
-| `botTokenEnv` | env var name | yes | value must be `xoxb-...` |
+| `botTokenEnv` | env var name | exactly one of these two | value must be `xoxb-...` |
+| `botTokenFile` | path | exactly one of these two | same value rules; private file (POSIX 0600 / Windows owner DACL), ≤ 1024 bytes |
 | `signingSecretEnv` | env var name | yes for `http` | value: 32 hex chars |
-| `appTokenEnv` | env var name | yes for `socket` | value: `xapp-...` (App-Level Token, `connections:write`) |
+| `appTokenEnv` | env var name | exactly one of these two, for `socket` | value: `xapp-...` (App-Level Token, `connections:write`) |
+| `appTokenFile` | path | exactly one of these two, for `socket` | same value rules; private file like `botTokenFile` |
 | `appId` | string | yes | `A[A-Z0-9]+` |
 | `teamId` | string | yes | `T[A-Z0-9]+` |
 | `botUserId` | string | yes | `U...` or `W...` |
@@ -75,7 +77,7 @@ Source: `src/channels/slack.ts`, `src/channels/slack-socket.ts`, `openwiki/runbo
 
 Env var names are your choice; the example manifest uses `DINOBOT_SLACK_APP_TOKEN` and `DINOBOT_SLACK_BOT_TOKEN`.
 
-Guided setup: load the `slack-setup` skill. It ships a paste-in Slack app manifest (scopes, events, Socket Mode, Messages tab), a token check that derives `appId`/`teamId`/`botUserId`, and a restart script; the user only creates the app and copies two tokens and their member ID.
+Guided setup: `/setup` → channels → Slack runs the whole connection in the TUI: it prints a manifest-prefilled app-creation link, verifies both pasted tokens live (deriving `appId`/`teamId`/`botUserId`), stores them in protected files via `botTokenFile`/`appTokenFile`, and applies with a safe restart. When the user asks in chat instead, load the `slack-setup` skill: it ships a paste-in Slack app manifest (scopes, events, Socket Mode, Messages tab), a token check that derives `appId`/`teamId`/`botUserId`, and a restart script; the user only creates the app and copies two tokens and their member ID.
 
 Setup:
 1. Create and install the Slack app. Bot scopes: `chat:write`, `app_mentions:read`, `im:history`; add `channels:history`/`groups:history` for thread follow-ups without a mention, `files:read` for attachments, `files:write` for file replies.
