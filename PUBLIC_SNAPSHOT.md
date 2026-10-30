@@ -26,7 +26,7 @@ Included: product source and tests, patches/vendor with existing notices, select
 
 - Public synthetic Google/report fixtures, credential fixtures, compiled skill path repair, example-provider placeholder, CI/sandbox boundaries and release audits are retained.
 - The four useful PM documents formerly misplaced in the forbidden operational-wiki directory now live under `docs/wiki`; the general PM contract is retained without project-specific work history. The artifact guard is unchanged.
-- Unknown-license prose removed by the historical export remains removed. The new proof-skills package includes its complete MIT copyright/license in source, every loaded package, and `THIRD_PARTY_NOTICES.md` for release-notice collection. It stays disabled unless `plugins.skills.proofSkills: true` is explicit. Companion setup scripts are not executed during import.
+- The bundled optimization, debugging and clarification skills are authored by the repository owner and ship in full. The new proof-skills package includes its complete MIT copyright/license in source, every loaded package, and `THIRD_PARTY_NOTICES.md` for release-notice collection. It stays disabled unless `plugins.skills.proofSkills: true` is explicit. Companion setup scripts are not executed during import.
 - Report tests use independent loopback protocol doubles, not copied private workers. They verify client projection/redaction and wire contracts, not service persistence or server-side acceptance. See `docs/PUBLIC_CLIENT_TESTS.md`.
 - Release selection addresses the canonical public repository. npm releases are published from this repository (see Releases below).
 

@@ -121,11 +121,13 @@ describe("skills plugin", () => {
 		expect(slack.body).toContain('allowedChannelIds: ["*"]');
 		expect(slack.body).toContain("/v1/daemon");
 		expect(skills!.skillPackages!.find((skill) => skill.name === "dinobot")!.body).toContain("`slack-setup`");
-		for (const name of ["optimization", "debugging"]) {
+		// optimization, debugging and clarification are the owner's own general workflows, shipped in full.
+		const expected: Record<string, string> = { optimization: "Capture a baseline", debugging: "## Gates for a root-cause fix", clarification: "## Ambiguity units" };
+		for (const [name, marker] of Object.entries(expected)) {
 			const body = skills!.skillPackages!.find((skill) => skill.name === name)!.body;
-			expect(body).toContain("## Workflow");
+			expect(body).toContain(marker);
 			expect(body).not.toContain("engineering-discipline");
-			expect(body).toContain(name === "optimization" ? "test/tui-perf.test.ts" : "temporary storage");
+			expect(body).not.toContain("license: unspecified");
 		}
 		const programming = skills!.skillPackages!.find((skill) => skill.name === "programming")!.body;
 		expect(programming).not.toContain("137dead9137f39aa54b9ed87803a7f26324eedaf");
