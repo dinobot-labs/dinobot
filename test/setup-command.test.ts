@@ -20,6 +20,7 @@ import { parseManifest } from "../src/manifest.ts";
 import { pluginCatalog } from "../src/plugins/index.ts";
 import type { ReportService } from "../src/report/service.ts";
 import { detectLocale, resolveLocale, setupCopy, systemLocale } from "../src/setup/locale.ts";
+import type { ProbeSocketConstructor } from "../src/setup/slack.ts";
 import { sha256Hex } from "../src/setup/manifest-file.ts";
 import { readSetupState } from "../src/setup/state.ts";
 
@@ -87,6 +88,8 @@ async function world(options: { loggedIn?: boolean; report?: ReportService; fail
 
 	// Telegram Bot API double: the pairing nonce is taken from the link setup prints.
 	const telegram = { code: "", time: 0, calls: [] as string[] };
+	// Slack Web API + Socket Mode double: failures are queued per method, the hello frame carries the app id.
+	const slack = { calls: [] as string[], botFailures: [] as string[], appFailures: [] as string[], helloAppId: "A01234" as string | undefined };
 	const installs: string[] = [];
 	const deps: SetupDeps = {
 		manifestPath,
@@ -121,10 +124,46 @@ async function world(options: { loggedIn?: boolean; report?: ReportService; fail
 				return Response.json({ ok: true, result });
 			},
 		},
+		slack: {
+			fetch: async (url, init) => {
+				const method = new URL(url).pathname.split("/").pop()!;
+				slack.calls.push(method);
+				if (init.signal?.aborted) throw new Error("aborted");
+				const failure = method === "auth.test" ? slack.botFailures.shift() : method === "apps.connections.open" ? slack.appFailures.shift() : undefined;
+				if (failure !== undefined) return Response.json({ ok: false, error: failure });
+				if (method === "auth.test") {
+					return new Response(JSON.stringify({ ok: true, team: "Faux Workspace", team_id: "T01234", user_id: "U9999", bot_id: "B8888", user: "dinobot", url: "https://foux.slack.com/" }), {
+						headers: { "x-oauth-scopes": "app_mentions:read,chat:write,channels:history,groups:history,im:history,files:read,files:write" },
+					});
+				}
+				if (method === "bots.info") return Response.json({ ok: true, bot: { app_id: "A01234", name: "dinobot" } });
+				if (method === "apps.connections.open") return Response.json({ ok: true, url: "wss://wss-primary.slack.com/link/" });
+				throw new Error("unexpected Slack method " + method);
+			},
+			WebSocket: class {
+				private readonly listeners = new Map<string, ((event: { readonly data?: unknown }) => void)[]>();
+				constructor(readonly url: string) {
+					queueMicrotask(() => {
+						if (slack.helloAppId !== undefined) this.emit("message", { data: JSON.stringify({ type: "hello", connection_info: { app_id: slack.helloAppId } }) });
+					});
+				}
+				addEventListener(type: string, listener: (event: { readonly data?: unknown }) => void): void {
+					this.listeners.set(type, [...(this.listeners.get(type) ?? []), listener]);
+				}
+				emit(type: string, event: { readonly data?: unknown }): void {
+					for (const listener of this.listeners.get(type) ?? []) listener(event);
+				}
+				send(): void {}
+				close(): void {
+					this.emit("close", {});
+				}
+			} as unknown as ProbeSocketConstructor,
+			helloTimeoutMs: 2_000,
+		},
 		now: () => new Date("2026-10-10T00:00:00Z"),
 	};
 	const commands = createCommands({ bot, models, auth, plugins: [], ...(options.report ? { report: options.report } : {}), setup: deps });
-	return { home, config, dataDir, manifestPath, base, commands, telegram, installs, logged };
+	return { home, config, dataDir, manifestPath, base, commands, telegram, slack, installs, logged };
 }
 
 /** Runs `/setup <args>` answering every prompt with `script`; returns every event. `abortWhen` aborts the run. */
@@ -204,7 +243,7 @@ describe("/setup", () => {
 		const asked = prompts(events);
 		const channels = asked.find((prompt) => title(prompt) === "설정 3/5 · 대화할 곳")!;
 		expect(channels.type === "checklist" && channels.options.map((option) => [option.id, option.checked, option.disabled ?? false])).toEqual([
-			["tui", true, true], ["telegram", false, false], ["slack", false, true], ["discord", false, true],
+			["tui", true, true], ["telegram", false, false], ["slack", false, false], ["discord", false, true],
 		]);
 		const features = asked.find((prompt) => title(prompt) === "설정 4/5 · 기능")!;
 		expect(features.type === "checklist" && features.options.map((option) => [option.id, option.checked, option.disabled ?? false])).toEqual([["web", true, true], ["computer", false, false], ["browser", false, false], ["google", false, false], ["calendar", false, false]]);
@@ -606,6 +645,189 @@ describe("/setup", () => {
 function events(list: readonly CommandEvent[]): string {
 	return list.at(-1)?.type ?? "";
 }
+
+describe("slack wizard", () => {
+	const BOT_TOKEN = "xoxb-777-faux-token-for-tests";
+	const APP_TOKEN = "xapp-666-faux-token-for-tests";
+	const MEMBER = "U0123ABCD";
+
+	test("full path (ko): name → prefilled link → two verified tokens → member ID; one apply stages a bootable channels.slack with protected token files", async () => {
+		const w = await world({ loggedIn: true });
+		const events = await drive(w.commands, "channels", (prompt) => {
+			if (prompt.type === "checklist") return ["tui", "slack"];
+			if (prompt.type === "text") return prompt.message.includes("멤버 ID") ? MEMBER : "dinobot";
+			if (prompt.type === "secret") return prompt.message.includes("앱 수준 토큰") ? APP_TOKEN : BOT_TOKEN;
+			if (prompt.type === "select") {
+				if (prompt.message.includes("앱을 만들고")) return "next";
+				if (prompt.message.includes("더 추가")) return "done";
+				return "apply";
+			}
+			throw new Error(`unexpected ${prompt.type}`);
+		}, { locale: "ko_KR.UTF-8" });
+		const asked = prompts(events);
+		expect(asked.map((prompt) => prompt.type)).toEqual(["checklist", "text", "select", "secret", "secret", "text", "select", "select"]);
+		// ① 이름 입력 직후 미리 채워진 생성 링크가 출력된다.
+		const printed = outputs(events);
+		expect(printed.some((line) => line.startsWith("https://api.slack.com/apps?new_app=1&manifest_json="))).toBe(true);
+		expect(printed).toContain("✓ Faux Workspace 워크스페이스의 봇 dinobot 확인됨.");
+		expect(printed).toContain("✓ 앱 수준 토큰 확인됨.");
+		expect(printed).toContain("✓ 사용자 1명이 dinobot과 대화할 수 있어요.");
+		// 검증은 실제 Slack 호출 순서대로 일어난다.
+		expect(w.slack.calls).toEqual(["auth.test", "bots.info", "apps.connections.open"]);
+		// 토큰 값은 어떤 출력에도 새어 나오지 않는다.
+		expect(printed.join("\n")).not.toContain(BOT_TOKEN);
+		expect(printed.join("\n")).not.toContain(APP_TOKEN);
+
+		const request = applied(events)!;
+		expect(request.changes).toEqual(["+ channels.slack"]);
+		const botTokenFile = join(w.config, "slack", "bot.token");
+		const appTokenFile = join(w.config, "slack", "app.token");
+		expect(Bun.YAML.parse(request.candidate)).toMatchObject({
+			channels: {
+				slack: {
+					transport: "socket",
+					botTokenFile,
+					appTokenFile,
+					databasePath: join(w.dataDir, "slack.sqlite"),
+					port: 0,
+					appId: "A01234",
+					teamId: "T01234",
+					botUserId: "U9999",
+					allowedUserIds: [MEMBER],
+					allowedChannelIds: ["*"],
+				},
+			},
+		});
+		expect(readPrivateFile(botTokenFile, 1024).trim()).toBe(BOT_TOKEN);
+		expect(readPrivateFile(appTokenFile, 1024).trim()).toBe(APP_TOKEN);
+		if (process.platform !== "win32") {
+			expect(statSync(botTokenFile).mode & 0o777).toBe(0o600);
+			expect(statSync(appTokenFile).mode & 0o777).toBe(0o600);
+		}
+		// 후보 매니페스트는 데몬이 실제로 부팅할 수 있는 설정이다(스키마 통과 + 채널 생성).
+		const manifest = await parseManifest(Bun.YAML.parse(request.candidate), { channels: channelCatalog, plugins: pluginCatalog });
+		expect(manifest.channels.map((channel) => channel.name)).toEqual(["slack"]);
+		expect(request.summary.join("\n")).toContain("Slack");
+		expect(await readFile(w.manifestPath, "utf8")).toBe(w.base);
+	});
+
+	test("a rejected bot token is reported and asked again; the second token stages the block (en)", async () => {
+		const w = await world({ loggedIn: true });
+		w.slack.botFailures.push("invalid_auth");
+		const events = await drive(w.commands, "channels", (prompt) => {
+			if (prompt.type === "checklist") return ["slack"];
+			if (prompt.type === "text") return prompt.message.includes("member ID") ? MEMBER : "helper";
+			if (prompt.type === "secret") return prompt.message.includes("app-level token") ? APP_TOKEN : BOT_TOKEN;
+			if (prompt.type === "select") {
+				if (prompt.message.includes("App created")) return "next";
+				if (prompt.options.some((option) => option.id === "retry")) return "retry";
+				if (prompt.message.includes("Add more")) return "done";
+				return "apply";
+			}
+			throw new Error(`unexpected ${prompt.type}`);
+		});
+		expect(outputs(events)).toContain("Slack rejected the token. Copy it again (the token may have expired).");
+		expect(w.slack.calls.filter((call) => call === "auth.test")).toHaveLength(2);
+		const request = applied(events)!;
+		expect(request.changes).toEqual(["+ channels.slack"]);
+		expect((Bun.YAML.parse(request.candidate) as { channels: { slack: { allowedUserIds: string[] } } }).channels.slack.allowedUserIds).toEqual([MEMBER]);
+	});
+
+	test("skipping at the app-creation question leaves no files, no staged change and the manifest untouched", async () => {
+		const w = await world({ loggedIn: true });
+		const events = await drive(w.commands, "channels", (prompt) => {
+			if (prompt.type === "checklist") return ["slack"];
+			if (prompt.type === "text") return "dinobot";
+			if (prompt.type === "select") return "skip";
+			throw new Error(`unexpected ${prompt.type}`);
+		});
+		expect(applied(events)).toBeUndefined();
+		expect(existsSync(join(w.config, "slack"))).toBe(false);
+		// 아무것도 스테이징되지 않았으니 적용 대신 현재 상태 요약이 출력된다.
+		expect(outputs(events).at(-1)).toContain("✓ Model: faux/faux-1");
+		expect(await readFile(w.manifestPath, "utf8")).toBe(w.base);
+	});
+
+	test("skipping after a failed token check leaves no files behind either", async () => {
+		const w = await world({ loggedIn: true });
+		w.slack.botFailures.push("invalid_auth");
+		const events = await drive(w.commands, "channels", (prompt) => {
+			if (prompt.type === "checklist") return ["slack"];
+			if (prompt.type === "text") return "dinobot";
+			if (prompt.type === "secret") return BOT_TOKEN;
+			if (prompt.type === "select") {
+				if (prompt.message.includes("App created")) return "next";
+				return "skip";
+			}
+			throw new Error(`unexpected ${prompt.type}`);
+		});
+		expect(applied(events)).toBeUndefined();
+		expect(existsSync(join(w.config, "slack"))).toBe(false);
+		expect(await readFile(w.manifestPath, "utf8")).toBe(w.base);
+	});
+
+	test("member IDs: malformed input is explained, several IDs at once are accepted, and one person is required", async () => {
+		const w = await world({ loggedIn: true });
+		const memberPrompts: string[] = [];
+		const answers = ["not-a-user", "", `${MEMBER}, U0456EFGH`];
+		const events = await drive(w.commands, "channels", (prompt) => {
+			if (prompt.type === "checklist") return ["slack"];
+			if (prompt.type === "text" && !prompt.message.includes("member ID")) return "dinobot";
+			if (prompt.type === "text") {
+				memberPrompts.push(prompt.message);
+				return answers.shift()!;
+			}
+			if (prompt.type === "secret") return prompt.message.includes("app-level token") ? APP_TOKEN : BOT_TOKEN;
+			if (prompt.type === "select") {
+				if (prompt.message.includes("App created")) return "next";
+				if (prompt.message.includes("Add more")) return "done";
+				return "apply";
+			}
+			throw new Error(`unexpected ${prompt.type}`);
+		});
+		const printed = outputs(events);
+		expect(printed).toContain("These do not look like member IDs: not-a-user. Use the profile's Copy member ID value as-is.");
+		expect(printed).toContain("At least one member ID is required.");
+		// 첫 질문에서 형식 오류·빈 답을 다시 묻는다.
+		expect(memberPrompts).toHaveLength(3);
+		expect(applied(events)!.candidate).toContain("U0456EFGH");
+		const slack = (Bun.YAML.parse(applied(events)!.candidate) as { channels: { slack: { allowedUserIds: string[] } } }).channels.slack;
+		expect(slack.allowedUserIds).toEqual([MEMBER, "U0456EFGH"]);
+	});
+
+	test("an already configured Slack stays read-only in the checklist", async () => {
+		const w = await world({
+			loggedIn: true,
+			manifest: (home) =>
+				defaultManifest(home).replace(
+					"channels: {}",
+					[
+						"channels:",
+						"  slack:",
+						"    transport: socket",
+						"    botTokenFile: /x/bot.token",
+						"    appTokenFile: /x/app.token",
+						"    databasePath: /x/inbox.sqlite",
+						"    port: 0",
+						"    appId: A01234",
+						"    teamId: T01234",
+						"    botUserId: U9999",
+						"    allowedUserIds: [U0123ABCD]",
+						"    allowedChannelIds: ['*']",
+					].join("\n"),
+				),
+		});
+		const events = await drive(w.commands, "channels", (prompt) => {
+			if (prompt.type === "checklist") {
+				expect(prompt.options.find((option) => option.id === "slack")).toMatchObject({ checked: true, disabled: true });
+				return ["tui"];
+			}
+			throw new Error(`unexpected ${prompt.type}`);
+		});
+		expect(applied(events)).toBeUndefined();
+		expect(w.slack.calls).toEqual([]);
+	});
+});
 
 describe("setup locale", () => {
 	test("POSIX precedence and Korean detection", () => {

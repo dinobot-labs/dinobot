@@ -10,6 +10,21 @@ import { dependenciesRoot, installDependency, platformKey } from "../deps/index.
 import type { Plugin } from "../plugins/types.ts";
 import type { ReportService } from "../report/service.ts";
 import { resolveLocale, type SetupCopy, setupCopy } from "../setup/locale.ts";
+import {
+	buildSlackManifest,
+	cleanSlackToken,
+	SlackSetupError,
+	slackCreateAppUrl,
+	tokenProblem,
+	verifySlackAppToken,
+	verifySlackBotToken,
+	type ProbeSocketConstructor,
+	type SlackAppVerifyDeps,
+	type SlackFetch,
+	type SlackVerifyDeps,
+	type VerifiedSlackApp,
+	type VerifiedSlackBot,
+} from "../setup/slack.ts";
 import { editManifestEntry, ManifestEditError, type ManifestSection } from "../setup/manifest-edit.ts";
 import { type ManifestSnapshot, readManifestSnapshot } from "../setup/manifest-file.ts";
 import { readSetupState, writeSetupState } from "../setup/state.ts";
@@ -36,6 +51,8 @@ export type SetupDeps = {
 	readonly pluginCatalog: Readonly<Record<string, Plugin>>;
 	/** Test seams for the Telegram pairing flow (network, clock). */
 	readonly telegram?: Pick<TelegramSetupDependencies, "fetch" | "now" | "sleep">;
+	/** Test seams for the Slack connection wizard (network, websocket). */
+	readonly slack?: { readonly fetch?: SlackFetch; readonly WebSocket?: ProbeSocketConstructor; readonly helloTimeoutMs?: number };
 	/** Test seam: install a plugin's external programs; resolves false when the plugin must stay off. */
 	readonly install?: (pluginId: string, io: CommandIO, copy: SetupCopy) => Promise<boolean>;
 	/** Test seam: prove `provider/modelId` answers; rejects with the reason otherwise. */
@@ -229,10 +246,15 @@ class SetupSession {
 		const checked = await this.checklist(`${label}\n${copy.channelsMessage}`, [
 			{ id: "tui", label: copy.terminal, tag: copy.always, checked: true, disabled: true },
 			{ id: "telegram", label: copy.telegram, description: copy.telegramHint, checked: has("telegram") },
-			// Not managed by setup yet: shown with their real state, never toggled here.
-			{ id: "slack", label: copy.slack, description: has("slack") ? copy.configuredElsewhere : copy.slackHint, checked: has("slack"), disabled: true },
+			// 한 번 연결된 건 마법사 대신 설정 파일이 관리해요(여기서는 끄지도 못해요).
+			{ id: "slack", label: copy.slack, description: has("slack") ? copy.configuredElsewhere : copy.slackHint, checked: has("slack"), disabled: has("slack") },
 			{ id: "discord", label: copy.discord, description: has("discord") ? copy.configuredElsewhere : copy.discordHint, checked: has("discord"), disabled: true },
 		]);
+		const wantSlack = checked.includes("slack");
+		if (wantSlack && !has("slack")) {
+			const block = await this.slack(label);
+			if (block !== undefined) this.stage({ section: "channels", key: "slack", value: block });
+		}
 		const wantTelegram = checked.includes("telegram");
 		if (wantTelegram && !has("telegram")) {
 			const block = await this.telegram();
@@ -300,6 +322,139 @@ class SetupSession {
 			io.print(copy.telegramPaired(bot), "success");
 			return block;
 		}
+	}
+
+	/**
+	 * Connects Slack end to end the Deepwork way: pick a bot name, open the manifest-prefilled app creation link, paste
+	 * the two tokens (verified live against Slack, IDs derived for the user), allow member IDs, then stage one
+	 * `channels.slack` block whose tokens are protected files next to the manifest. Skipping always leaves no trace.
+	 */
+	private async slack(label: string): Promise<Record<string, unknown> | undefined> {
+		const { copy, io } = this;
+		// ① 봇 이름 → 매니페스트가 채워진 생성 링크.
+		const name = await io.prompt({ type: "text", message: `${label}\n${copy.slackName}`, placeholder: copy.slackNamePlaceholder });
+		io.print(copy.slackCreateIntro);
+		io.print(slackCreateAppUrl(buildSlackManifest(name)), "success");
+		io.print(copy.slackCreateOutro);
+		const created = await this.select(copy.slackCreated, [
+			{ id: "next", label: copy.slackCreatedNext },
+			{ id: "skip", label: copy.slackSkip },
+		]);
+		if (created !== "next") return undefined;
+
+		// ② 봇 토큰 검증: 워크스페이스·봇 사용자·권한을 도출.
+		let bot: VerifiedSlackBot | undefined;
+		let botToken = "";
+		while (bot === undefined) {
+			const raw = await io.prompt({ type: "secret", message: copy.slackBotToken, placeholder: copy.slackBotTokenPlaceholder });
+			const problem = tokenProblem("bot", raw);
+			if (problem !== undefined) {
+				io.print(copy.slackTokenProblem(problem), "error");
+				continue;
+			}
+			botToken = cleanSlackToken(raw);
+			io.print(copy.slackVerifying);
+			try {
+				bot = await verifySlackBotToken(botToken, this.slackDeps());
+			} catch (error) {
+				if (cancelled(error, io)) throw error;
+				io.print(this.slackErrorMessage(error), "error");
+				const next = await this.select(copy.slackFailed, [
+					{ id: "retry", label: copy.slackRetry },
+					{ id: "skip", label: copy.slackSkip },
+				]);
+				if (next !== "retry") return undefined;
+			}
+		}
+		io.print(copy.slackBotOk(bot.teamName, bot.botName), "success");
+		if (bot.missingScopes.length > 0) io.print(copy.slackMissingScopes(bot.missingScopes.join(", ")));
+
+		// ③ 앱 수준 토큰 검증: Socket Mode 연결 + hello 프레임으로 앱 ID 확정.
+		let app: VerifiedSlackApp | undefined;
+		let appToken = "";
+		let appId = bot.appId;
+		while (app === undefined) {
+			const raw = await io.prompt({ type: "secret", message: copy.slackAppToken, placeholder: copy.slackAppTokenPlaceholder });
+			const problem = tokenProblem("app", raw);
+			if (problem !== undefined) {
+				io.print(copy.slackTokenProblem(problem), "error");
+				continue;
+			}
+			appToken = cleanSlackToken(raw);
+			io.print(copy.slackVerifying);
+			try {
+				app = await verifySlackAppToken(appToken, this.slackDeps());
+				if (app.appId !== undefined) appId = app.appId;
+				if (appId === undefined) throw new Error(copy.slackNoAppId);
+			} catch (error) {
+				if (cancelled(error, io)) throw error;
+				io.print(this.slackErrorMessage(error), "error");
+				const next = await this.select(copy.slackFailed, [
+					{ id: "retry", label: copy.slackRetry },
+					{ id: "skip", label: copy.slackSkip },
+				]);
+				if (next !== "retry") return undefined;
+			}
+		}
+		io.print(copy.slackAppOk, "success");
+
+		// ④ 대화를 허용할 멤버 ID 목록.
+		io.print(copy.slackMemberGuide);
+		const users: string[] = [];
+		for (;;) {
+			const raw = await io.prompt({ type: "text", message: users.length === 0 ? copy.slackMember : copy.slackMemberMore, placeholder: copy.slackMemberPlaceholder });
+			const ids = raw.split(",").map((part) => part.trim()).filter((part) => part !== "");
+			if (ids.length === 0) {
+				if (users.length > 0) break;
+				io.print(copy.slackMemberNeed, "error");
+				continue;
+			}
+			const bad = ids.filter((id) => !/^[UW][A-Z0-9]{2,}$/.test(id));
+			if (bad.length > 0) {
+				io.print(copy.slackMemberInvalid(bad.join(", ")), "error");
+				continue;
+			}
+			for (const id of ids) if (!users.includes(id)) users.push(id);
+			const more = await this.select(copy.slackMemberDone, [
+				{ id: "done", label: copy.slackMemberFinish },
+				{ id: "more", label: copy.slackMemberAddMore },
+			]);
+			if (more === "done") break;
+		}
+		io.print(copy.slackMemberOk(users.length), "success");
+		io.print(copy.slackInviteHint);
+
+		// 토큰은 보호된 파일로, 블록은 한 번에 스테이징(적용은 apply 트랜잭션이 함).
+		const dir = join(dirname(this.deps.manifestPath), "slack");
+		const botTokenPath = join(dir, "bot.token");
+		const appTokenPath = join(dir, "app.token");
+		await writePrivateFile(botTokenPath, `${botToken}\n`);
+		this.created.add(botTokenPath);
+		await writePrivateFile(appTokenPath, `${appToken}\n`);
+		this.created.add(appTokenPath);
+		return {
+			transport: "socket",
+			botTokenFile: botTokenPath,
+			appTokenFile: appTokenPath,
+			databasePath: join(this.deps.dataDir, "slack.sqlite"),
+			port: 0,
+			appId: appId!,
+			teamId: bot.teamId,
+			botUserId: bot.botUserId,
+			allowedUserIds: users,
+			allowedChannelIds: ["*"],
+		};
+	}
+
+	/** Slack 검증에 넘길 주입(테스트용 fetch·websocket)과 이 실행의 취소 신호. */
+	private slackDeps(): SlackVerifyDeps & SlackAppVerifyDeps {
+		return { ...(this.deps.slack ?? {}), signal: this.io.signal };
+	}
+
+	/** 검증 오류를 locale 문구로: 종류별 문구가 있고, 없는 오류는 그 메시지를 그대로 보여준다. */
+	private slackErrorMessage(error: unknown): string {
+		if (error instanceof SlackSetupError) return this.copy.slackVerifyError(error.kind, error.detail);
+		return message(error);
 	}
 
 	/** Telegram network and clock bound to this run: Esc aborts the pairing wait at once. */

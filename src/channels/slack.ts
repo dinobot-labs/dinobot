@@ -6,6 +6,7 @@ import { NativeCooldown } from "./native-cooldown.ts";
 import { createSlackSocket } from "./slack-socket.ts";
 import { slackAttachments, slackMedia, uploadSlackText } from "./slack-media.ts";
 import { createHmac, timingSafeEqual } from "node:crypto";
+import { readPrivateFile } from "../telegram-private-files/index.ts";
 import { Type } from "@earendil-works/pi-ai";
 import type { Static } from "typebox";
 import { Value } from "typebox/value";
@@ -22,7 +23,7 @@ export const SlackConfigSchema = Type.Object({
  ...messagingProperties,
  port: Type.Optional(messagingProperties.port),
  transport: Type.Optional(Type.Union([Type.Literal("http"), Type.Literal("socket")])),
- signingSecretEnv: Type.Optional(envName), appTokenEnv: Type.Optional(envName), botTokenEnv: envName,
+ signingSecretEnv: Type.Optional(envName), appTokenEnv: Type.Optional(envName), appTokenFile: Type.Optional(Type.String({ minLength: 1 })), botTokenEnv: Type.Optional(envName), botTokenFile: Type.Optional(Type.String({ minLength: 1 })),
  deliveryRecovery: Type.Optional(Type.Boolean({ description: "Retry uncertain replies with a visible possible-duplicate marker (default true)." })),
  toolProgress: Type.Optional(Type.Union([Type.Literal("native"), Type.Literal("text"), Type.Literal("off")], { description: "Native plan task cards (default), editable detailed text, or off." })),
  fileReplies: Type.Optional(Type.Boolean({ description: "Send replies over 12000 characters as a UTF-8 text file (default true; files:write required)." })),
@@ -56,10 +57,16 @@ function markRecovered(part: string): string[] {
 export function createSlackChannel(config: SlackConfig, dependencies: SlackDependencies = {}): MessagingChannel {
  if (!Value.Check(SlackConfigSchema, config)) throw new Error("Invalid Slack channel configuration");
  const socketMode = config.transport === "socket";
- if (socketMode ? !config.appTokenEnv : !config.signingSecretEnv) throw new Error("Missing Slack transport credential environment variable");
+ // 정확히 하나의 봇 토큰 출처(환경 변수 또는 보호된 파일)가 있어야 한다.
+ if (!!config.botTokenEnv === !!config.botTokenFile) throw new Error("Invalid Slack channel configuration");
+ if (socketMode && !!config.appTokenEnv === !!config.appTokenFile) throw new Error("Invalid Slack channel configuration");
+ if (!socketMode && !config.signingSecretEnv) throw new Error("Missing Slack transport credential environment variable");
+ const readCredentialFile = (path: string): string => {
+  try { return readPrivateFile(path, 1024).trim(); } catch { throw new Error("Unable to read Slack credential file"); }
+ };
  const secret = !socketMode ? requiredEnv(config.signingSecretEnv!) : undefined;
- const appToken = socketMode ? requiredEnv(config.appTokenEnv!) : undefined;
- const token = requiredEnv(config.botTokenEnv);
+ const appToken = socketMode ? (config.appTokenEnv ? requiredEnv(config.appTokenEnv) : readCredentialFile(config.appTokenFile!)) : undefined;
+ const token = config.botTokenEnv ? requiredEnv(config.botTokenEnv) : readCredentialFile(config.botTokenFile!);
  if (secret !== undefined && !/^[a-fA-F0-9]{32}$/.test(secret)) throw new Error("Invalid Slack signing credential");
  if (appToken !== undefined && (appToken.length > 1024 || !/^xapp-[A-Za-z0-9-]+$/.test(appToken))) throw new Error("Invalid Slack app credential");
  if (token.length > 1024 || !/^xoxb-[A-Za-z0-9-]{1,1019}$/.test(token)) throw new Error("Invalid Slack bot credential");
@@ -164,10 +171,10 @@ export function createSlackChannel(config: SlackConfig, dependencies: SlackDepen
   },
   success(response,body) {try {const result=JSON.parse(body);return response.status===200 && result.ok===true && timestamp(result.ts);} catch {return false;}},
  });
- if (!appToken) return channel;
+ if (!appToken) return withCredentialPaths(channel, config);
  const socket=createSlackSocket({appToken,requestTimeoutMs:config.requestTimeoutMs ?? 10000,receive:payload=>channel.admitAuthenticated!(receiveEnvelope(payload)),receiveInteractive:payload=>channel.admitAuthenticated!(receiveInteraction(payload))},dependencies.socket);
  let stopped = true;
- return {...channel,
+ return {...withCredentialPaths(channel, config),
   health:()=>({...channel.health(),...socket.health()}),
   async start(handler) {
    stopped=false;
@@ -176,5 +183,13 @@ export function createSlackChannel(config: SlackConfig, dependencies: SlackDepen
    try {await socket.start();} catch(error) {await socket.stop();await channel.stop();throw error;}
   },
   async stop() {stopped=true;await socket.stop();await channel.stop();},
+ };
+}
+
+/** Token files the channel reads live outside the inbox database; list them so backups and claims cover them too. */
+function withCredentialPaths(channel: MessagingChannel, config: SlackConfig): MessagingChannel {
+ return {
+  ...channel,
+  storagePaths: Object.freeze([...channel.storagePaths!, ...(config.botTokenFile !== undefined ? [config.botTokenFile] : []), ...(config.appTokenFile !== undefined ? [config.appTokenFile] : [])]),
  };
 }

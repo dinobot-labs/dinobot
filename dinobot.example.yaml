@@ -61,12 +61,13 @@ channels:                       # one or more of the channels this build contain
   #   allowedChannelIds: ["234567890123456789"]
   #   allowedParentChannelIds: ["345678901234567890"] # signed child thread types 10/11/12 only
 
-  # Slack: no public webhook needed in Socket Mode; see openwiki/runbooks/slack.md.
+  # Slack: no public webhook needed in Socket Mode; the /setup wizard connects it end to end
+  # (prefilled app link, paste-to-verify tokens stored in protected files). See openwiki/runbooks/slack.md.
   # slack:
   #   transport: socket
   #   databasePath: .data/slack-inbox.sqlite
-  #   appTokenEnv: DINOBOT_SLACK_APP_TOKEN
-  #   botTokenEnv: DINOBOT_SLACK_BOT_TOKEN
+  #   appTokenEnv: DINOBOT_SLACK_APP_TOKEN   # or appTokenFile: /private/dinobot/slack/app.token
+  #   botTokenEnv: DINOBOT_SLACK_BOT_TOKEN   # or botTokenFile: /private/dinobot/slack/bot.token
   #   appId: A123456
   #   teamId: T123456
   #   botUserId: U123456
