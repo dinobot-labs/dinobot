@@ -16,7 +16,7 @@ https://github.com/dinobot-labs/dinobot/blob/main/docs/wiki/Pull-Requests.md
 
 Link the issue, keep the diff narrow, add relevant tests and update affected docs. Use a draft until ready for review. For code changes run the applicable guard, type, test and build checks documented in docs/wiki/Development.md; report the exact commands used. For docs-only changes, check paths and examples and run the public guard. Report actual results and limitations. The aggregate CI check is `CI` (workflow `CI`, job id `gate`); green CI alone is not acceptance.
 
-Address requested changes and rerun affected checks after conflicts are resolved. Maintainers decide scope and merge readiness. Independent review is preferred where available, but a sole maintainer is not required to approve their own PR. There is no response SLA and no automatic stale closure. Merge does not mean release: record whether a fix is unreleased or available in a named release.
+Address requested changes and rerun affected checks after conflicts are resolved. Maintainers decide scope and merge readiness. Independent review is preferred where available, but a sole maintainer is not required to approve their own PR. There is no response SLA and no automatic stale closure. Merge does not mean release: record whether a fix is unreleased or available in a named release. Releases are cut from this repository by merging the release PR that release-please keeps open; see the Releases section of PUBLIC_SNAPSHOT.md.
 
 ## License and contributor rights
 

@@ -28,7 +28,7 @@ Included: product source and tests, patches/vendor with existing notices, select
 - The four useful PM documents formerly misplaced in the forbidden operational-wiki directory now live under `docs/wiki`; the general PM contract is retained without project-specific work history. The artifact guard is unchanged.
 - Unknown-license prose removed by the historical export remains removed. The new proof-skills package includes its complete MIT copyright/license in source, every loaded package, and `THIRD_PARTY_NOTICES.md` for release-notice collection. It stays disabled unless `plugins.skills.proofSkills: true` is explicit. Companion setup scripts are not executed during import.
 - Report tests use independent loopback protocol doubles, not copied private workers. They verify client projection/redaction and wire contracts, not service persistence or server-side acceptance. See `docs/PUBLIC_CLIENT_TESTS.md`.
-- Release selection now addresses the canonical public repository. No private release workflow was copied.
+- Release selection addresses the canonical public repository. npm releases are published from this repository (see Releases below).
 
 ## Source validation (2026-10-29)
 
@@ -42,3 +42,12 @@ Checks ran sequentially with Bun 1.4.3 and `DEEPWORK_TYPECHECK_JOBS=2`, using sy
 - The unchanged artifact guard passes after the PM-document relocation; canonical release selection and whitespace checks pass. `SOURCE_SHA256SUMS` covers all 839 other tracked Git blobs, not checkout line endings. Final documentation changes require regenerated hashes and exact coverage verification.
 
 No full repository-wide suite, hosted CI, macOS native behavior, privileged POSIX foreign-owner case or installed-application acceptance is claimed by this record. Platform skips remain visible; matching-platform source tests do not establish deployment. Existing loopback API risks remain documented in `SECURITY.md`.
+
+## Releases
+
+npm releases of `dinobot` are published from this repository, starting after 0.8.3 (0.8.3 and earlier were published from the retired private repository).
+
+- Squash-merged PR titles are Conventional Commits. `fix` makes a patch release and `feat` a minor release; `ci`, `docs` and `chore` make none.
+- `.github/workflows/release.yml` runs on every push to `main`. It reruns the full CI on that exact commit, then release-please opens or updates the release PR. Merging the release PR tags `vX.Y.Z` on that commit.
+- The `publish` job runs only in the `npm` environment (branch `main`). It downloads the tarball that CI built and audited, checks its SHA-512 and audit again, refuses conflicting or older registry versions, and publishes through npm Trusted Publishing (OIDC). No npm token is stored, and the publish job never rebuilds.
+- A failed publish is retried with `workflow_dispatch` (`tag: vX.Y.Z`). The retry rebuilds and audits the tagged source, and reruns the tests only when `full_verify` is set.
