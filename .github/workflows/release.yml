@@ -1,0 +1,209 @@
+name: Release
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing published GitHub release tag to retry (vX.Y.Z)
+        required: true
+        type: string
+      full_verify:
+        description: Run the full test suite on the tag source (automatic retries use this when the tag was never tested)
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+# Serialize publication; never cancel an in-flight npm publish.
+concurrency:
+  group: npm-release
+  cancel-in-progress: false
+
+jobs:
+  source:
+    name: Select immutable source
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 3
+    outputs:
+      sha: ${{ steps.select.outputs.source_sha }}
+      version: ${{ steps.select.outputs.version }}
+      tag: ${{ steps.select.outputs.tag }}
+      verify: ${{ steps.need.outputs.verify }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: 1.4.2
+          # Cache paths are workspace-relative and differ between hosted and self-hosted runners.
+          no-cache: true
+      - id: select
+        env:
+          INPUT_TAG: ${{ inputs.tag || '' }}
+          GH_TOKEN: ${{ github.token }}
+        run: bun script/ci/release.ts select
+      # A push whose package version is already tagged cannot create a release; release-please
+      # only refreshes the release PR, so re-running the PR-verified suite is redundant.
+      # Any lookup failure keeps the full verification (fail closed).
+      - id: need
+        env:
+          VERSION: ${{ steps.select.outputs.version }}
+        run: |
+          if [ "$GITHUB_EVENT_NAME" = push ] && git rev-parse -q --verify "refs/tags/v$VERSION^{commit}" > /dev/null; then
+            echo "verify=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "verify=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  checks:
+    name: Verify release source
+    needs: source
+    if: needs.source.outputs.verify == 'true'
+    uses: ./.github/workflows/ci.yml
+    with:
+      source_sha: ${{ needs.source.outputs.sha }}
+      # A manual retry republishes a tag whose source a tagging run already tested: build and audit only.
+      package_only: ${{ github.event_name == 'workflow_dispatch' && !inputs.full_verify }}
+    permissions:
+      contents: read
+
+  release:
+    name: Release PR and tag
+    if: >-
+      ${{ always() && !cancelled() && github.event_name == 'push' && needs.source.result == 'success' &&
+          (needs.checks.result == 'success' ||
+           (needs.checks.result == 'skipped' && needs.source.outputs.verify == 'false')) }}
+    needs: [source, checks]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: write
+      pull-requests: write
+      actions: write
+    outputs:
+      created: ${{ steps.bind.outputs.publish_here == 'true' && steps.release.outputs.release_created || 'false' }}
+      tag: ${{ steps.release.outputs.tag_name }}
+    steps:
+      # A superseded push only refreshes the release PR, except a release PR merge: release-please tags the
+      # merge commit itself, so that run must tag even if other commits landed on main while it was testing.
+      - name: Ignore a superseded main push
+        id: current
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEAD_SUBJECT: ${{ github.event.head_commit.message }}
+        run: |
+          tip=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq .object.sha)
+          subject=$(printf '%s\n' "$HEAD_SUBJECT" | head -n 1)
+          case "$subject" in "chore(main): release "*) release_merge=true ;; *) release_merge=false ;; esac
+          if [ "$tip" = "$GITHUB_SHA" ] || [ "$release_merge" = true ]; then echo "eligible=true" >> "$GITHUB_OUTPUT"; fi
+      - uses: googleapis/release-please-action@5c625bfb5d1ff62eadeeb3772007f7f66fdcf071 # v4.4.1
+        id: release
+        if: steps.current.outputs.eligible == 'true'
+        with:
+          token: ${{ github.token }}
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+          target-branch: main
+      # The tag may land on an earlier release PR merge commit (for example when that merge was skipped by a
+      # [skip ci] line copied into its message). Its source was never tested here, so instead of failing,
+      # hand it to the tag retry path with the full suite; publishing stays bound to tested bytes.
+      - name: Fail closed if the release moved away from the tested commit
+        id: bind
+        if: steps.release.outputs.release_created == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_SHA: ${{ steps.release.outputs.sha }}
+          RELEASE_TAG: ${{ steps.release.outputs.tag_name }}
+          EXPECTED_VERSION: ${{ needs.source.outputs.version }}
+          CHECKS_RESULT: ${{ needs.checks.result }}
+        run: |
+          if [ "$RELEASE_SHA" = "$GITHUB_SHA" ]; then
+            test "$CHECKS_RESULT" = success && test "$RELEASE_TAG" = "v$EXPECTED_VERSION"
+            echo "publish_here=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::$RELEASE_TAG was created on $RELEASE_SHA, not on the tested $GITHUB_SHA; dispatching a fully verified tag retry"
+            gh workflow run release.yml --repo "$GITHUB_REPOSITORY" --ref main -f tag="$RELEASE_TAG" -f full_verify=true
+            echo "publish_here=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  publish:
+    name: Publish audited npm tarball
+    needs: [source, checks, release]
+    if: >-
+      ${{ always() && !cancelled() && github.ref == 'refs/heads/main' &&
+          needs.source.result == 'success' && needs.checks.result == 'success' &&
+          ((github.event_name == 'push' && needs.release.result == 'success' && needs.release.outputs.created == 'true') ||
+           (github.event_name == 'workflow_dispatch' && needs.release.result == 'skipped')) }}
+    # npm Trusted Publishing (OIDC) requires a GitHub-hosted runner.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    environment: npm
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      # Provenance needs package.json repository metadata, which the audited package deliberately omits.
+      NPM_CONFIG_PROVENANCE: 'false'
+      EXPECTED_VERSION: ${{ needs.source.outputs.version }}
+      EXPECTED_SHA: ${{ needs.source.outputs.sha }}
+      RELEASE_TAG: ${{ needs.release.outputs.tag || needs.source.outputs.tag }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: 1.4.2
+          # Cache paths are workspace-relative and differ between hosted and self-hosted runners.
+          no-cache: true
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+          package-manager-cache: false
+      - run: npm install --global npm@11.19.0 --ignore-scripts
+      - name: Bind tag to the tested source
+        run: bun script/ci/release.ts verify-tag
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          artifact-ids: ${{ needs.checks.outputs.artifact_id }}
+          path: release-artifact
+          merge-multiple: true
+      - name: Recheck exact downloaded bytes and payload
+        working-directory: release-artifact
+        run: |
+          sha512sum --check SHA512SUMS
+          bun ../script/release-audit.ts "dinobot-$EXPECTED_VERSION.tgz" "$EXPECTED_VERSION"
+      - name: Refuse conflicts, downgrades, and ambiguous registry failures
+        id: registry
+        run: bun script/ci/release.ts preflight "release-artifact/dinobot-$EXPECTED_VERSION.tgz" "$EXPECTED_VERSION"
+      - name: Publish through npm Trusted Publishing (no stored npm token)
+        if: steps.registry.outputs.publish == 'true'
+        run: npm publish "./release-artifact/dinobot-$EXPECTED_VERSION.tgz" --access public --tag latest --ignore-scripts --provenance=false --registry=https://registry.npmjs.org
+      # The registry can take a while to serve a fresh version; poll instead of failing a successful publish.
+      - name: Verify registry integrity after publishing
+        if: steps.registry.outputs.publish == 'true'
+        id: confirmation
+        run: |
+          for attempt in $(seq 1 18); do
+            probe=$(mktemp)
+            GITHUB_OUTPUT="$probe" bun script/ci/release.ts preflight "release-artifact/dinobot-$EXPECTED_VERSION.tgz" "$EXPECTED_VERSION" || true
+            if grep -qx 'publish=false' "$probe"; then echo 'publish=false' >> "$GITHUB_OUTPUT"; exit 0; fi
+            sleep 10
+          done
+          echo 'publish=true' >> "$GITHUB_OUTPUT"
+      - name: Require visible published bytes
+        if: steps.registry.outputs.publish == 'true'
+        env:
+          STILL_MISSING: ${{ steps.confirmation.outputs.publish }}
+        run: test "$STILL_MISSING" = false
