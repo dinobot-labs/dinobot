@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, spyOn, test } from "bun:test";
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import type { JsonObject, ToolResultMessage } from "@earendil-works/pi-ai";
 import { createModels } from "@earendil-works/pi-ai/models";
@@ -103,32 +103,29 @@ describe("ask protocol", () => {
 			return fauxAssistantMessage(`done: ${result.text}`);
 		};
 		const { bot, parent, run, results } = await setup(router);
-		const started = Date.now();
 		expect((await run("START")).status).toBe("done");
 		expect(askId).toHaveLength(32);
 		const readAsk = async () => (await bot.harness.snapshot(AsksDoc, parent.id, context))!.asks.find((ask) => ask.id === askId)!;
 		const opened = await readAsk();
-		expect(opened.deadlineAt - opened.createdAt).toBe(1000);
-		// Wall time passing does not imply that the deadline transaction has committed.
-		// Observe durable settlement without expiring or answering the ask from the test.
-		const settlementTimeout = Date.now() + 5000;
-		let resolved = await readAsk();
-		while (resolved.state === "open" && Date.now() < settlementTimeout) {
-			await Bun.sleep(10);
-			resolved = await readAsk();
-		}
+		expect(opened.deadlineAt - opened.createdAt).toBe(60000);
+		// Virtual wall time plus the real expiry transaction avoids a 60-second sleep.
+		// ask-deadline.test.ts separately drives awaitResolution timers at exact boundaries.
+		const clock = spyOn(Date, "now").mockReturnValue(opened.deadlineAt);
+		try {
+		await bot.harness.commit(async tx => { expireAsks(await tx.doc(AsksDoc, parent.id), Date.now()); }, context);
+		const resolved = await readAsk();
 		expect(resolved).toMatchObject({ state: "defaulted", answer: "no", resolvedBy: "system:deadline" });
 		expect(resolved.resolvedAt).toBeGreaterThanOrEqual(opened.deadlineAt);
 		expect((await run("COLLECT")).status).toBe("done");
 		const output = (await results()).find((r) => r.toolName === "task_output");
 		expect(JSON.stringify(output?.content)).toContain("defaulted: no");
-		expect(Date.now() - started).toBeGreaterThanOrEqual(1000);
 		expect((await run("LATE")).status).toBe("done");
 		const late = (await results()).find((r) => r.toolName === "answer");
 		expect(late?.isError).toBe(true);
 		expect(JSON.stringify(late?.content)).toContain("already defaulted (no)");
 		const record = (await bot.harness.snapshot(AsksDoc, parent.id, context))!.asks[0]!;
 		expect(record).toMatchObject({ state: "defaulted", answer: "no", resolvedBy: "system:deadline", late: { answer: "yes" } });
+		} finally { clock.mockRestore(); }
 	}, 15_000);
 
 	test("identical questions share one record and the second ask returns the existing resolution", async () => {

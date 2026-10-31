@@ -5,7 +5,7 @@ import { askNodeKeys, askNodeRefs, RunDoc } from "../core/dag.ts";
 import { clone } from "../core/json.ts";
 import {
 	ASK_KINDS, AUTHORITY_DEFAULT, type AskKind, type AskRecord, AsksDoc, askId, describeAsk, expireAsks, findHumanMessage, HUMAN_DEADLINE_MAX_MS,
-	HUMAN_DEADLINE_MS, HUMAN_KINDS, HUMAN_MIN_OPTIONS, HUMAN_MAX_OPTIONS, HUMAN_OPEN_CHOICE_LIMIT, isTerminal, LinkDoc, MAIN_DEADLINE_MAX_MS, MAIN_DEADLINE_MS, resolveAsk,
+	HUMAN_DEADLINE_MS, HUMAN_KINDS, HUMAN_MIN_OPTIONS, HUMAN_MAX_OPTIONS, HUMAN_OPEN_CHOICE_LIMIT, isTerminal, LinkDoc, MAIN_DEADLINE_MAX_MS, MAIN_DEADLINE_MIN_MS, MAIN_DEADLINE_MS, resolveAsk,
 } from "../core/ask.ts";
 import type { WorkService } from "../core/verification.ts";
 
@@ -73,7 +73,7 @@ export function askExtension(work: WorkService, getHarness: () => Pick<Harness, 
 		tools: [
 			defineTool({
 				name: ASK_TOOL,
-				description: "Ask the orchestrator (from a subagent) or, from the orchestrator, the human. A subagent ask blocks the asking node only, until answered or defaulted at its deadline. Human asks: acceptance/authority/conflict/external need validated refs; decision (2-4 options) and clarification (optional 2-4 options) need none. Human asks return immediately.",
+				description: "Ask the orchestrator (from a subagent) or, from the orchestrator, the human. A subagent ask blocks the asking node only, until answered or defaulted at its deadline (minimum 60 seconds, default 15 minutes, maximum 24 hours). Human asks: acceptance/authority/conflict/external need validated refs; decision (2-4 options) and clarification (optional 2-4 options) need none. Human asks return immediately.",
 				parameters: Type.Object({
 					question: Type.String({ minLength: 1, maxLength: 4000 }),
 					kind: Type.Union(ASK_KINDS.map((kind) => Type.Literal(kind))),
@@ -101,7 +101,7 @@ export function askExtension(work: WorkService, getHarness: () => Pick<Harness, 
 							const record: AskRecord = {
 								id, from: { conversationId: api.conversationId, ...(link.taskId ? { taskId: link.taskId } : {}) }, to: "main", kind, refs: [...refs].sort(),
 								question, ...(options?.length ? { options } : {}), default: effectiveDefault,
-								createdAt: now, deadlineAt: now + Math.min(deadline_ms ?? MAIN_DEADLINE_MS, MAIN_DEADLINE_MAX_MS), state: "open",
+								createdAt: now, deadlineAt: now + Math.max(MAIN_DEADLINE_MIN_MS, Math.min(deadline_ms ?? MAIN_DEADLINE_MS, MAIN_DEADLINE_MAX_MS)), state: "open",
 							};
 							doc.asks.push(record);
 							return record.deadlineAt;
