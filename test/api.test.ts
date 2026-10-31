@@ -218,7 +218,7 @@ test("rejects a conversation id that is not a positive integer or does not exist
 test("lists tui commands without disabled ones and 404s disabled or tui-less ones", async () => {
 	await start();
 	const listed = (await (await fetch(url("/v1/commands"))).json()) as { commands: { name: string }[] };
-	expect(listed.commands.map((command) => command.name)).toEqual(["accounts", "fast", "help", "login", "logout", "model", "plugins", "reasoning", "search", "sessions"]);
+	expect(listed.commands.map((command) => command.name)).toEqual(["accounts", "fast", "help", "login", "logout", "model", "plugins", "reasoning", "search", "sessions", "slack"]);
 	const args = (await (await fetch(url("/v1/commands/model/arguments"))).json()) as { arguments: { value: string }[] };
 	expect(args.arguments.map((entry) => entry.value)).toEqual(["faux/faux-1", "faux/faux-2"]);
 	expect((await fetch(url("/v1/commands/skills/arguments"))).status).toBe(404);

@@ -10,7 +10,7 @@ type Candidate = { channel: string; ts: string; user: string; text: string; thre
 export class SlackMonitor {
  readonly db: Database;
  private runtime?: PluginRuntime;
- private timer?: ReturnType<typeof setTimeout>;
+ private timer: ReturnType<typeof setTimeout> | undefined;
  private inflight: Promise<void> | undefined;
  private closed = false;
  private revision = 0;
@@ -26,11 +26,16 @@ export class SlackMonitor {
  }
  private get<T>(key: string): T | undefined { const row = this.db.query<{value:string},[string]>("SELECT value FROM state WHERE key=?").get(key); return row ? JSON.parse(row.value) : undefined; }
  private put(key: string, value: unknown): void { this.db.query("INSERT OR REPLACE INTO state VALUES (?,?)").run(key, JSON.stringify(value)); }
- status(): Data { return { enabled: !!this.get<Watch>("watch"), watch: this.get<Watch>("watch") ?? null, lastPollAt: this.lastPollAt ?? null, lastError: this.lastError ?? null, intervalSeconds: this.intervalMs / 1000, threadError: this.lastThreadError ?? null, trackedThreads: this.db.query<{n:number},[]>("SELECT count(*) n FROM state WHERE key LIKE 'thread:%'").get()!.n, delivery: "local only; one history page (rotating channels), one fair tracked-thread reply page and at most one answer check per interval. Initial discovery walks retained history without notifying old messages. Thread count, backlog, permissions and rate limits can delay notices; not realtime." }; }
- configure(watch: Watch | undefined): void {
+ private interval(): number { return this.get<number>("intervalMs") ?? this.intervalMs; }
+ status() { return { started: !!this.runtime && !this.closed, enabled: !!this.get<Watch>("watch"), watch: this.get<Watch>("watch") ?? null, lastPollAt: this.lastPollAt ?? null, lastError: this.lastError ?? null, intervalSeconds: this.interval() / 1000, threadError: this.lastThreadError ?? null, trackedThreads: this.db.query<{n:number},[]>("SELECT count(*) n FROM state WHERE key LIKE 'thread:%'").get()!.n, delivery: "local only; one history page (rotating channels), one fair tracked-thread reply page and at most one answer check per interval. Initial discovery walks retained history without notifying old messages. Thread count, backlog, permissions and rate limits can delay notices; not realtime." }; }
+ configure(watch: Watch | undefined, intervalSeconds = this.interval() / 1000): void {
+  if (this.closed) throw new Error("Slack monitor is closed");
+  if (!Number.isInteger(intervalSeconds) || intervalSeconds < 60 || intervalSeconds > 3600) throw new Error("Invalid Slack monitor interval");
   // Rebinding drops pending old notices; do not leak a prior local conversation into a new destination.
   this.revision++;
-  this.db.transaction(() => { this.db.exec("DELETE FROM state WHERE key != 'identity'; DELETE FROM outbox"); if (watch) { this.put("watch", watch); this.put("baseline", String(this.now() / 1000)); this.put("summaryAt", this.now()); } })();
+  this.db.transaction(() => { this.db.exec("DELETE FROM state WHERE key != 'identity'; DELETE FROM outbox"); this.put("intervalMs", intervalSeconds * 1000); if (watch) { this.put("watch", watch); this.put("baseline", String(this.now() / 1000)); this.put("summaryAt", this.now()); } })();
+  if (this.timer) { clearTimeout(this.timer); this.timer = undefined; }
+  if (watch && this.runtime && !this.inflight) this.schedule();
  }
  deadline(channel: string, ts: string, due: number): void {
   if (!this.get<Watch>("watch")?.channels.includes(channel)) throw new Error("Enable monitoring for this channel first");
@@ -42,9 +47,16 @@ export class SlackMonitor {
   if (this.inflight) return this.inflight;
   this.inflight = this.run().catch(() => { this.lastError = "Polling failed (permissions, rate limit or network). Retry on next interval; no cursor advanced for incomplete work."; }).finally(() => {
    this.inflight = undefined;
-   if (!this.closed && this.timers) { this.timer = setTimeout(() => void this.tick(), this.intervalMs); this.timer.unref?.(); }
+   this.schedule();
   });
   return this.inflight;
+ }
+ private schedule(): void {
+  if (this.timer) { clearTimeout(this.timer); this.timer = undefined; }
+  if (!this.closed && this.timers && this.runtime && this.get<Watch>("watch")) {
+   this.timer = setTimeout(() => { this.timer = undefined; void this.tick(); }, this.interval());
+   this.timer.unref?.();
+  }
  }
  async close(): Promise<void> { this.closed = true; this.abort.abort(); if (this.timer) clearTimeout(this.timer); await this.inflight; this.db.close(); }
  private quiet(w: Watch): boolean { const hour = Number(new Intl.DateTimeFormat("en-GB", { timeZone: w.timeZone, hour: "numeric", hourCycle: "h23" }).format(this.now())); return w.quietStart === w.quietEnd ? false : w.quietStart < w.quietEnd ? hour >= w.quietStart && hour < w.quietEnd : hour >= w.quietStart || hour < w.quietEnd; }
@@ -172,6 +184,7 @@ export class SlackMonitor {
   for (const row of pending) {
    if (!current()) return;
    const result = await runtime.wake({ conversationId: row.conversation, key: "slack:" + row.key, text: row.text });
+   if (!current()) return;
    if (result === "admitted" || result === "duplicate" || result === "gone") this.db.query("UPDATE outbox SET delivered=1 WHERE key=?").run(row.key);
   }
  }
