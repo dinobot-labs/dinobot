@@ -64,6 +64,8 @@ export const HUMAN_MAX_OPTIONS = 4;
 /** Open decision/clarification asks to the human per conversation (ADR 0063). */
 export const HUMAN_OPEN_CHOICE_LIMIT = 3;
 
+/** Give an orchestrator at least one realistic model-turn window to answer. */
+export const MAIN_DEADLINE_MIN_MS = 60_000;
 export const MAIN_DEADLINE_MS = 15 * 60_000;
 export const MAIN_DEADLINE_MAX_MS = 24 * 3_600_000;
 export const HUMAN_DEADLINE_MS = 24 * 3_600_000;

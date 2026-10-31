@@ -24,7 +24,8 @@ import { startClientApi } from "../src/api/server.ts";
  */
 const bun = process.execPath.replaceAll("\\", "/");
 // Longer than the bounded post-close drain wait (1 s on Windows), so the call really stays UNKNOWN.
-const outliving = (ms: number) => `"${bun}" -e "await Bun.sleep(${ms});await Bun.write('drained','1')" >/dev/null 2>&1 &`;
+// Keep a real process alive after the marker: writing a file is not OS quiescence.
+const outliving = (ms: number) => `"${bun}" -e "await Bun.sleep(${ms});await Bun.write('drained','1');await Bun.sleep(500)" >/dev/null 2>&1 &`;
 const ref = (claim: Claim): TokenRef => ({ key: claim.key, holder: claim.holder, token: claim.token });
 
 async function scenario(mode: "direct" | "codemode-only", steps: [string, Record<string, string>][], body: (bot: Bot, dir: string, rootId: ConversationId) => Promise<void>) {
@@ -42,7 +43,20 @@ async function scenario(mode: "direct" | "codemode-only", steps: [string, Record
   } finally { await bot.close(context); }
  } finally { await storage.close(context); Bun.gc(true); await Bun.sleep(200); await rm(dir, { recursive: true, force: true }); }
 }
-async function drained(dir: string) { for (let i = 0; i < 800 && !existsSync(join(dir, "drained")); i++) await Bun.sleep(10); expect(existsSync(join(dir, "drained"))).toBe(true); await Bun.sleep(100); }
+async function waitForQuiescence(bot: Bot, timeoutMs = 8000) {
+ const deadline = performance.now() + timeoutMs;
+ for (;;) {
+  const entries = (await quarantineReport(bot.harness, context)).quarantined;
+  if (entries.length > 0 && entries.every(entry => entry.reconcilable)) return;
+  if (performance.now() >= deadline) throw new Error("OS quiescence deadline exceeded: " + JSON.stringify(entries));
+  await Bun.sleep(10);
+ }
+}
+async function drained(bot: Bot, dir: string) {
+ for (let i = 0; i < 800 && !existsSync(join(dir, "drained")); i++) await Bun.sleep(10);
+ expect(existsSync(join(dir, "drained"))).toBe(true);
+ await waitForQuiescence(bot);
+}
 
 for (const mode of ["direct", "codemode-only"] as const) test("outliving descendant: refused while alive, unfenced once the OS proves quiescence; the lease stays with its holder " + mode, () => scenario(mode, [["work_claim", { key: "owned:reconcile", intent: "exact" }], ["bash", { command: outliving(1500) }]], async (bot, dir, rootId) => {
  const claims = (await bot.harness.snapshot(ClaimsDoc, context))!.claims;
@@ -58,6 +72,8 @@ for (const mode of ["direct", "codemode-only"] as const) test("outliving descend
  expect(entry.reconcilable).toBe(false);
  expect(entry.blockers.join("\n")).toContain(": alive,");
  expect(entry.next).toContain("still running");
+ // Deadline expiry is failure, never permission to treat a live tree as drained.
+ await expect(waitForQuiescence(bot, 0)).rejects.toThrow("alive,");
  const early = await reconcileQuarantine(bot.harness, { tokens: [ref(original)], actor: "test-operator", note: "too early" }, context);
  expect(early).toMatchObject({ status: "refused", error: "not_proven_quiescent" });
  // The risk-acceptance path must also refuse this REAL live retained Job/process group.
@@ -66,7 +82,7 @@ for (const mode of ["direct", "codemode-only"] as const) test("outliving descend
  expect(await abandonQuarantine(bot.harness, { tokens: [ref(original)], actor: "test-operator", note: "cannot waive known live descendant", snapshot: abandonment.snapshot, acceptance: ABANDONMENT_ACCEPTANCE }, context)).toMatchObject({ status: "refused", error: "not_abandonable" });
  expect((await bot.harness.snapshot(ClaimsDoc, context))!.claims.find(c => c.token === original.token)?.quarantined).toBeTruthy();
 
- await drained(dir);
+ await drained(bot, dir);
  const ready = (await quarantineReport(bot.harness, context)).quarantined.find(q => q.claim.token === original.token)!;
  expect(ready).toMatchObject({ reconcilable: true, blockers: [], required: [ref(original)] });
  expect(await reconcileQuarantine(bot.harness, { tokens: [{ ...ref(original), token: original.token + 100 }], actor: "test-operator", note: "forged" }, context)).toMatchObject({ status: "refused", error: "token_mismatch" });
@@ -103,7 +119,7 @@ test("a later claim re-quarantined by the unknown call is part of the exact clos
  const claims = (await bot.harness.snapshot(ClaimsDoc, context))!.claims;
  const first = claims.find(c => c.key === "owned:first")!; const later = claims.find(c => c.key === "owned:later")!;
  expect(later.quarantined).toBe("UNKNOWN prior native provenance");
- await drained(dir);
+ await drained(bot, dir);
  const partial = await reconcileQuarantine(bot.harness, { tokens: [ref(first)], actor: "op", note: "partial" }, context);
  expect(partial).toMatchObject({ status: "refused", error: "token_set_mismatch", required: [ref(first), ref(later)] });
  expect((await bot.harness.snapshot(ClaimsDoc, context))!.claims).toHaveLength(2);
@@ -144,7 +160,7 @@ test("HTTP: quarantine report and evidence-gated reconcile", () => scenario("dir
  try {
   const original = (await bot.harness.snapshot(ClaimsDoc, context))!.claims[0]!;
   expect((await fetch(new URL("/v1/claims/quarantine/reconcile", api.url), { method: "POST", body: JSON.stringify({ tokens: [] }) })).status).toBe(400);
-  await drained(dir);
+  await drained(bot, dir);
   const report = await (await fetch(new URL("/v1/claims/quarantine", api.url))).json() as { quarantined: { claim: Claim; reconcilable: boolean }[] };
   expect(report.quarantined).toMatchObject([{ claim: { token: original.token }, reconcilable: true }]);
   const missingNote = await fetch(new URL("/v1/claims/quarantine/reconcile", api.url), { method: "POST", body: JSON.stringify({ tokens: [ref(original)], actor: "op" }) });
@@ -196,7 +212,7 @@ for (const status of ["completed", "running"] as const) test(`a DAG-owned token 
   return ref(claim);
  }, context);
  expect((await quarantineReport(bot.harness, context)).quarantined[0]).toMatchObject({ release: "owner-cleanup", reconcilable: false });
- await drained(dir);
+ await drained(bot, dir);
  expect((await quarantineReport(bot.harness, context)).quarantined[0]).toMatchObject({ release: "owner-cleanup", reconcilable: true });
  const done = await reconcileQuarantine(bot.harness, { tokens: [token], actor: "op", note: "tree exited" }, context);
  expect(done.status).toBe("reconciled");
