@@ -18,6 +18,8 @@ import {
 	tokenProblem,
 	verifySlackAppToken,
 	verifySlackBotToken,
+	verifySlackUserToken,
+	requireSlackAppMatch,
 	type ProbeSocketConstructor,
 	type SlackAppVerifyDeps,
 	type SlackFetch,
@@ -248,9 +250,11 @@ class SetupSession {
 			{ id: "telegram", label: copy.telegram, description: copy.telegramHint, checked: has("telegram") },
 			// 한 번 연결된 건 마법사 대신 설정 파일이 관리해요(여기서는 끄지도 못해요).
 			{ id: "slack", label: copy.slack, description: has("slack") ? copy.configuredElsewhere : copy.slackHint, checked: has("slack"), disabled: has("slack") },
+			{ id: "slack-personal", label: "Slack personal assistant · connect / reconnect", description: "Read your channels and DMs locally; send only as the bot. Opt-in monitoring.", checked: false },
 			{ id: "discord", label: copy.discord, description: has("discord") ? copy.configuredElsewhere : copy.discordHint, checked: has("discord"), disabled: true },
 		]);
-		const wantSlack = checked.includes("slack");
+		if (checked.includes("slack-personal")) await this.slackPersonal(label);
+		const wantSlack = checked.includes("slack") && !checked.includes("slack-personal");
 		if (wantSlack && !has("slack")) {
 			const block = await this.slack(label);
 			if (block !== undefined) this.stage({ section: "channels", key: "slack", value: block });
@@ -383,9 +387,11 @@ class SetupSession {
 			appToken = cleanSlackToken(raw);
 			io.print(copy.slackVerifying);
 			try {
-				app = await verifySlackAppToken(appToken, this.slackDeps());
-				if (app.appId !== undefined) appId = app.appId;
+				const verified = await verifySlackAppToken(appToken, this.slackDeps());
+				if (bot.appId && verified.appId && bot.appId !== verified.appId) throw new SlackSetupError("unexpected", "app-mismatch");
+				appId = verified.appId ?? bot.appId;
 				if (appId === undefined) throw new Error(copy.slackNoAppId);
+				app = verified;
 			} catch (error) {
 				if (cancelled(error, io)) throw error;
 				io.print(this.slackErrorMessage(error), "error");
@@ -444,6 +450,40 @@ class SetupSession {
 			allowedUserIds: users,
 			allowedChannelIds: ["*"],
 		};
+	}
+
+	/** Separate opt-in entry, also used for reconnect. No raw token ever enters the manifest or model history. */
+	private async slackPersonal(label: string): Promise<void> {
+		const { io, copy } = this;
+		const name = await io.prompt({ type: "text", message: `${label}\n${copy.slackName}`, placeholder: copy.slackNamePlaceholder });
+		io.print(slackCreateAppUrl(buildSlackManifest(name, true)), "success");
+		io.print("Create from this manifest, enable Socket Mode, install to workspace. Copy Bot User OAuth Token, App-Level Token (connections:write), then User OAuth Token. User scopes must be read-only.");
+		for (;;) {
+			try {
+				const botToken = cleanSlackToken(await io.prompt({ type: "secret", message: copy.slackBotToken, placeholder: "xoxb-…" }));
+				if (tokenProblem("bot", botToken)) throw new SlackSetupError("invalidAuth", "bot-token-format");
+				const bot = await verifySlackBotToken(botToken, this.slackDeps());
+				const appToken = cleanSlackToken(await io.prompt({ type: "secret", message: copy.slackAppToken, placeholder: "xapp-…" }));
+				if (tokenProblem("app", appToken)) throw new SlackSetupError("invalidAuth", "app-token-format");
+				const appId = requireSlackAppMatch(bot, await verifySlackAppToken(appToken, this.slackDeps()));
+				const userToken = cleanSlackToken(await io.prompt({ type: "secret", message: "User OAuth Token (read-only, xoxp-)", placeholder: "xoxp-…" }));
+				const owner = await verifySlackUserToken(userToken, bot.teamId, this.slackDeps());
+				// Unique generation: cancelled reconnect cannot overwrite the currently active credentials.
+				const dir = join(dirname(this.deps.manifestPath), "slack", crypto.randomUUID());
+				const botTokenFile = join(dir, "bot.token"), appTokenFile = join(dir, "app.token"), userTokenFile = join(dir, "user.token");
+				for (const [path, token] of [[botTokenFile, botToken], [appTokenFile, appToken], [userTokenFile, userToken]] as const) {
+					await writePrivateFile(path, `${token}\n`); this.created.add(path);
+				}
+				this.stage({ section: "channels", key: "slack", value: { transport: "socket", botTokenFile, appTokenFile, databasePath: join(this.deps.dataDir, "slack.sqlite"), port: 0, appId, teamId: bot.teamId, botUserId: bot.botUserId, allowedUserIds: [owner.ownerUserId], allowedChannelIds: ["*"] } });
+				this.stage({ section: "plugins", key: "slack_personal", value: { botTokenFile, userTokenFile, teamId: bot.teamId, ownerUserId: owner.ownerUserId, databasePath: join(this.deps.dataDir, "slack-personal.sqlite") } });
+				io.print(`Verified ${bot.teamName} · ${owner.ownerUserId}. Personal tools are local-only. Monitoring is off until explicitly enabled in a local conversation. Apply then restart to load.`, "success");
+				return;
+			} catch (error) {
+				if (cancelled(error, io)) throw error;
+				io.print(this.slackErrorMessage(error), "error");
+				if (await this.select(copy.slackFailed, [{ id: "retry", label: copy.slackRetry }, { id: "skip", label: copy.slackSkip }]) !== "retry") return;
+			}
+		}
 	}
 
 	/** Slack 검증에 넘길 주입(테스트용 fetch·websocket)과 이 실행의 취소 신호. */
@@ -719,7 +759,7 @@ async function writePrivateFile(path: string, text: string): Promise<void> {
 		renameSync(temporary, path);
 		syncPrivateDirectory(dirname(path));
 	} catch {
-		throw new Error("Unable to save Telegram credential securely");
+		throw new Error("Unable to save credential securely");
 	} finally {
 		try { unlinkSync(temporary); } catch {}
 	}

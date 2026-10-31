@@ -9,6 +9,7 @@ import { imageGenPlugin } from "./image_gen/index.ts";
 import { mcpPlugin } from "./mcp/index.ts";
 import { pmPlugin } from "./pm/index.ts";
 import { skillsPlugin } from "./skills/index.ts";
+import { slackPersonalPlugin } from "./slack_personal/index.ts";
 import { webPlugin } from "./web/index.ts";
 
 /** Every plugin this build can enable. Customer manifests select from these by id. */
@@ -24,4 +25,5 @@ export const pluginCatalog: Readonly<Record<string, Plugin>> = {
 	[pmPlugin.id]: pmPlugin,
 	[skillsPlugin.id]: skillsPlugin,
 	[webPlugin.id]: webPlugin,
+	[slackPersonalPlugin.id]: slackPersonalPlugin,
 };

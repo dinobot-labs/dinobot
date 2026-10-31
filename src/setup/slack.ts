@@ -19,6 +19,8 @@ const HELLO_TIMEOUT_MS = 15_000;
 
 /** 봇 토큰에 필요한 권한과 이벤트(슬랙 연동 스킬의 매니페스트와 같다). interactivity 는 질문 버튼에 쓴다. */
 export const SLACK_BOT_SCOPES = ["app_mentions:read", "chat:write", "channels:history", "groups:history", "im:history", "files:read", "files:write"] as const;
+/** User credentials are read-only. Do not request chat:write or files:write here. */
+export const SLACK_USER_SCOPES = ["channels:read", "groups:read", "im:read", "mpim:read", "channels:history", "groups:history", "im:history", "mpim:history", "search:read", "files:read"] as const;
 export const SLACK_BOT_EVENTS = ["app_mention", "message.channels", "message.groups", "message.im"] as const;
 
 export type SlackAppManifest = {
@@ -27,7 +29,7 @@ export type SlackAppManifest = {
 		readonly app_home: { readonly home_tab_enabled: boolean; readonly messages_tab_enabled: boolean; readonly messages_tab_read_only_enabled: boolean };
 		readonly bot_user: { readonly display_name: string; readonly always_online: boolean };
 	};
-	readonly oauth_config: { readonly scopes: { readonly bot: readonly string[] } };
+	readonly oauth_config: { readonly scopes: { readonly bot: readonly string[]; readonly user?: readonly string[] } };
 	readonly settings: {
 		readonly event_subscriptions: { readonly bot_events: readonly string[] };
 		readonly interactivity: { readonly is_enabled: boolean };
@@ -44,7 +46,7 @@ export function slackAppName(name: unknown): string {
 	return cut === "" ? SLACK_DEFAULT_APP_NAME : cut;
 }
 
-export function buildSlackManifest(name: unknown): SlackAppManifest {
+export function buildSlackManifest(name: unknown, personal = false): SlackAppManifest {
 	const app = slackAppName(name);
 	return {
 		display_information: { name: app, description: `${app}, an AI teammate in your Slack threads and DMs`, background_color: "#1d1c1d" },
@@ -52,7 +54,7 @@ export function buildSlackManifest(name: unknown): SlackAppManifest {
 			app_home: { home_tab_enabled: false, messages_tab_enabled: true, messages_tab_read_only_enabled: false },
 			bot_user: { display_name: app, always_online: true },
 		},
-		oauth_config: { scopes: { bot: [...SLACK_BOT_SCOPES] } },
+		oauth_config: { scopes: { bot: [...SLACK_BOT_SCOPES], ...(personal ? { user: [...SLACK_USER_SCOPES] } : {}) } },
 		settings: {
 			event_subscriptions: { bot_events: [...SLACK_BOT_EVENTS] },
 			interactivity: { is_enabled: true },
@@ -136,19 +138,20 @@ async function slackApi(deps: SlackVerifyDeps, method: string, token: string): P
 	try {
 		response = await fetcher(SLACK_API_BASE + method, {
 			method: "POST",
+			redirect: "error",
 			headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
 			body: "{}",
-			...(deps.signal !== undefined ? { signal: deps.signal } : {}),
+			signal: deps.signal ? AbortSignal.any([deps.signal, AbortSignal.timeout(15_000)]) : AbortSignal.timeout(15_000),
 		});
 	} catch (error) {
 		if (deps.signal?.aborted) throw error;
-		throw new SlackSetupError("network", error instanceof Error ? error.message : String(error));
+		throw new SlackSetupError("network");
 	}
 	let payload: unknown;
 	try {
 		payload = await response.json();
 	} catch (error) {
-		throw new SlackSetupError("badResponse", error instanceof Error ? error.message : String(error));
+		throw new SlackSetupError("badResponse");
 	}
 	const body = rec(payload);
 	if (body === undefined) throw new SlackSetupError("badResponse", "not an object");
@@ -203,6 +206,30 @@ export async function verifySlackBotToken(token: string, deps: SlackVerifyDeps =
 	};
 }
 
+export type VerifiedSlackUser = { readonly ownerUserId: string; readonly teamId: string; readonly missingScopes: readonly string[] };
+
+/** auth.test derives the owner, never from model/user-supplied IDs. Unknown/write scopes fail closed. */
+export async function verifySlackUserToken(token: string, expectedTeamId: string, deps: SlackVerifyDeps = {}): Promise<VerifiedSlackUser> {
+	if (!token.startsWith("xoxp-") || /\s/.test(token) || token.length > MAX_TOKEN_LENGTH) throw new SlackSetupError("invalidAuth", "user-token-format");
+	const auth = await slackApi(deps, "auth.test", token);
+	const teamId = str(auth.data["team_id"]);
+	const ownerUserId = str(auth.data["user_id"]);
+	if (teamId !== expectedTeamId) throw new SlackSetupError("unexpected", "team-mismatch");
+	if (!ownerUserId || auth.data["bot_id"]) throw new SlackSetupError("invalidAuth", "not-user-token");
+	const granted = (auth.headers.get("x-oauth-scopes") ?? "").split(",").map(s => s.trim()).filter(Boolean);
+	if (granted.some(s => !(SLACK_USER_SCOPES as readonly string[]).includes(s))) throw new SlackSetupError("missingScope", "user-token-must-be-read-only");
+	const missingScopes = SLACK_USER_SCOPES.filter(s => !granted.includes(s));
+	if (missingScopes.length) throw new SlackSetupError("missingScope", missingScopes.join(","));
+	return { teamId, ownerUserId, missingScopes };
+}
+
+/** Personal setup must establish bot/app identity; missing identity is not a match. */
+export function requireSlackAppMatch(bot: VerifiedSlackBot, app: VerifiedSlackApp): string {
+	if (!bot.appId || !app.appId || bot.appId !== app.appId) throw new SlackSetupError("unexpected", "app-mismatch");
+	if (bot.missingScopes.length) throw new SlackSetupError("missingScope", bot.missingScopes.join(","));
+	return app.appId;
+}
+
 /** 앱 수준 토큰 검증 결과. */
 export type VerifiedSlackApp = { readonly appId?: string };
 
@@ -242,7 +269,9 @@ function socketUrlAllowed(raw: unknown): raw is string {
  * hello 프레임의 app_id 를 돌려준다(없으면 undefined).
  */
 export async function verifySlackAppToken(token: string, deps: SlackAppVerifyDeps = {}): Promise<VerifiedSlackApp> {
+	deps.signal?.throwIfAborted();
 	const opened = await slackApi(deps, "apps.connections.open", token);
+	deps.signal?.throwIfAborted();
 	const url = opened.data["url"];
 	if (!socketUrlAllowed(url)) throw new SlackSetupError("unexpected", "bad-socket-url");
 	const socketClass = deps.WebSocket ?? ((globalThis as { WebSocket?: unknown }).WebSocket as ProbeSocketConstructor | undefined);

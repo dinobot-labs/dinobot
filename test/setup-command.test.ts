@@ -20,7 +20,7 @@ import { parseManifest } from "../src/manifest.ts";
 import { pluginCatalog } from "../src/plugins/index.ts";
 import type { ReportService } from "../src/report/service.ts";
 import { detectLocale, resolveLocale, setupCopy, systemLocale } from "../src/setup/locale.ts";
-import type { ProbeSocketConstructor } from "../src/setup/slack.ts";
+import { SLACK_USER_SCOPES, type ProbeSocketConstructor } from "../src/setup/slack.ts";
 import { sha256Hex } from "../src/setup/manifest-file.ts";
 import { readSetupState } from "../src/setup/state.ts";
 
@@ -131,6 +131,7 @@ async function world(options: { loggedIn?: boolean; report?: ReportService; fail
 				if (init.signal?.aborted) throw new Error("aborted");
 				const failure = method === "auth.test" ? slack.botFailures.shift() : method === "apps.connections.open" ? slack.appFailures.shift() : undefined;
 				if (failure !== undefined) return Response.json({ ok: false, error: failure });
+				if (method === "auth.test" && new Headers(init.headers).get("authorization")?.includes("xoxp-")) return Response.json({ ok: true, team_id: "T01234", user_id: "UOWNER" }, { headers: { "x-oauth-scopes": SLACK_USER_SCOPES.join(",") } });
 				if (method === "auth.test") {
 					return new Response(JSON.stringify({ ok: true, team: "Faux Workspace", team_id: "T01234", user_id: "U9999", bot_id: "B8888", user: "dinobot", url: "https://foux.slack.com/" }), {
 						headers: { "x-oauth-scopes": "app_mentions:read,chat:write,channels:history,groups:history,im:history,files:read,files:write" },
@@ -243,7 +244,7 @@ describe("/setup", () => {
 		const asked = prompts(events);
 		const channels = asked.find((prompt) => title(prompt) === "설정 3/5 · 대화할 곳")!;
 		expect(channels.type === "checklist" && channels.options.map((option) => [option.id, option.checked, option.disabled ?? false])).toEqual([
-			["tui", true, true], ["telegram", false, false], ["slack", false, false], ["discord", false, true],
+			["tui", true, true], ["telegram", false, false], ["slack", false, false], ["slack-personal", false, false], ["discord", false, true],
 		]);
 		const features = asked.find((prompt) => title(prompt) === "설정 4/5 · 기능")!;
 		expect(features.type === "checklist" && features.options.map((option) => [option.id, option.checked, option.disabled ?? false])).toEqual([["web", true, true], ["computer", false, false], ["browser", false, false], ["google", false, false], ["calendar", false, false]]);
@@ -647,6 +648,38 @@ function events(list: readonly CommandEvent[]): string {
 }
 
 describe("slack wizard", () => {
+ test("personal opt-in stages bot channel + read-only plugin and derives owner; secret prompts never print tokens", async () => {
+  const w = await world({ loggedIn: true });
+  const events = await drive(w.commands, "channels", prompt => {
+   if (prompt.type === "checklist") return ["slack-personal"];
+   if (prompt.type === "text") return "personal";
+   if (prompt.type === "secret") return prompt.message.includes("User OAuth") ? "xoxp-personal-test" : prompt.message.includes("app-level") ? APP_TOKEN : BOT_TOKEN;
+   if (prompt.type === "select") return prompt.options.some(o => o.id === "apply") ? "apply" : "skip";
+   throw new Error("Unexpected prompt");
+  });
+  const request = applied(events)!;
+  expect(request).toBeDefined();
+  const candidate = Bun.YAML.parse(request.candidate) as any;
+  expect(candidate.channels.slack.allowedUserIds).toEqual(["UOWNER"]);
+  expect(candidate.plugins.slack_personal).toMatchObject({ ownerUserId: "UOWNER", teamId: "T01234" });
+  expect(readPrivateFile(candidate.plugins.slack_personal.userTokenFile, 2048)).toContain("xoxp-personal-test");
+  expect(outputs(events).join("\n")).not.toContain("xoxp-personal-test");
+  expect(request.candidate).not.toContain("xoxp-personal-test");
+  expect(prompts(events).filter(p => p.type === "secret")).toHaveLength(3);
+ });
+ test("personal app mismatch stages no config or credentials", async () => {
+  const w = await world({ loggedIn: true }); w.slack.helloAppId = "AOTHER";
+  const events = await drive(w.commands, "channels", prompt => {
+   if (prompt.type === "checklist") return ["slack-personal"];
+   if (prompt.type === "text") return "personal";
+   if (prompt.type === "secret") return prompt.message.includes("app-level") ? APP_TOKEN : BOT_TOKEN;
+   if (prompt.type === "select") return "skip";
+   throw new Error("Unexpected prompt");
+  });
+  expect(applied(events)).toBeUndefined();
+  expect(existsSync(join(w.config, "slack"))).toBe(false);
+ });
+
 	const BOT_TOKEN = "xoxb-777-faux-token-for-tests";
 	const APP_TOKEN = "xapp-666-faux-token-for-tests";
 	const MEMBER = "U0123ABCD";
