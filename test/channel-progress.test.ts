@@ -627,7 +627,7 @@ describe("core and sidecar transport", () => {
 });
 
 describe("telegram channel integration", () => {
-	type Recorded = { method: string; body: Record<string, unknown> };
+	type Recorded = { method: string; body: Record<string, unknown>; at: number };
 	async function run(handler: (m: InboundMessage, s?: AbortSignal, p?: (e: ProgressEvent) => void) => Promise<BotReply>) {
 		dir = await mkdtemp(join(tmpdir(), "dinobot-tgprogress-"));
 		const recorded: Recorded[] = [];
@@ -640,10 +640,10 @@ describe("telegram channel integration", () => {
 				const body = (await request.json()) as Record<string, unknown>;
 				if (method === "setMyCommands") {
 					expect(request.method).toBe("POST");
-					menus.push({ method, body });
+					menus.push({ method, body, at: Date.now() });
 					return Response.json({ ok: true, result: true });
 				}
-				recorded.push({ method, body });
+				recorded.push({ method, body, at: Date.now() });
 				return Response.json({ ok: true, result: method === "sendMessage" ? { message_id: recorded.length } : true });
 			},
 		});
@@ -660,7 +660,7 @@ describe("telegram channel integration", () => {
 		const until = async (check: () => boolean) => {
 			for (let i = 0; i < 600 && !check(); i++) await Bun.sleep(10);
 		};
-		return { recorded, menus, until, stop: async () => { await channel.stop(); await api.stop(true); } };
+		return { recorded, menus, until, health: () => channel.health(), stop: async () => { await channel.stop(); await api.stop(true); } };
 	}
 
 	test("status message, then its final edit, then the answer, all in the topic", async () => {
@@ -692,12 +692,18 @@ describe("telegram channel integration", () => {
 			await Bun.sleep(1_200);
 			throw Object.assign(new Error("gone"), { name: "CoreUnresponsive" });
 		});
+		// Emit bounded local-fixture state before Bun's unchanged 5 s test deadline. No request bodies or credentials.
+		const diagnostic = setTimeout(() => console.error("telegram failed-turn fixture still pending", JSON.stringify({
+			health: t.health(), callCount: t.recorded.length,
+			calls: t.recorded.slice(-32).map(r => ({ method: r.method, topic: r.body.message_thread_id, elapsedMs: r.at - t.recorded[0]!.at })),
+		})), 4200);
 		try {
 			await t.until(() => t.recorded.filter((r) => r.method === "sendMessage").length === 2);
 			const writes = t.recorded.filter((r) => r.method !== "sendChatAction");
 			expect(String(writes.find((r) => r.method === "editMessageText")!.body.text)).toStartWith("⚠️ 중단");
 			expect(writes.at(-1)!.body.text).toBe(failureNotice("core 응답 없음"));
 		} finally {
+			clearTimeout(diagnostic);
 			await t.stop();
 		}
 	});

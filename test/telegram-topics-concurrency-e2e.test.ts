@@ -14,9 +14,15 @@ import { context, forbiddenCommands, openLocalBot } from "./fixtures/channel-e2e
 // durable SQLite inbox, the topic scheduler, the shared API gate with the PRODUCTION policy, the loopback forwarder
 // speaking NDJSON to the real HTTP core channel, channelHandler, a SQLite-backed bot and the faux model. Only the remote
 // Telegram service and the model provider are fakes. Ordering is decided by barriers keyed to message content.
-async function until(predicate: () => boolean, label: string, ms = 10000) {
+async function until(predicate: () => boolean, label: string, ms = 10000, diagnostics?: () => unknown) {
 	const end = Date.now() + ms;
-	while (!predicate()) { if (Date.now() >= end) throw new Error("Timed out: " + label); await Bun.sleep(10); }
+	while (!predicate()) {
+		if (Date.now() >= end) {
+			if (diagnostics) console.error("telegram fixture timeout", JSON.stringify(diagnostics()));
+			throw new Error("Timed out: " + label);
+		}
+		await Bun.sleep(10);
+	}
 }
 type Call = { method: string; body: any; at: number };
 function event(id: number, text: string, topic: number) {
@@ -83,7 +89,10 @@ test("forwarder/NDJSON: slow topic A is held in the model while fast topic B is 
 		expect(channel.health()).toMatchObject({ processing: 1, queued: 1, done: 1, dead: 0 });
 		expect(calls.some(c => c.method === "sendMessage" && /SLOW_A/.test(c.body.text))).toBe(false);
 		// Held past the reporter's first tick, so A's typing indicator must pass the gate while A is in the model.
-		await until(() => calls.some(c => c.method === "sendChatAction" && c.body.message_thread_id === 10), "typing for held A");
+		await until(() => calls.some(c => c.method === "sendChatAction" && c.body.message_thread_id === 10), "typing for held A", 10000, () => ({
+			health: channel.health(), modelStarts, callCount: calls.length,
+			calls: calls.slice(-32).map(c => ({ method: c.method, topic: c.body.message_thread_id, elapsedMs: c.at - calls[0]!.at })),
+		}));
 		expect(modelStarts).toEqual(["SLOW_A", "FAST_B"]);
 		releaseA();
 		await until(() => channel.health().done === 3, "A and its follow-up drain");
