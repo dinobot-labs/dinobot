@@ -9,6 +9,7 @@ import { telegramChannel } from "../src/channels/telegram.ts";
 import { createTelegramForwarder } from "../src/cli/telegram-run.ts";
 import { channelHandler } from "../src/core/channel-handler.ts";
 import { context, forbiddenCommands, openLocalBot } from "./fixtures/channel-e2e-child.ts";
+import { TelegramLongPoll } from "./fixtures/telegram-long-poll.ts";
 
 // ADR 0048 UNIT1 + UNIT2 end to end on real local boundaries: Telegram long polling against a local REST double, the
 // durable SQLite inbox, the topic scheduler, the shared API gate with the PRODUCTION policy, the loopback forwarder
@@ -32,7 +33,7 @@ function event(id: number, text: string, topic: number) {
 test("forwarder/NDJSON: slow topic A is held in the model while fast topic B is answered; A's follow-up waits behind A; the gate spaces every chat write", async () => {
 	const dir = await mkdtemp(join(tmpdir(), "telegram-topic-concurrency-"));
 	const calls: Call[] = [];
-	const pending: unknown[] = [];
+	const pending = new TelegramLongPoll<ReturnType<typeof event>>();
 	let messageId = 0;
 	let releaseBAck!: () => void;
 	const bAck = new Promise<void>(resolve => { releaseBAck = resolve; });
@@ -43,7 +44,7 @@ test("forwarder/NDJSON: slow topic A is held in the model while fast topic B is 
 		// Observing the request is not an ACK: keep B in sending until the test releases its response.
 		if (method === "sendMessage" && body.text === "FAST_B_REPLY") await bAck;
 		if (method === "getWebhookInfo") return Response.json({ ok: true, result: { url: "" } });
-		if (method === "getUpdates") return Response.json({ ok: true, result: pending.splice(0).filter((u: any) => u.update_id >= body.offset) });
+		if (method === "getUpdates") return Response.json({ ok: true, result: await pending.poll(body.offset, body.timeout, request.signal) });
 		return Response.json({ ok: true, result: method === "sendMessage" ? { message_id: ++messageId } : true });
 	} });
 	const tokenFile = join(dir, "bot.token");
@@ -111,6 +112,7 @@ test("forwarder/NDJSON: slow topic A is held in the model while fast topic B is 
 		globalThis.fetch = realFetch;
 		releaseBAck();
 		releaseA();
+		pending.close();
 		await channel.stop(); await http.stop(); await bot.close(context); await remote.stop(true);
 	}
 	try {
