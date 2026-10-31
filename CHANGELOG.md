@@ -14,6 +14,8 @@
 
 ### Bug Fixes
 
+* **tests:** model Telegram long polling in topic concurrency fixture ([#14](https://github.com/dinobot-labs/dinobot/issues/14)) ([60bbaeb](https://github.com/dinobot-labs/dinobot/commit/60bbaebfb60778a9e3194dfb90d69a2b574f5677))
+
 * align scheduled goal continuation and tool guidance ([5f3f8db](https://github.com/dinobot-labs/dinobot/commit/5f3f8dbb8d607c51dd87ad382f965889e563bc7e))
 * **api:** pace live SSE batches and prevent pump reentry ([c9417d8](https://github.com/dinobot-labs/dinobot/commit/c9417d81e0e55800c0ee1d5d59840ff44cde1f36))
 * **ask:** floor subagent deadlines at sixty seconds ([93ad4b4](https://github.com/dinobot-labs/dinobot/commit/93ad4b44093cb2e9159905a436ea60dcd44f3612))
@@ -22,3 +24,4 @@
 * **setup:** connect Slack end to end from the /setup wizard ([#9](https://github.com/dinobot-labs/dinobot/issues/9)) ([d5efc79](https://github.com/dinobot-labs/dinobot/commit/d5efc795a29aade408e5e25b8b5ba66635ab4e3d))
 * **skills:** restore the owner-authored optimization, debugging and clarification skills ([#10](https://github.com/dinobot-labs/dinobot/issues/10)) ([c443d03](https://github.com/dinobot-labs/dinobot/commit/c443d03f3b5e1b9d3cbdd4b497e76f91ac735652))
 * **slack:** fair monitoring and bot-first owner DM access ([e0cb8ba](https://github.com/dinobot-labs/dinobot/commit/e0cb8ba6e414c54c8b90713050380c55076d344e))
+
