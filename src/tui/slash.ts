@@ -69,7 +69,7 @@ export const LOCAL_COMMANDS: readonly CommandInfo[] = [
 	{ name: "new", description: "Start a new thread", usage: "[name]" },
 	{ name: "quit", description: "Quit dinobot" },
 	{ name: "sessions", description: "Browse live sessions and attach a conversation" },
-	{ name: "theme", description: "Pick a dinosaur theme (mascot and brand colors)", usage: "[name]" },
+	{ name: "theme", description: "Pick a theme (dinosaur or DOS blue/black)", usage: "[name]" },
 	{ name: "thread", description: "Switch to a thread", usage: "<name>" },
 ];
 

@@ -1,6 +1,5 @@
 import { afterEach, expect, test } from "bun:test";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { visibleWidth } from "@earendil-works/pi-tui";
 import { MemoryTerminal } from "../script/bench/tui-render.ts";
@@ -9,7 +8,7 @@ import { ChatApp } from "../src/tui/app.ts";
 import type { ApiClient } from "../src/tui/client.ts";
 import { MASCOT_BITMAPS, MASCOT_SIZE, renderMascot } from "../src/tui/mascot.ts";
 import { chooseTheme, FileTuiPreferences, type TuiPreferencesStore } from "../src/tui/preferences.ts";
-import { color, palette, setTheme, THEME_NAMES, themeName, themes } from "../src/tui/theme.ts";
+import { color, palette, setTheme, DINOSAUR_THEME_NAMES as THEME_NAMES, themeName, themes } from "../src/tui/theme.ts";
 
 afterEach(() => setTheme("rex"));
 
@@ -136,32 +135,32 @@ function app(preferences: TuiPreferencesStore) {
 }
 const notices = (chat: ChatApp): string[] => chat.chat.data.blocks.flatMap((block) => (block.kind === "notice" ? [block.text] : []));
 
-test("/theme <name> recolors, saves, and a fresh app starts in it; the picker applies a theme too", () => {
+test.each([ ["ptero", "brachio"], ["dos-blue", "dos-black"] ] as const)("/theme %s saves and reloads, then picker selects %s", (initial, next) => {
 	const saved = process.env.DINOBOT_THEME;
 	delete process.env.DINOBOT_THEME;
-	const dir = mkdtempSync(join(tmpdir(), "dinobot-theme-"));
+	const dir = mkdtempSync(join(import.meta.dir, ".dinobot-theme-"));
 	const path = join(dir, "tui.json");
 	const first = app(new FileTuiPreferences(path));
 	try {
-		first.chat.screen.prompt.setText("/theme ptero");
+		first.chat.screen.prompt.setText(`/theme ${initial}`);
 		first.terminal.onInput?.("\r");
-		expect(themeName()).toBe("ptero");
-		expect(new FileTuiPreferences(path).load().theme).toBe("ptero");
-		expect(notices(first.chat).some((text) => text.includes("Pterodactyl"))).toBe(true);
+		expect(themeName()).toBe(initial);
+		expect(new FileTuiPreferences(path).load().theme).toBe(initial);
+		expect(notices(first.chat).some((text) => text.includes(themes[initial].label))).toBe(true);
 		first.chat.screen.prompt.setText("/theme raptor");
 		first.terminal.onInput?.("\r");
-		expect(themeName()).toBe("ptero");
+		expect(themeName()).toBe(initial);
 		expect(notices(first.chat).some((text) => text.includes("unknown theme raptor"))).toBe(true);
 		setTheme("rex");
 		const restarted = app(new FileTuiPreferences(path));
 		try {
-			expect(themeName()).toBe("ptero");
+			expect(themeName()).toBe(initial);
 			restarted.chat.screen.prompt.setText("/theme");
 			restarted.terminal.onInput?.("\r");
 			restarted.terminal.onInput?.("\x1b[B");
 			restarted.terminal.onInput?.("\r");
-			expect(themeName()).toBe("brachio");
-			expect(new FileTuiPreferences(path).load()).toEqual({ toolsExpanded: false, theme: "brachio" });
+			expect(themeName()).toBe(next);
+			expect(new FileTuiPreferences(path).load()).toEqual({ toolsExpanded: false, theme: next });
 		} finally { restarted.chat.screen.stop(); }
 	} finally {
 		first.chat.screen.stop();

@@ -18,7 +18,7 @@ import {
 import type { RenderContext } from "../screen.ts";
 import type { AgentBlock, Block, NoticeBlock, NoticeLevel, ThinkingBlock, UserBlock } from "../state.ts";
 import { formatCacheRatio, formatTps } from "../state.ts";
-import { ansi, bold, color, dim, formatClock, formatElapsed, glyph, icons, italic, pad, palette, separator, spacing, strike, type Style } from "../theme.ts";
+import { ansi, bold, color, dim, formatClock, formatElapsed, glyph, icons, italic, pad, palette, themeName, separator, spacing, strike, type Style } from "../theme.ts";
 
 /** Grok reserves 10 columns for the `  h:mm AM` stamp on message blocks (entry_renderer.rs:323). */
 const TIMESTAMP_RESERVED = 10;
@@ -390,10 +390,10 @@ function layoutMarkdown(rendered: readonly string[], styles: MarkdownStyles, lay
 	return lines;
 }
 
-const markdowns = new WeakMap<Block, { readonly markdown: Markdown; text: string }>();
+const markdowns = new WeakMap<Block, { readonly markdown: Markdown; text: string; theme: string }>();
 function markdownFor(block: AgentBlock | ThinkingBlock, styles: MarkdownStyles): Markdown {
 	const entry = markdowns.get(block);
-	if (entry !== undefined) {
+	if (entry !== undefined && entry.theme === themeName()) {
 		if (entry.text !== block.text) {
 			entry.markdown.setText(block.text);
 			entry.text = block.text;
@@ -410,20 +410,20 @@ function markdownFor(block: AgentBlock | ThinkingBlock, styles: MarkdownStyles):
 		return marked;
 	};
 	const markdown = new Markdown(block.text, 0, 0, styles.theme, { color: styles.text }, { transform, preserveOrderedListMarkers: true });
-	markdowns.set(block, { markdown, text: block.text });
+	markdowns.set(block, { markdown, text: block.text, theme: themeName() });
 	return markdown;
 }
 
-type CacheKey = { readonly width: number; readonly expanded: boolean; readonly selected: boolean; readonly tick: number };
+type CacheKey = { readonly theme: string; readonly width: number; readonly expanded: boolean; readonly selected: boolean; readonly tick: number };
 type Cached = CacheKey & { readonly version: number; readonly lines: string[] };
 // Keep two layouts per immutable block so split/maximize round trips do not reparse history.
 // Version changes discard both; the WeakMap releases entries with their conversation.
 const cache = new WeakMap<Block, Cached[]>();
-const keyOf = (width: number, ctx: RenderContext, animated: boolean): CacheKey => ({ width, expanded: ctx.expanded, selected: ctx.selected, tick: animated ? ctx.tick : -1 });
+const keyOf = (width: number, ctx: RenderContext, animated: boolean): CacheKey => ({ theme: themeName(), width, expanded: ctx.expanded, selected: ctx.selected, tick: animated ? ctx.tick : -1 });
 
 function cached(block: Block, key: CacheKey, render: () => string[]): string[] {
 	const entries = (cache.get(block) ?? []).filter((entry) => entry.version === block.version);
-	const index = entries.findIndex((entry) => entry.width === key.width && entry.expanded === key.expanded && entry.selected === key.selected && entry.tick === key.tick);
+	const index = entries.findIndex((entry) => entry.theme === key.theme && entry.width === key.width && entry.expanded === key.expanded && entry.selected === key.selected && entry.tick === key.tick);
 	if (index >= 0) {
 		const hit = entries.splice(index, 1)[0]!;
 		entries.unshift(hit);

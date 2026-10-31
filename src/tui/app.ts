@@ -1256,7 +1256,7 @@ export class ChatApp {
 	/** /theme: one row per dinosaur theme, the current one marked; Enter applies and saves it. */
 	private chooseTheme(): void {
 		const current = themeName();
-		const picker = new Picker("Dinosaur theme · Enter: apply", THEME_NAMES.map((name) => ({
+		const picker = new Picker("Theme · Enter: apply", THEME_NAMES.map((name) => ({
 			id: name,
 			label: `${themes[name].species} · ${themes[name].label}`,
 			description: `/theme ${name} · ${themes[name].description}`,

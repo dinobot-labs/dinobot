@@ -20,7 +20,7 @@ import {
 	withMargin,
 } from "./modal.ts";
 import { highlight, rank } from "./slash.ts";
-import { color, glyph, inverse, modalSizing, pad, separator } from "./theme.ts";
+import { color, glyph, inverse, isDosTheme, modalSizing, pad, separator } from "./theme.ts";
 
 export type PickerRow = { readonly kind: "header"; readonly label: string } | { readonly kind: "option"; readonly option: CommandSelectOption; readonly indices: readonly number[] };
 /** `focusFirst`: with an empty filter, initially select the first row (e.g. newest-first lists) instead of the current one. */
@@ -471,6 +471,6 @@ export class Picker implements Component {
 		const left = `${mark}${disabled ? color.gray(label) : highlight(label, indices, selected)}${description}`;
 		const text = tagWidth > 0 ? `${left}${" ".repeat(Math.max(1, width - visibleWidth(left) - tagWidth))}${tags}` : left;
 		const band = pad(clip(text, width), width);
-		return selected ? color.bgVisual(band) : hovered ? color.bgHover(band) : band;
+		return selected ? (isDosTheme() ? inverse(band) : color.bgVisual(band)) : hovered ? color.bgHover(band) : band;
 	}
 }

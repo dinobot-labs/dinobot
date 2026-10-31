@@ -4,7 +4,7 @@ import { ReflowScrollView } from "../chrome.ts";
 import { shownWorkflow, workflowState, workflowStyle, workflowText } from "../panes/plan.ts";
 import type { RenderContext } from "../screen.ts";
 import type { Block, SubagentBlock, ToolBlock } from "../state.ts";
-import { bold, color, dim, brailleSpinner, formatElapsed, glyph, paint, separator, spacing, spinnerFrame, square, type Style } from "../theme.ts";
+import { bold, color, dim, brailleSpinner, formatElapsed, glyph, paint, separator, spacing, spinnerFrame, square, themeName, type Style } from "../theme.ts";
 import { statusText, statusStyle, type DisplayStatus, type ToolVerb, verbFor } from "./tools.ts";
 
 const LABEL = "Subagent";
@@ -90,7 +90,7 @@ const rowCache = new WeakMap<SubagentBlock, Cached>();
 export function renderSubagentRow(block: SubagentBlock, width: number, ctx: RenderContext): string[] {
 	const progress = block.progress;
 	const phase = progress.status === "running" ? `${spinnerFrame(brailleSpinner, ctx.tick)}:${formatElapsed(elapsedMs(progress, ctx.now))}` : "rest";
-	const key = `${block.version}:${width}:${ctx.selected}:${ctx.expanded}:${phase}`;
+	const key = `${themeName()}:${block.version}:${width}:${ctx.selected}:${ctx.expanded}:${phase}`;
 	const cached = rowCache.get(block);
 	if (cached?.key === key) return cached.lines;
 	const indent = " ".repeat(spacing.bullet);
@@ -155,7 +155,7 @@ export function renderGroupHeader(members: readonly (ToolBlock | SubagentBlock)[
 	const parts = groupLabel(members);
 	const caret = ctx.selected && !ctx.expanded;
 	const phase = caret ? "caret" : parts.failed > 0 ? "failed" : parts.running ? (ctx.tick % 8 < 4 ? "on" : "off") : "idle";
-	const key = `${width}:${phase}:${parts.failed}:${parts.text}`;
+	const key = `${themeName()}:${width}:${phase}:${parts.failed}:${parts.text}`;
 	const cached = groupCache.get(first);
 	if (cached?.key === key) return cached.lines;
 	const diamond = parts.failed > 0 ? color.accentError : parts.running ? blink(color.accentTool, ctx.tick) : color.gray;

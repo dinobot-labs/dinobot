@@ -1,5 +1,5 @@
 import { type OverlayOptions, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
-import { bold, color, glyph, modalSizing, pad, paint, square } from "./theme.ts";
+import { bold, color, glyph, modalSizing, pad, paint, square, isDosTheme } from "./theme.ts";
 
 export type OverlaySize = { cols: number; rows: number };
 export type ModalBox = { readonly width: number; readonly height: number };
@@ -59,7 +59,7 @@ export const modalBottom = (width: number): string => color.modalBorder(`${squar
 /** A full-width `─` divider between the border sides (the tab divider of modal_window.rs:339-349). */
 export const modalDivider = (width: number): string => {
 	const side = color.modalBorder(square.v);
-	return `${side}${color.modalBorder(square.h.repeat(Math.max(0, width - 2)))}${side}`;
+	return `${side}${color.modalBorder((isDosTheme() ? "─" : square.h).repeat(Math.max(0, width - 2)))}${side}`;
 };
 
 export function modalRow(text: string, width: number): string {

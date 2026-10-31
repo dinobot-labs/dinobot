@@ -97,7 +97,7 @@ const TRICERA_BITMAP = [
 	"......GGGG..GGGG..GGGG........",
 ];
 
-export const MASCOT_BITMAPS: Readonly<Record<ThemeName, readonly string[]>> = { rex: REX_BITMAP, ptero: PTERO_BITMAP, brachio: BRACHIO_BITMAP, tricera: TRICERA_BITMAP };
+export const MASCOT_BITMAPS: Readonly<Record<ThemeName, readonly string[]>> = { rex: REX_BITMAP, ptero: PTERO_BITMAP, brachio: BRACHIO_BITMAP, tricera: TRICERA_BITMAP, "dos-blue": REX_BITMAP, "dos-black": REX_BITMAP };
 /** The T-rex, the default theme's mascot. */
 export const MASCOT_BITMAP: readonly string[] = REX_BITMAP;
 

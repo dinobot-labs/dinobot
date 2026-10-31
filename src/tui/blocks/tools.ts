@@ -6,7 +6,7 @@ import {
 } from "@earendil-works/pi-tui";
 import type { RenderContext } from "../screen.ts";
 import type { ToolBlock } from "../state.ts";
-import { bold, brailleSpinner, color, fg, formatElapsed, glyph, type IconKind, icons, pad, spacing, spinnerFrame, type Style } from "../theme.ts";
+import { bold, brailleSpinner, color, fg, formatElapsed, glyph, type IconKind, icons, pad, themeName, spacing, spinnerFrame, type Style } from "../theme.ts";
 
 export type ToolKind = "execute" | "read" | "search" | "list" | "edit" | "write" | "web_fetch" | "web_search" | "other";
 export type ToolVerb = { past: string; present: string; noun: string; plural: string; groupable: boolean; rail: boolean };
@@ -561,7 +561,7 @@ const cache = new WeakMap<ToolBlock, Cached[]>();
 /** Two recent layouts per block; versions retire old output, motion/time keys update only active work. */
 export function renderTool(block: ToolBlock, width: number, ctx: RenderContext): string[] {
 	const running = isRunning(block);
-	const phase = running ? `${spinnerFrame(brailleSpinner, ctx.tick)}:${elapsed(block, ctx)}` : "";
+	const phase = `${themeName()}:${running ? `${spinnerFrame(brailleSpinner, ctx.tick)}:${elapsed(block, ctx)}` : ""}`;
 	let entries = cache.get(block);
 	if (!entries || entries[0]?.version !== block.version) {
 		entries = [];

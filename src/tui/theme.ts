@@ -60,8 +60,10 @@ export const palette: Record<PaletteName, string> = { ...signal };
  * status colors stay Dinobot Signal, so running/done/failed read the same in every theme. Stops mirror
  * services/landing/src/brand/species.ts.
  */
-export type ThemeName = "rex" | "ptero" | "brachio" | "tricera";
-export const THEME_NAMES: readonly ThemeName[] = ["rex", "ptero", "brachio", "tricera"];
+export type DinosaurThemeName = "rex" | "ptero" | "brachio" | "tricera";
+export const DINOSAUR_THEME_NAMES: readonly DinosaurThemeName[] = ["rex", "ptero", "brachio", "tricera"];
+export type ThemeName = DinosaurThemeName | "dos-blue" | "dos-black";
+export const THEME_NAMES: readonly ThemeName[] = [...DINOSAUR_THEME_NAMES, "dos-blue", "dos-black"];
 export type DinoTheme = {
 	readonly label: string;
 	readonly species: string;
@@ -71,6 +73,8 @@ export type DinoTheme = {
 	readonly border: string;
 };
 export const themes: Readonly<Record<ThemeName, DinoTheme>> = {
+ "dos-blue": { label: "DOS Blue", species: "T-rex", description: "blue cell-grid workspace", stops: ["#ffff55", "#55ffff", "#e0e0e0", "#aaaaaa", "#e0e0e0"], border: "#ffff55" },
+ "dos-black": { label: "DOS Black", species: "T-rex", description: "black cell-grid workspace", stops: ["#e0d590", "#b8c8c8", "#d0d0d0", "#aaaaaa", "#e0e0e0"], border: "#e0d590" },
 	rex: { label: "Signal", species: "T-rex", description: "mint to indigo, the original", stops: ["#19CA9D", "#2DB4B2", "#3DA5C2", "#538EDA", "#5D7CDE"], border: "#2DB4B2" },
 	ptero: { label: "Dusk", species: "Pterodactyl", description: "sun to violet, a sunset sky", stops: ["#F5B83D", "#F2894B", "#E8677F", "#C45AB3", "#8C5BE0"], border: "#F2894B" },
 	brachio: { label: "Fern", species: "Brachiosaurus", description: "lime to pine, a fern forest", stops: ["#C3D43A", "#8CC24C", "#55AD5E", "#2F9670", "#1F7F78"], border: "#8CC24C" },
@@ -121,12 +125,32 @@ export const setTheme = (name: ThemeName): void => {
 	const theme = themes[name];
 	activeTheme = name;
 	const [brandMint, brandTeal, brandCyan, brandBlue, brandIndigo] = theme.stops;
-	Object.assign(palette, { brandMint, brandTeal, brandCyan, brandBlue, brandIndigo, promptBorderActive: theme.border });
+	Object.assign(palette, signal, { brandMint, brandTeal, brandCyan, brandBlue, brandIndigo, promptBorderActive: theme.border });
+ if (isDosTheme()) Object.assign(palette, dosPalette(name === "dos-blue"));
+ Object.assign(rounded, isDosTheme() ? doubleBox : asciiBox);
+ Object.assign(square, isDosTheme() ? doubleBox : asciiBox);
 	colors.clear();
 	fgAnsi.clear();
 	bgAnsi.clear();
 };
 export const themeName = (): ThemeName => activeTheme;
+export const isDosTheme = (): boolean => activeTheme === "dos-blue" || activeTheme === "dos-black";
+
+function dosPalette(blue: boolean): Record<PaletteName, string> {
+ const surface = blue ? "#0000aa" : "#000000";
+ const inset = blue ? "#000080" : "#111111";
+ const ink = blue ? "#e0e0e0" : "#d0d0d0";
+ const focus = blue ? "#ffff55" : "#e0d590";
+ const info = blue ? "#55ffff" : "#b8c8c8";
+ const success = blue ? "#55ff55" : "#afc5af";
+ const error = blue ? "#ffaaaa" : "#e0aaaa";
+ return { bgNight: surface, bgStorm: surface, bgStormDark: inset, bgHighlight: inset, bgVisual: inset, bgHover: inset,
+ fg: ink, fgDark: ink, fgGutter: "#aaaaaa", comment: "#aaaaaa", dark5: ink,
+ brandMint: focus, brandTeal: info, brandCyan: ink, brandBlue: "#aaaaaa", brandIndigo: "#e0e0e0",
+ blue: info, cyan: info, green: success, green1: success, magenta: ink, orange: info, purple: ink, red: error, teal: info, yellow: focus,
+ selectionBorder: ink, promptBorder: ink, promptBorderActive: focus,
+ diffDeleteBg: blue ? "#330066" : "#302020", diffInsertBg: blue ? "#003366" : "#203020" };
+}
 export const ansi = { fg: foreground, bg: background, fgReset: "\x1b[39m", bgReset: "\x1b[49m" } as const;
 
 /** Right-pads `text` with spaces to `width` visible columns; text already `width` or wider is returned unchanged. */
@@ -345,8 +369,10 @@ export type BoxGlyphs = {
 	readonly sepR: string;
 };
 /** Dinobot Signal: ASCII frames everywhere. */
-export const rounded: BoxGlyphs = { tl: "+", tr: "+", bl: "+", br: "+", h: "-", v: "|", sepL: "+", sepR: "+" };
-export const square: BoxGlyphs = { tl: "+", tr: "+", bl: "+", br: "+", h: "-", v: "|", sepL: "+", sepR: "+" };
+const asciiBox: BoxGlyphs = { tl: "+", tr: "+", bl: "+", br: "+", h: "-", v: "|", sepL: "+", sepR: "+" };
+const doubleBox: BoxGlyphs = { tl: "╔", tr: "╗", bl: "╚", br: "╝", h: "═", v: "║", sepL: "╟", sepR: "╢" };
+export const rounded: BoxGlyphs = { ...asciiBox };
+export const square: BoxGlyphs = { ...asciiBox };
 export const cutCorner = "|";
 
 export const separator = {
