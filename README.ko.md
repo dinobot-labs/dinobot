@@ -32,9 +32,18 @@ https://github.com/user-attachments/assets/6b7d112e-d469-4512-b97b-96999dcf8936
 
 설정 예시는 [dinobot.example.yaml](dinobot.example.yaml)을 참고하세요. 플러그인을 켜는 것만으로 자격 증명이나 의존 프로그램이 준비되지는 않습니다.
 
-## 소스에서 시작하기
+## 설치와 실행
 
-**Bun 1.4.2 이상**, Git, 본인의 모델 제공자 자격 증명이 필요합니다. 터미널에서 실행하세요.
+**Bun 1.4.2 이상**과 본인의 모델 제공자 자격 증명이 필요합니다. Cloudflare에서 정식 CLI/TUI 패키지를 설치하세요.
+
+```bash
+bun add -g https://releases.dinobot.workers.dev/core/dinobot.tgz
+dinobot
+```
+
+이후에는 `dinobot update`로 업데이트합니다. 데몬을 계속 실행하려면 `dinobot update --no-restart`를 사용하세요. 예전 npm 배포본 사용자는 위 URL 설치를 한 번 실행해야 새 업데이트 경로로 전환됩니다. Dinobot 발행에 npm 계정은 필요 없지만 외부 라이브러리는 npm에서 내려받습니다. Desktop 설치는 별도입니다.
+
+소스에서 실행하려면 Git도 필요합니다.
 
 ```bash
 git clone https://github.com/dinobot-labs/dinobot.git

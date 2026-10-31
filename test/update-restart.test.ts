@@ -1,10 +1,12 @@
 import { describe, expect, test } from "bun:test";
+import { resolve } from "node:path";
 import { restartDaemonAfterUpdate, type DaemonRestartDependencies } from "../src/cli/update-restart.ts";
 import { detectSupervisor, successorArgv } from "../src/core/daemon-restart.ts";
 
 type Route = (init?: RequestInit) => Response | Promise<Response>;
 
 function harness(files: Record<string, string>, routes: { info: Route[]; restart?: Route }) {
+	const canonicalFiles = Object.fromEntries(Object.entries(files).map(([path, body]) => [resolve(path), body]));
 	const logs: string[] = [];
 	const errors: string[] = [];
 	const requests: { path: string; body?: unknown }[] = [];
@@ -13,7 +15,7 @@ function harness(files: Record<string, string>, routes: { info: Route[]; restart
 	const deps: DaemonRestartDependencies = {
 		env: {}, cwd: "/work", home: "/home/u",
 		readFile: async (path) => {
-			if (path in files) return files[path]!;
+			if (resolve(path) in canonicalFiles) return canonicalFiles[resolve(path)]!;
 			throw Object.assign(new Error("ENOENT"), { code: "ENOENT" });
 		},
 		fetch: (async (input: string | URL | Request, init?: RequestInit) => {

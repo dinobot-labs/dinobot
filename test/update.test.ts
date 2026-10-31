@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, expect, test } from "bun:test";
 import { mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import packageJson from "../package.json" with { type: "json" };
 import {
 	CURRENT_VERSION, checkForUpdate, defaultUpdateCachePath, detectUpdateManager,
@@ -28,13 +28,49 @@ async function temporary(): Promise<string> {
 	return dir;
 }
 const fetcher = (fn: (input: string | URL | Request, init?: RequestInit) => Promise<Response>) => fn as typeof fetch;
-const metadataFetch = (version = "1.2.4", name = "dinobot") => fetcher(async () => Response.json({ name, version }));
+const archive = Buffer.from("verified fixture bytes");
+const integrity = "sha512-" + new Bun.CryptoHasher("sha512").update(archive).digest("base64");
+const metadata = (version = "1.2.4", name = "dinobot") => ({ name, version, dist: { tarball: "https://releases.dinobot.workers.dev/core/releases/" + version + "/dinobot-" + version + ".tgz", integrity } });
+const metadataFetch = (version = "1.2.4", name = "dinobot") => fetcher(async (url) => String(url).endsWith(".tgz") ? new Response(archive) : Response.json(metadata(version, name)));
 async function passive(): Promise<CheckForUpdateOptions> {
 	return { cachePath: join(await temporary(), "update.json"), now: () => NOW, currentVersion: "1.2.3", fetch: metadataFetch() };
 }
 async function seed(options: CheckForUpdateOptions, latest = "1.2.4", checkedAt = NOW): Promise<void> {
-	await writeFile(options.cachePath!, JSON.stringify({ schemaVersion: 1, latest, checkedAt }));
+	await writeFile(options.cachePath!, JSON.stringify({ schemaVersion: 2, latest, checkedAt }));
 }
+
+test("release origin, immutable version path and canonical SHA512 are required before manager effects", async () => {
+	const fixture = await installation("npm");
+	const good = metadata();
+	const invalid = [
+		{ ...good, dist: undefined }, { ...good, dist: { tarball: good.dist.tarball } },
+		...["http://releases.dinobot.workers.dev", "https://evil.invalid", "https://releases.dinobot.workers.dev.evil.invalid"].map(origin => ({ ...good, dist: { ...good.dist, tarball: good.dist.tarball.replace("https://releases.dinobot.workers.dev", origin) } })),
+		...[good.dist.tarball + "?x=1", good.dist.tarball + "#fragment", good.dist.tarball.replace("/1.2.4/", "/1.2.5/"), good.dist.tarball.replace("dinobot-", "other-")].map(tarball => ({ ...good, dist: { ...good.dist, tarball } })),
+		...["sha256-abc", "sha512-bad", integrity + String.fromCharCode(10), integrity.slice(0,-2), "sha512-" + "A".repeat(85) + "B=="].map(integrity => ({ ...good, dist: { ...good.dist, integrity } })),
+	];
+	for (const body of invalid) {
+		expect(await runUpdateWithDependencies({ ...fixture.deps, fetch: fetcher(async () => Response.json(body)) })).toBe(1);
+	}
+	expect(fixture.calls).toHaveLength(0);
+});
+
+test("tampered bytes, download errors and redirects cannot install or restart", async () => {
+	const fixture = await installation("npm");
+	let restarts = 0;
+	const redirected = new Response(archive);
+	Object.defineProperty(redirected, "redirected", { value: true });
+	for (const response of [new Response("tampered"), new Response(null, { status: 503 }), redirected]) {
+		const fetch = fetcher(async (url, init) => {
+			if (String(url).endsWith(".json")) return Response.json(metadata());
+			expect(url).toBe(metadata().dist.tarball);
+			expect(init?.redirect).toBe("error");
+			return response;
+		});
+		expect(await runUpdateWithDependencies({ ...fixture.deps, fetch, restartDaemon: async () => { restarts++; return 0; } })).toBe(1);
+	}
+	expect(fixture.calls.filter(call => call.options.stdio === "inherit")).toHaveLength(0);
+	expect(restarts).toBe(0);
+});
 
 // Every fetch and manager command is injected. No test contacts a registry or installs anything.
 test("CURRENT_VERSION is the release-compatible package version", () => {
@@ -62,15 +98,15 @@ test("invalid or prerelease latest versions never notify or enter the cache", as
 	await expect(readFile(options.cachePath!)).rejects.toThrow();
 });
 
-test("passive check uses the fixed registry, disallows redirects and returns an update", async () => {
+test("passive check uses the fixed Cloudflare endpoint, disallows redirects and returns an update", async () => {
 	const options = await passive();
 	let calls = 0;
 	const fetch = fetcher(async (url, init) => {
 		calls++;
-		expect(url).toBe("https://registry.npmjs.org/dinobot/latest");
+		expect(url).toBe("https://releases.dinobot.workers.dev/core/latest.json");
 		expect(init?.redirect).toBe("error");
 		expect(init?.signal).toBeInstanceOf(AbortSignal);
-		return Response.json({ name: "dinobot", version: "1.2.4" });
+		return Response.json(metadata());
 	});
 	expect(await checkForUpdate({ ...options, fetch })).toEqual({ current: "1.2.3", latest: "1.2.4" });
 	expect(calls).toBe(1);
@@ -158,7 +194,7 @@ test("fresh cache suppresses fetches, including current or newer running version
 test("successful current-version checks are cached too; force bypasses a fresh cache", async () => {
 	const options = await passive();
 	expect(await checkForUpdate({ ...options, fetch: metadataFetch("1.2.3") })).toBeNull();
-	expect(JSON.parse(await readFile(options.cachePath!, "utf8"))).toEqual({ schemaVersion: 1, latest: "1.2.3", checkedAt: NOW });
+	expect(JSON.parse(await readFile(options.cachePath!, "utf8"))).toEqual({ schemaVersion: 2, latest: "1.2.3", checkedAt: NOW });
 	expect(await checkForUpdate(options)).toBeNull();
 	expect(await checkForUpdate({ ...options, force: true })).toEqual({ current: "1.2.3", latest: "1.2.4" });
 });
@@ -167,9 +203,9 @@ test("stale, corrupt, invalid-schema and future cache records require a successf
 	const options = await passive();
 	const records = [
 		"broken", "null", "[]", "{}",
-		JSON.stringify({ schemaVersion: 2, latest: "9.0.0", checkedAt: NOW }),
-		...[NOW - DAY, NOW - DAY - 1, NOW + 1, -1, "today", null, 1.5].map((checkedAt) => JSON.stringify({ schemaVersion: 1, latest: "9.0.0", checkedAt })),
-		...["v9.0.0", "9.0.0-rc.1", 9].map((latest) => JSON.stringify({ schemaVersion: 1, latest, checkedAt: NOW })),
+		JSON.stringify({ schemaVersion: 1, latest: "9.0.0", checkedAt: NOW }),
+		...[NOW - DAY, NOW - DAY - 1, NOW + 1, -1, "today", null, 1.5].map((checkedAt) => JSON.stringify({ schemaVersion: 2, latest: "9.0.0", checkedAt })),
+		...["v9.0.0", "9.0.0-rc.1", 9].map((latest) => JSON.stringify({ schemaVersion: 2, latest, checkedAt: NOW })),
 	];
 	for (const record of records) {
 		await writeFile(options.cachePath!, record);
@@ -191,9 +227,9 @@ test("unreadable/unwritable cache never loses a valid update, and nested cache d
 });
 
 test("cache location honors absolute XDG_CACHE_HOME and otherwise uses ~/.cache", () => {
-	expect(defaultUpdateCachePath({ XDG_CACHE_HOME: "/cache" }, "/home/test")).toBe("/cache/dinobot/update.json");
+	expect(defaultUpdateCachePath({ XDG_CACHE_HOME: resolve("cache") }, resolve("home/test"))).toBe(join(resolve("cache"), "dinobot/update.json"));
 	for (const env of [{}, { XDG_CACHE_HOME: "" }, { XDG_CACHE_HOME: "relative" }])
-		expect(defaultUpdateCachePath(env, "/home/test")).toBe("/home/test/.cache/dinobot/update.json");
+		expect(defaultUpdateCachePath(env, resolve("home/test"))).toBe(join(resolve("home/test"), ".cache/dinobot/update.json"));
 });
 
 test("opt-out skips even forced passive checks but not explicit updates", async () => {
@@ -241,7 +277,8 @@ async function installation(manager: "bun" | "npm", bunLayout: "default" | "inst
 	}
 	const bin = join(bunInstall, "bin");
 	await mkdir(bin, { recursive: true });
-	await symlink(join(roots.bun, "dinobot", "main.js"), join(bin, "dinobot"));
+	// Dependency-injected symlink resolution avoids Windows elevation; real Windows shims have a separate install test.
+	const links = new Map([[join(bin, "dinobot"), join(roots.bun, "dinobot", "main.js")]]);
 	const controls = { installExit: 0, installThrows: false, installNoop: false, bunQueryExit: 0, npmQueryExit: 0, bunBin: bin, npmRoot: roots.npm };
 	const calls: { argv: string[]; options: Parameters<UpdateCommand>[1] }[] = [];
 	const logs: string[] = [];
@@ -257,22 +294,22 @@ async function installation(manager: "bun" | "npm", bunLayout: "default" | "inst
 		if (!controls.installNoop && controls.installExit === 0) {
 			const pkgPath = join(roots[argv[0] as "bun" | "npm"], "dinobot", "package.json");
 			const pkg = JSON.parse(await readFile(pkgPath, "utf8"));
-			await writeFile(pkgPath, JSON.stringify({ ...pkg, version: argv.at(-1)!.slice("dinobot@".length) }));
+			await writeFile(pkgPath, JSON.stringify({ ...pkg, version: basename(argv.at(-1)!).slice("dinobot-".length, -4) }));
 		}
 		return { exitCode: controls.installExit, stdout: "" };
 	};
 	const deps: RunUpdateDependencies = {
-		main: join(roots[manager], "dinobot", "main.js"), home, env, command, realpath,
+		main: join(roots[manager], "dinobot", "main.js"), home, env, command, realpath: (path) => realpath(links.get(path) ?? path),
 		readFile: (path) => readFile(path, "utf8"), currentVersion: "1.2.3", fetch: metadataFetch(),
 		log: (message) => logs.push(message), error: (message) => errors.push(message),
 	};
-	return { deps, controls, calls, logs, errors, roots, bin };
+	return { deps, controls, calls, logs, errors, roots, bin, links };
 }
 
 for (const manager of ["bun", "npm"] as const) test("canonical " + manager + " global install wins even when both managers are installed", async () => {
 	const fixture = await installation(manager);
 	const launcher = join(fixture.deps.home, "launcher");
-	await symlink(fixture.deps.main, launcher);
+	fixture.links.set(launcher, fixture.deps.main);
 	expect(await detectUpdateManager({ ...fixture.deps, main: launcher })).toBe(manager);
 	expect(fixture.calls.every((call) => call.options.stdio === "pipe" && call.options.cwd === fixture.deps.home)).toBe(true);
 });
@@ -288,7 +325,9 @@ test("an XDG_CACHE_HOME Bun root is recognized and updated, following Bun's own 
 	const xdg = await installation("bun", "xdg");
 	expect(await detectUpdateManager(xdg.deps)).toBe("bun");
 	expect(await runUpdateWithDependencies(xdg.deps)).toBe(0);
-	expect(xdg.calls.filter((call) => call.options.stdio === "inherit").map((call) => call.argv)).toEqual([["bun", "add", "-g", "dinobot@1.2.4"]]);
+	const install = xdg.calls.find((call) => call.options.stdio === "inherit")!;
+	expect(install.argv.slice(0, 3)).toEqual(["bun", "add", "-g"]);
+	expect(basename(install.argv[3]!)).toBe("dinobot-1.2.4.tgz");
 	expect(xdg.errors).toEqual([]);
 	// BUN_INSTALL outranks XDG_CACHE_HOME, so the XDG root is not where `bun add -g` writes then.
 	expect(await detectUpdateManager({ ...xdg.deps, env: { ...xdg.deps.env, BUN_INSTALL: join(xdg.deps.home, "other bun") } })).toBeNull();
@@ -339,14 +378,14 @@ test("source, local npm, temporary bunx, unknown, compiled and linked packages a
 	await mkdir(linked);
 	await writeFile(join(linked, "main.js"), "source build");
 	await rm(join(fixture.roots.bun, "dinobot"), { recursive: true });
-	await symlink(linked, join(fixture.roots.bun, "dinobot"));
+	await symlink(linked, join(fixture.roots.bun, "dinobot"), "junction");
 	expect(await detectUpdateManager(fixture.deps)).toBeNull();
 });
 
 test("root paths are canonicalized, but wrong metadata, bins, manager failures and ambiguity refuse ownership", async () => {
 	const fixture = await installation("npm");
 	const rootLink = join(fixture.deps.home, "root-link");
-	await symlink(fixture.roots.npm, rootLink);
+	await symlink(fixture.roots.npm, rootLink, "junction");
 	fixture.controls.npmRoot = rootLink;
 	expect(await detectUpdateManager(fixture.deps)).toBe("npm");
 	fixture.controls.npmQueryExit = 2;
@@ -372,11 +411,15 @@ test("root paths are canonicalized, but wrong metadata, bins, manager failures a
 for (const manager of ["bun", "npm"] as const) test(manager + " update installs only the checked pin with inherited stdio and does not restart services", async () => {
 	const fixture = await installation(manager);
 	let fetches = 0;
-	fixture.deps.fetch = fetcher(async () => { fetches++; return Response.json({ name: "dinobot", version: "1.2.4+build.7" }); });
+	fixture.deps.fetch = fetcher(async (url) => { fetches++; return String(url).endsWith(".tgz") ? new Response(archive) : Response.json(metadata("1.2.4+build.7")); });
 	expect(await runUpdateWithDependencies(fixture.deps)).toBe(0);
-	expect(fetches).toBe(1);
+	expect(fetches).toBe(2);
 	const installs = fixture.calls.filter((call) => call.options.stdio === "inherit");
-	expect(installs).toEqual([{ argv: [manager, manager === "bun" ? "add" : "install", "-g", "dinobot@1.2.4+build.7"], options: { stdio: "inherit", cwd: fixture.deps.home } }]);
+	expect(installs).toHaveLength(1);
+	expect(installs[0]!.argv.slice(0, 3)).toEqual([manager, manager === "bun" ? "add" : "install", "-g"]);
+	expect(basename(installs[0]!.argv[3]!)).toBe("dinobot-1.2.4+build.7.tgz");
+	expect(installs[0]!.options).toEqual({ stdio: "inherit", cwd: fixture.deps.home });
+	await expect(readFile(installs[0]!.argv[3]!)).rejects.toThrow();
 	expect(fixture.calls).toHaveLength(3);
 	expect(fixture.errors).toEqual([]);
 	expect(fixture.logs.join(" ")).toContain("Reopen the TUI");
@@ -407,7 +450,7 @@ test("unknown install gets manual guidance, not a shadowing global install", asy
 	expect(await runUpdateWithDependencies({ ...fixture.deps, main: "/$bunfs/root/main.ts" })).toBe(1);
 	expect(fixture.calls).toHaveLength(0);
 	expect(fixture.errors.join(" ")).toContain("original install/build workflow");
-	expect(fixture.errors.join(" ")).toContain("dinobot@1.2.4");
+	expect(fixture.errors.join(" ")).toContain(metadata().dist.tarball);
 	expect(fixture.errors.join(" ")).toContain("shadows");
 });
 

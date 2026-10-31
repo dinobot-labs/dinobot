@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.8.5](https://github.com/dinobot-labs/dinobot/compare/v0.8.4...v0.8.5) (2026-10-31)
+
+### Distribution
+
+* Publish audited CLI/TUI packages on Cloudflare R2 without an npm publishing account.
+* Install with a Bun tarball URL; `dinobot update` verifies the Cloudflare package checksum before updating the existing global installation.
+* Preserve immutable versioned artifacts and advance the stable channel only after verified storage. Desktop distribution is unchanged.
+
 ## [0.8.4](https://github.com/dinobot-labs/dinobot/compare/v0.8.3...v0.8.4) (2026-10-31)
 
 

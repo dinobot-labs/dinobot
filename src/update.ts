@@ -1,8 +1,10 @@
-import { mkdir, readFile, realpath, rename, rm, writeFile } from "node:fs/promises";
-import { homedir } from "node:os";
+import { mkdir, mkdtemp, readFile, realpath, rename, rm, writeFile } from "node:fs/promises";
+import { homedir, tmpdir } from "node:os";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import packageJson from "../package.json" with { type: "json" };
 import { daemonRestartDependencies, restartDaemonAfterUpdate } from "./cli/update-restart.ts";
+
+import { downloadRelease, RELEASE_METADATA_URL, validateReleaseMetadata, type ReleaseMetadata } from "./release-source.ts";
 
 export const CURRENT_VERSION = packageJson.version;
 export type UpdateInfo = { current: string; latest: string };
@@ -15,7 +17,6 @@ export type CheckForUpdateOptions = {
 	force?: boolean;
 };
 
-const REGISTRY = "https://registry.npmjs.org/dinobot/latest";
 const TIMEOUT_MS = 5_000;
 const CACHE_TTL_MS = 24 * 60 * 60 * 1_000;
 const numeric = "(?:0|[1-9][0-9]*)";
@@ -54,7 +55,7 @@ export function defaultUpdateCachePath(env: NodeJS.ProcessEnv = process.env, hom
 }
 
 /** Throws internally so the explicit command can distinguish a failed check from "current". */
-async function fetchLatest(fetcher: typeof fetch, signal?: AbortSignal): Promise<string> {
+async function fetchLatest(fetcher: typeof fetch, signal?: AbortSignal): Promise<ReleaseMetadata> {
 	const controller = new AbortController();
 	const abort = () => controller.abort();
 	let rejectAbort!: (error: Error) => void;
@@ -68,12 +69,9 @@ async function fetchLatest(fetcher: typeof fetch, signal?: AbortSignal): Promise
 		// Race the entire operation, including body consumption. Even a fetch implementation
 		// that ignores AbortSignal must not keep the TUI waiting indefinitely.
 		return await Promise.race([aborted, (async () => {
-			const response = await fetcher(REGISTRY, { signal: controller.signal, redirect: "error", headers: { accept: "application/json" } });
-			if (!response.ok || response.redirected) throw new Error("Registry request failed");
-			const metadata: unknown = await response.json();
-			if (!metadata || typeof metadata !== "object" || !("name" in metadata) || metadata.name !== "dinobot"
-				|| !("version" in metadata) || !stableVersion(metadata.version)) throw new Error("Invalid registry metadata");
-			return metadata.version;
+			const response = await fetcher(RELEASE_METADATA_URL, { signal: controller.signal, redirect: "error", headers: { accept: "application/json" } });
+			if (!response.ok || response.redirected) throw new Error("Release metadata request failed");
+			return validateReleaseMetadata(await response.json(), stableVersion);
 		})()]);
 	} finally {
 		clearTimeout(timer);
@@ -85,7 +83,7 @@ async function fetchLatest(fetcher: typeof fetch, signal?: AbortSignal): Promise
 async function cachedLatest(path: string, now: number): Promise<string | null> {
 	try {
 		const cache = JSON.parse(await readFile(path, "utf8"));
-		if (cache?.schemaVersion === 1 && stableVersion(cache.latest)
+		if (cache?.schemaVersion === 2 && stableVersion(cache.latest)
 			&& Number.isSafeInteger(cache.checkedAt) && cache.checkedAt >= 0 && cache.checkedAt <= now
 			&& now - cache.checkedAt < CACHE_TTL_MS) return cache.latest;
 	} catch { /* Cache reads are always optional. */ }
@@ -96,7 +94,7 @@ async function cacheLatest(path: string, latest: string, checkedAt: number): Pro
 	const temporary = path + "." + crypto.randomUUID() + ".tmp";
 	try {
 		await mkdir(dirname(path), { recursive: true });
-		await writeFile(temporary, JSON.stringify({ schemaVersion: 1, latest, checkedAt }), { flag: "wx", mode: 0o600 });
+		await writeFile(temporary, JSON.stringify({ schemaVersion: 2, latest, checkedAt }), { flag: "wx", mode: 0o600 });
 		await rename(temporary, path);
 	} catch { /* Read-only homes, concurrent writers and full disks must not affect startup. */ }
 	finally { await rm(temporary, { force: true }).catch(() => {}); }
@@ -114,7 +112,7 @@ export async function checkForUpdate(options: CheckForUpdateOptions = {}): Promi
 		let latest = options.force ? null : await cachedLatest(path, now);
 		if (options.signal?.aborted) return null;
 		if (latest === null) {
-			latest = await fetchLatest(options.fetch ?? globalThis.fetch, options.signal);
+			latest = (await fetchLatest(options.fetch ?? globalThis.fetch, options.signal)).version;
 			if (options.signal?.aborted) return null;
 			await cacheLatest(path, latest, now);
 		}
@@ -174,6 +172,25 @@ async function safeBunConfig(deps: InstallDependencies, globalDir: string): Prom
 	return true;
 }
 
+/** Bun on Windows writes an exe plus a UTF-16 .bunx target descriptor, not a symlink.
+ * Refuse unknown descriptor formats rather than inferring ownership from the filename. */
+async function bunLauncherMatches(bin: string, main: string, deps: InstallDependencies): Promise<boolean> {
+	try { if (await deps.realpath(join(bin, "dinobot")) === main) return true; } catch { /* Windows shim has no extensionless file. */ }
+	if (process.platform !== "win32") return false;
+	try {
+		const shim = await readFile(join(bin, "dinobot.bunx"));
+		const exe = await readFile(join(bin, "dinobot.exe"));
+		if (exe.subarray(0, 2).toString() !== "MZ" || shim.length < 14 || shim.readUInt16LE(shim.length - 2) !== 0xab35) return false;
+		const pathBytes = shim.readUInt32LE(shim.length - 10);
+		const interpreterBytes = shim.readUInt32LE(shim.length - 6);
+		if (pathBytes % 2 || pathBytes < 2 || pathBytes + 4 + interpreterBytes + 10 !== shim.length
+			|| shim.readUInt32LE(pathBytes) !== 34) return false; // trailing quote + NUL
+		const target = shim.subarray(0, pathBytes).toString("utf16le");
+		if (Array.from(target).some((char) => char.charCodeAt(0) < 32 || char === '"')) return false;
+		return await deps.realpath(resolve(bin, "..", target)) === main;
+	} catch { return false; }
+}
+
 /** Conservative ownership proof, not a runtime/PATH heuristic. Linked source packages are refused. */
 export async function detectUpdateManager(overrides: Partial<InstallDependencies> = {}): Promise<"bun" | "npm" | null> {
 	const deps = { ...installDependencies(), ...overrides };
@@ -198,7 +215,7 @@ export async function detectUpdateManager(overrides: Partial<InstallDependencies
 				const install = deps.env.BUN_INSTALL || join(deps.env.XDG_CACHE_HOME || deps.home, ".bun");
 				const globalDir = deps.env.BUN_INSTALL_GLOBAL_DIR || join(install, "install", "global");
 				return isAbsolute(globalDir) && await safeBunConfig(deps, globalDir) && await matchesRoot(join(globalDir, "node_modules"))
-					&& await deps.realpath(join(path, "dinobot")) === main;
+					&& await bunLauncherMatches(path, main, deps);
 			} catch { return false; }
 		};
 		const [bun, npm] = await Promise.all([probe("bun"), probe("npm")]);
@@ -230,7 +247,8 @@ export async function runUpdateWithDependencies(overrides: Partial<RunUpdateDepe
 		deps.log("Checking for dinobot updates (current " + deps.currentVersion + ")...");
 		if (!parseVersion(deps.currentVersion)) throw new Error("Invalid current version");
 		// Never use passive cache or DINOBOT_NO_UPDATE_CHECK for an explicit update.
-		const latest = await fetchLatest(deps.fetch);
+		const release = await fetchLatest(deps.fetch);
+		const latest = release.version;
 		if (!isNewerStableVersion(deps.currentVersion, latest)) {
 			deps.log("dinobot " + deps.currentVersion + " is current (latest stable: " + latest + "); no downgrade performed.");
 			// A daemon left on an older version by an earlier update is restarted too, but only from a verified global install:
@@ -241,12 +259,19 @@ export async function runUpdateWithDependencies(overrides: Partial<RunUpdateDepe
 		const manager = await detectUpdateManager(deps);
 		if (!manager) {
 			deps.error("Cannot safely update: this is not a verified Bun or npm global installation (or ownership is ambiguous). Source, local, temporary bunx/npx and compiled installs must use their original install/build workflow.");
-			deps.error("Bun configs with globalDir/dryRun overrides or unreadable settings require manual updating. For an existing global install, use its owning manager: bun add -g dinobot@" + latest + " OR npm install -g dinobot@" + latest + ". Do not create a second installation that shadows this one.");
+			deps.error("Bun configs with globalDir/dryRun overrides or unreadable settings require manual updating. For an existing global install, use its owning manager: bun add -g " + release.dist.tarball + " OR npm install -g " + release.dist.tarball + ". Do not create a second installation that shadows this one.");
 			return 1;
 		}
-		const argv = manager === "bun" ? ["bun", "add", "-g", "dinobot@" + latest] : ["npm", "install", "-g", "dinobot@" + latest];
-		deps.log("Updating dinobot " + deps.currentVersion + " → " + latest + " with " + manager + "...");
-		const result = await deps.command(argv, { stdio: "inherit", cwd: deps.home });
+		const bytes = await downloadRelease(release, deps.fetch);
+		const staging = await mkdtemp(join(tmpdir(), "dinobot-release-"));
+		let result: Awaited<ReturnType<UpdateCommand>>;
+		try {
+			const tarball = join(staging, "dinobot-" + latest + ".tgz");
+			await writeFile(tarball, bytes, { flag: "wx", mode: 0o600 });
+			const argv = [manager, manager === "bun" ? "add" : "install", "-g", tarball];
+			deps.log("Updating dinobot " + deps.currentVersion + " → " + latest + " with " + manager + "...");
+			result = await deps.command(argv, { stdio: "inherit", cwd: deps.home });
+		} finally { await rm(staging, { recursive: true, force: true }); }
 		if (result.exitCode !== 0) {
 			deps.error("dinobot update failed (" + manager + " exit " + result.exitCode + "). Check permissions and the manager output; no sudo was attempted.");
 			return result.exitCode > 0 ? result.exitCode : 1;
@@ -262,7 +287,7 @@ export async function runUpdateWithDependencies(overrides: Partial<RunUpdateDepe
 		deps.log("Separately restart any running daemon when it is idle. No daemon or service was stopped or restarted.");
 		return 0;
 	} catch {
-		deps.error("dinobot update failed: could not check the registry or run the package manager. Check your network, installation and permissions, then retry.");
+		deps.error("dinobot update failed: could not verify the Cloudflare release or run the package manager. Check your network, installation and permissions, then retry.");
 		return 1;
 	}
 }
