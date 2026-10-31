@@ -96,6 +96,16 @@ test("T16 native API compares independently specified permitted mixed bodies, ne
  expect((await s.verify(laundered,goal.epoch,goal.hash)).status).toBe(409);
  expect((await s.verify(full,goal.epoch,goal.hash)).status).toBe(200);
 });
+test("large inventory limit=1 survives the real codemode worker and session tool envelope", async () => {
+ const s=await setup("codemode-only");
+ await s.bot.harness.commit(async tx=>{for(let i=0;i<80;i++)await tx.appendEntry(s.root.id,{kind:"fixture",data:Object.fromEntries(Array.from({length:60},(_,j)=>["field"+j,"public"+i+":"+j]))});},context);
+ const full=await s.full();expect(Buffer.byteLength(JSON.stringify(full.inventory))).toBeGreaterThan(524288);
+ s.faux.setResponses([fauxAssistantMessage(fauxToolCall("codemode",{code:"const r = await tools.session_export({limit:1}); if (r.isError || r.details.entries.length !== 1 || r.details.inventory.content.length !== 1 || !r.details.nextCursor) throw Error(JSON.stringify(r)); text('bounded-export-proof');"}),{stopReason:"toolUse"}),fauxAssistantMessage("done")]);
+ await s.send("export bounded snapshot");
+ const entries=(await s.full()).entries;
+ const result=entries.flatMap((e:any)=>e.model??[]).findLast((m:any)=>m?.role==="toolResult"&&m.toolName==="codemode");
+ expect(result).toBeDefined();expect(result.isError).toBe(false);expect(JSON.stringify(result.content)).toContain("bounded-export-proof");
+});
 for(const mode of ["direct","codemode-only"] as const)test("native session_export tool is available through "+mode,async()=>{
  const s=await setup(mode);let called=false;
  s.faux.setResponses([()=>{called=true;return fauxAssistantMessage(fauxToolCall(mode==="direct"?"session_export":"codemode",mode==="direct"?{}:{code:"text(await tools.session_export({}));"}),{stopReason:"toolUse"});},fauxAssistantMessage("done")]);
