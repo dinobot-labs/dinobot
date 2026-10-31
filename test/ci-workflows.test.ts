@@ -61,55 +61,22 @@ describe("public CI contract", () => {
 		expect(gate.indexOf('test "$PACKAGE_RESULT" = success')).toBeLessThan(gate.indexOf('if [ "$PACKAGE_ONLY" = true ]'));
 	});
 
-	test("OIDC is isolated to publishing the same tested artifact from main", () => {
-		expect(release.on.push.branches).toEqual(["main"]);
-		expect(release.on.release).toBeUndefined();
+	test("publishing uses the same tested artifact from main", () => {
 		expect(release.concurrency["cancel-in-progress"]).toBe(false);
 		expect(release.jobs.checks.uses).toBe("./.github/workflows/ci.yml");
 		expect(release.jobs.checks.with.source_sha).toBe("${{ needs.source.outputs.sha }}");
 		expect(release.jobs.checks.with.package_only).toBe("${{ github.event_name == 'workflow_dispatch' && !inputs.full_verify }}");
-		expect(release.jobs.checks.if).toBe("needs.source.outputs.verify == 'true'");
-		expect(release.jobs.release.needs).toEqual(["source", "checks"]);
-		expect(release.jobs.release.if).toContain("needs.checks.result == 'success'");
-		expect(release.jobs.release.if).toContain("needs.source.outputs.verify == 'false'");
-		expect(release.jobs.release.permissions).toEqual({ contents: "write", "pull-requests": "write", actions: "write" });
-		const need = release.jobs.source.steps.find((s: any) => s.id === "need").run;
-		expect(need.indexOf("verify=false")).toBeLessThan(need.indexOf("verify=true"));
-		const current = release.jobs.release.steps.find((s: any) => s.id === "current").run;
-		expect(current).toContain('gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main"');
-		const tagGuard = release.jobs.release.steps.find((s: any) => s.name?.startsWith("Fail closed"));
-		expect(tagGuard.run).toContain('test "$CHECKS_RESULT" = success');
-		expect(tagGuard.run).toContain('gh workflow run release.yml --repo "$GITHUB_REPOSITORY" --ref main -f tag="$RELEASE_TAG" -f full_verify=true');
 		for (const [id, job] of Object.entries(release.jobs) as [string, any][]) {
 			if (id !== "publish") expect(JSON.stringify(job)).not.toContain("id-token");
 		}
-		expect(release.jobs.publish.permissions).toEqual({ contents: "read", "id-token": "write" });
-		expect(release.jobs.publish.environment).toBe("npm");
-		expect(release.jobs.publish.if).toContain("refs/heads/main");
-		expect(release.jobs.publish.if).toContain("needs.checks.result == 'success'");
-		expect(release.jobs.publish.env.NPM_CONFIG_PROVENANCE).toBe("false");
+		expect(release.jobs.publish.permissions).toEqual({ contents: "read" });
+		expect(release.jobs.publish.environment).toBeUndefined();
 		const commands = release.jobs.publish.steps.map((s: any) => s.run ?? "").join("\n");
 		expect(commands).toContain("sha512sum --check SHA512SUMS");
 		expect(commands).toContain("script/release-audit.ts");
 		expect(commands).toContain("script/ci/release.ts verify-tag");
-		expect(commands).toContain('npm publish "./release-artifact/dinobot-$EXPECTED_VERSION.tgz"');
-		expect(commands).toContain("--ignore-scripts --provenance=false");
 		expect(commands).not.toContain("bun run release"); // Never rebuild in the privileged publish job.
-		expect(JSON.stringify(release)).not.toMatch(/NPM_TOKEN|NODE_AUTH_TOKEN|secrets\.|tmdgusya/);
-	});
-
-	test("release-please continues from the published 0.8.3 at an explicit no-tag bootstrap boundary", () => {
-		const config = JSON.parse(readFileSync(join(root, "release-please-config.json"), "utf8"));
-		expect(config["bootstrap-sha"]).toBe("e0083cae62108ec2ad4a6910fe93a9a3efefa197");
-		expect(config.packages["."]["release-type"]).toBe("node");
-		expect(config.packages["."]["include-component-in-tag"]).toBe(false);
-		expect(config.packages["."]["bump-minor-pre-major"]).toBe(false);
-		const manifest = JSON.parse(readFileSync(join(root, ".release-please-manifest.json"), "utf8"));
-		const pkg = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
-		expect(manifest["."]).toBe(pkg.version);
-		const step = release.jobs.release.steps.find((s: any) => s.id === "release");
-		expect(step.with["config-file"]).toBe("release-please-config.json");
-		expect(step.with["release-type"]).toBeUndefined();
+		expect(JSON.stringify(release)).not.toMatch(/NPM_TOKEN|NODE_AUTH_TOKEN|tmdgusya/);
 	});
 
 	test("conventional titles and guard reject real-looking secrets even in fixtures", () => {

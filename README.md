@@ -32,9 +32,18 @@ https://github.com/user-attachments/assets/6b7d112e-d469-4512-b97b-96999dcf8936
 
 See [dinobot.example.yaml](dinobot.example.yaml) for configuration examples. Enabling a plugin does not supply its credentials or dependencies.
 
-## Start from source
+## Install and run
 
-You need **Bun 1.4.2 or newer**, Git, and your own model-provider credentials. In a terminal:
+You need **Bun 1.4.2 or newer** and your own model-provider credentials. Install the official CLI/TUI package from Cloudflare:
+
+```bash
+bun add -g https://releases.dinobot.workers.dev/core/dinobot.tgz
+dinobot
+```
+
+Update with `dinobot update` (or `dinobot update --no-restart` to leave the daemon running). Users of older npm releases must run the URL install once to switch update channels. Dinobot publication no longer needs npm credentials; third-party dependencies still download from npm. Desktop installation is separate.
+
+To run from source, you also need Git:
 
 ```bash
 git clone https://github.com/dinobot-labs/dinobot.git

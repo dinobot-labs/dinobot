@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 /**
- * Build the npm package that external users install with `bun add -g <package>`.
+ * Build the package-format tarball that users install from Cloudflare with `bun add -g <url>`.
  *
  *   bun run release                       # -> dist/npm/package/ and dist/npm/<name>-<version>.tgz
  *   bun run release --local               # explicit local-only prerelease artifact; never publishes
@@ -16,10 +16,10 @@
  * After npm pack, audit the actual archive: exactly six regular files, a minimal manifest, no source
  * maps, build paths, original manifest or credential signatures. Publishing is a separate step:
  *
- *   npm publish dist/npm/dinobot-<version>.tgz --access public --ignore-scripts
+ *   bun script/ci/publish-cloudflare.ts dist/npm/dinobot-<version>.tgz <version> <source-sha>
  */
 import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
-import { join, relative, resolve } from "node:path";
+import { join, resolve } from "node:path";
 import { auditReleaseArtifact, createReleaseManifest, ReleaseAuditError } from "./release-audit.ts";
 
 const local = process.argv.slice(2).length === 1 && process.argv[2] === "--local";
@@ -131,12 +131,13 @@ writeFileSync(join(pkgDir, "README.md"), [
 	"Requires [Bun](https://bun.sh) 1.4 or newer.",
 	"",
 	"```sh",
-	`bun add -g ${name}`,
+	`bun add -g https://releases.dinobot.workers.dev/core/releases/${repoPkg.version}/dinobot-${repoPkg.version}.tgz`,
 	"dinobot",
 	"```",
 	"",
 	"Update with `dinobot update` (preserves the current Bun/npm global installation). The TUI shows a notice when a newer release is available.",
-	"Set `DINOBOT_NO_UPDATE_CHECK=1` to disable automatic checks. Updates do not stop a running daemon; restart it when idle, then reopen the TUI.",
+	"Set `DINOBOT_NO_UPDATE_CHECK=1` to disable automatic checks. Updates restart the daemon by default and can interrupt active work; use `dinobot update --no-restart` to leave it running, then reopen the TUI.",
+	"Older npm releases need this URL install once to switch update channels. Third-party dependencies still download from npm; publishing Dinobot does not require an npm account.",
 	"",
 	"The first run creates `~/.config/dinobot/dinobot.yaml` with local defaults; sign in to a model with `/login`.",
 	"Configuration is read from `--config <path>`, `$DINOBOT_CONFIG`, `./dinobot.yaml` or that file.",
@@ -167,4 +168,4 @@ console.log(`  browser-host.js    ${size(hostPath)} (imports ${PATCHRIGHT}@${pat
 console.log(`  notices            ${notices.length} bundled packages`);
 console.log(`  tarball            ${join(outRoot, tarball)} (${size(join(outRoot, tarball))})`);
 if (local) console.log("release: local artifact only; not published");
-else console.log(`publish: npm publish ${JSON.stringify(relative(process.cwd(), join(outRoot, tarball)))} --access public --ignore-scripts`);
+else console.log("release: audited tarball ready for Cloudflare publication; no npm login or publish required");

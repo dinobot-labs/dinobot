@@ -32,9 +32,18 @@ https://github.com/user-attachments/assets/6b7d112e-d469-4512-b97b-96999dcf8936
 
 配置示例见 [dinobot.example.yaml](dinobot.example.yaml)。启用插件并不会自动提供凭据或安装依赖程序。
 
-## 从源码开始
+## 安装与运行
 
-需要 **Bun 1.4.2 或更高版本**、Git，以及你自己的模型提供商凭据。在终端中运行：
+需要 **Bun 1.4.2 或更高版本**和你自己的模型提供商凭据。从 Cloudflare 安装正式 CLI/TUI 软件包：
+
+```bash
+bun add -g https://releases.dinobot.workers.dev/core/dinobot.tgz
+dinobot
+```
+
+之后运行 `dinobot update` 更新；使用 `dinobot update --no-restart` 可保持守护进程运行。旧 npm 发行版用户需要执行一次上述 URL 安装以切换更新来源。发布 Dinobot 不再需要 npm 账号，但第三方依赖仍从 npm 下载。Desktop 单独安装。
+
+若要从源码运行，还需要 Git：
 
 ```bash
 git clone https://github.com/dinobot-labs/dinobot.git

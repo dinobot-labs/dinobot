@@ -11,7 +11,7 @@ Source: `src/main.ts`, `src/cli/init.ts`, `src/cli/telegram-setup.ts`, `src/cli/
 | `dinobot` (no command) | `tui` when stdin and stdout are both a TTY, otherwise `serve` |
 | `dinobot tui` | Full-screen terminal chat. Connects to the daemon on `api.port`; starts `dinobot serve` in the background if nothing answers |
 | `dinobot serve` | Runs the daemon in the foreground: channels, plugins and the loopback client API |
-| `dinobot update [--no-restart] [--config <path>]` | Checks npm for the latest stable release, installs it with the owning global package manager, then restarts the running daemon once on the new version |
+| `dinobot update [--no-restart] [--config <path>]` | Checks Cloudflare for the latest stable release, verifies the downloaded checksum, installs it with the owning global package manager, then restarts the running daemon once on the new version |
 | `dinobot init [--check] [--config <path>] [<dependency>...]` | Installs pinned external programs plugins need (e.g. `cua-driver` for the `computer` plugin) and creates the default manifest if none exists |
 | `dinobot telegram connect ...` | One-time Telegram owner pairing (see `channels.md`) |
 | `dinobot telegram run ...` | Telegram polling sidecar that forwards to a running daemon's `http` channel (see `channels.md`) |
@@ -96,16 +96,16 @@ Source: `src/update.ts`, `README.md`, `openwiki/runbooks/install-local.md`, `ope
 
 | Method | Command |
 |---|---|
-| npm package (Bun 1.4+) | `bun add -g dinobot` |
+| Official package (Bun 1.4+) | `bun add -g https://releases.dinobot.workers.dev/core/dinobot.tgz` |
 | From a checkout (single binary to `~/.local/bin`) | `bun install && bun run install:local` |
 | From a checkout, no install | `bun start` (TUI/daemon), `bun start serve` |
 
-The npm package is a minified bundle without sources or source maps (ADR 0051). Releases are cut by release-please and published to npm via OIDC (ADR 0053).
+The package is a minified bundle without sources or source maps. Releases use GitHub tags and Cloudflare R2, not npm publication. Older npm builds need the URL install once to change update channels. External dependencies still download from npm.
 
 `dinobot update`:
 
-- Always queries `https://registry.npmjs.org/dinobot/latest` (5 s timeout); installs only a newer **stable** version; never downgrades.
-- Updates only a verified global Bun or npm install: runs `bun add -g dinobot@<latest>` or `npm install -g dinobot@<latest>`, then checks the installed version. Source checkouts, local builds, `bunx`/`npx`, compiled binaries, ambiguous ownership, or a bunfig with `install.globalDir`/`dryRun` are refused with manual instructions. No sudo is attempted.
+- Always queries `https://releases.dinobot.workers.dev/core/latest.json` (5 s metadata timeout); installs only a newer **stable** version; never downgrades.
+- Updates only a verified global Bun or npm install: downloads the fixed-origin versioned tarball, verifies SHA-512, installs the verified local archive with the owning manager, then checks the installed version. Source checkouts, local builds, `bunx`/`npx`, compiled binaries, ambiguous ownership, or a bunfig with `install.globalDir`/`dryRun` are refused with manual instructions. No sudo is attempted.
 - Afterwards: reopen the TUI. The running daemon of the manifest (`--config`, `$DINOBOT_CONFIG`, `./dinobot.yaml`, `~/.config/dinobot/dinobot.yaml`; found through `api.port`) is restarted once on the new version, interrupting running work (ADR 0099). The daemon starts its successor with the same argv, cwd and environment and stops only when the successor is ready, so if the new version cannot start the old daemon keeps running. Daemons under systemd/launchd/container init get the manager command instead. `--no-restart` skips it. If the daemon is older than the version that added this, restart it by hand once.
 - When already current, a daemon still running an older version is restarted too (verified global installs only).
 - Exit 0 on success or already current (also when no daemon runs or a service manager owns it), 1 on failure, including a restart that failed or did not come back on the new version.

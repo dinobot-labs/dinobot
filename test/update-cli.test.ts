@@ -8,7 +8,7 @@ async function cli(args: string[], latest = packageJson.version) {
 	const home = await mkdtemp(join(tmpdir(), "dinobot-update-cli-"));
 	try {
 		const preload = join(home, "registry.ts");
-		await writeFile(preload, "globalThis.fetch = async () => Response.json(" + JSON.stringify({ name: "dinobot", version: latest }) + ");");
+		await writeFile(preload, "globalThis.fetch = async () => Response.json(" + JSON.stringify({ name: "dinobot", version: latest, dist: { tarball: "https://releases.dinobot.workers.dev/core/releases/" + latest + "/dinobot-" + latest + ".tgz", integrity: "sha512-" + Buffer.alloc(64).toString("base64") } }) + ");");
 		const child = Bun.spawn([process.execPath, "--no-env-file", "--preload", preload, resolve("src/main.ts"), ...args], {
 			cwd: home, env: { HOME: home, DINOBOT_CONFIG: join(home, "absent.yaml"), PATH: "", DINOBOT_NO_UPDATE_CHECK: "1" }, stdout: "pipe", stderr: "pipe", timeout: 5000,
 		});

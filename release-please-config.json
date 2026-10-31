@@ -4,7 +4,6 @@
   "packages": {
     ".": {
       "release-type": "node",
-      "release-as": "0.8.4",
       "include-v-in-tag": true,
       "include-component-in-tag": false,
       "bump-minor-pre-major": false,
