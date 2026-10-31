@@ -28,12 +28,28 @@ on:
       - '.github/ISSUE_TEMPLATE/*.md'
       - '.github/*[Tt][Ee][Mm][Pp][Ll][Aa][Tt][Ee].md'
     branches: [main]
+  workflow_dispatch:
+    inputs:
+      source_sha:
+        description: Exact source to compare (empty uses the selected ref)
+        required: false
+        type: string
+      functional_shards:
+        description: Functional runner count for same-source comparisons
+        type: choice
+        options: ["1", "2"]
+        default: "2"
   # The release workflow runs the same checks on the exact source it tags and publishes.
   workflow_call:
     inputs:
       source_sha:
         required: true
         type: string
+      functional_shards:
+        description: Functional runner count (1 for baseline comparison, otherwise 2)
+        required: false
+        type: string
+        default: "2"
       package_only:
         description: Build and audit the npm tarball only (manual retry of an already verified tag)
         required: false
@@ -54,7 +70,11 @@ concurrency:
 
 jobs:
   test:
-    name: Tests and types
+    name: Tests and types (${{ matrix.shard }})
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: ${{ fromJSON(inputs.functional_shards == '1' && '["1/1"]' || '["1/2","2/2"]') }}
     if: ${{ !inputs.package_only }}
     # Ubuntu 24.04 denied bwrap loopback RTM_NEWADDR in run 39245401168.
     # Use hosted 22.04 for this job; retain the real fail-closed namespace probe.
@@ -83,12 +103,14 @@ jobs:
           echo "DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/$uid/bus" >> "$GITHUB_ENV"
       - run: bun install --frozen-lockfile
       - name: Conventional PR title
-        if: github.event_name == 'pull_request'
+        if: github.event_name == 'pull_request' && startsWith(matrix.shard, '1/')
         env:
           PR_TITLE: ${{ github.event.pull_request.title }}
         run: bun script/ci/pr-title.ts
       - run: bun run typecheck
+        if: startsWith(matrix.shard, '1/')
       - run: bun script/public-artifact-guard.ts
+        if: startsWith(matrix.shard, '1/')
       - name: Record runtime library layout
         run: ls -ld /bin /lib /lib64 /usr/lib64 && ls -l /usr/lib64/ld-linux*
       - name: Probe the real namespace boundary
@@ -102,7 +124,15 @@ jobs:
           sandbox=$(mktemp -d)
           trap 'rm -rf "$sandbox"' EXIT
           mkdir -p "$sandbox/config" "$sandbox/data" "$sandbox/cache"
-          env HOME="$sandbox" XDG_CONFIG_HOME="$sandbox/config" XDG_DATA_HOME="$sandbox/data" XDG_CACHE_HOME="$sandbox/cache" DINOBOT_NO_UPDATE_CHECK=1 timeout 1200 bun test --path-ignore-patterns '**/tui-perf.test.ts'
+          env HOME="$sandbox" XDG_CONFIG_HOME="$sandbox/config" XDG_DATA_HOME="$sandbox/data" XDG_CACHE_HOME="$sandbox/cache" DINOBOT_NO_UPDATE_CHECK=1 timeout 1200 bun script/ci/functional-shard.ts "${{ matrix.shard }}"
+      - name: Upload functional selection and actual JUnit timings
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: functional-${{ strategy.job-index }}-${{ inputs.source_sha || github.sha }}
+          path: reports/functional-*/*
+          if-no-files-found: warn
+          retention-days: 14
 
   performance:
     name: Performance budgets
