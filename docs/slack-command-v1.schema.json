@@ -1,0 +1,302 @@
+{
+  "version": 1,
+  "statusResponse": {
+    "type": "object",
+    "required": [
+      "kind",
+      "version",
+      "configured",
+      "runtime",
+      "monitor",
+      "disconnect"
+    ],
+    "properties": {
+      "kind": {
+        "type": "string",
+        "const": "slack.status"
+      },
+      "version": {
+        "type": "number",
+        "const": 1
+      },
+      "configured": {
+        "type": "object",
+        "required": [
+          "source",
+          "channel",
+          "personal"
+        ],
+        "properties": {
+          "source": {
+            "anyOf": [
+              {
+                "type": "string",
+                "const": "manifest-on-disk"
+              },
+              {
+                "type": "string",
+                "const": "unavailable"
+              }
+            ]
+          },
+          "channel": {
+            "type": "boolean"
+          },
+          "personal": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
+      "runtime": {
+        "type": "object",
+        "required": [
+          "loaded",
+          "started",
+          "connection",
+          "teamId",
+          "ownerUserId",
+          "readIdentity"
+        ],
+        "properties": {
+          "loaded": {
+            "type": "boolean"
+          },
+          "started": {
+            "type": "boolean"
+          },
+          "connection": {
+            "type": "string",
+            "const": "unknown"
+          },
+          "teamId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "ownerUserId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "readIdentity": {
+            "anyOf": [
+              {
+                "type": "string",
+                "const": "bot"
+              },
+              {
+                "type": "string",
+                "const": "user"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false
+      },
+      "monitor": {
+        "anyOf": [
+          {
+            "type": "null"
+          },
+          {
+            "type": "object",
+            "required": [
+              "started",
+              "enabled",
+              "intervalSeconds",
+              "watch",
+              "lastPollAt",
+              "lastError",
+              "threadError",
+              "trackedThreads",
+              "delivery"
+            ],
+            "properties": {
+              "started": {
+                "type": "boolean"
+              },
+              "enabled": {
+                "type": "boolean"
+              },
+              "intervalSeconds": {
+                "type": "integer",
+                "minimum": 60,
+                "maximum": 3600
+              },
+              "watch": {
+                "anyOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "type": "object",
+                    "required": [
+                      "conversationId",
+                      "channels",
+                      "timeZone",
+                      "summaries",
+                      "quietStart",
+                      "quietEnd"
+                    ],
+                    "properties": {
+                      "conversationId": {
+                        "type": "string"
+                      },
+                      "channels": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      },
+                      "timeZone": {
+                        "type": "string"
+                      },
+                      "summaries": {
+                        "type": "boolean"
+                      },
+                      "quietStart": {
+                        "type": "integer"
+                      },
+                      "quietEnd": {
+                        "type": "integer"
+                      }
+                    },
+                    "additionalProperties": false
+                  }
+                ]
+              },
+              "lastPollAt": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "lastError": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "threadError": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "trackedThreads": {
+                "type": "integer"
+              },
+              "delivery": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          }
+        ]
+      },
+      "disconnect": {
+        "type": "object",
+        "required": [
+          "configuration",
+          "connection",
+          "restartRequired"
+        ],
+        "properties": {
+          "configuration": {
+            "anyOf": [
+              {
+                "type": "string",
+                "const": "not-staged"
+              },
+              {
+                "type": "string",
+                "const": "staged"
+              }
+            ]
+          },
+          "connection": {
+            "type": "string",
+            "const": "unchanged"
+          },
+          "restartRequired": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "additionalProperties": false
+  },
+  "monitorInput": {
+    "type": "object",
+    "required": [
+      "enabled",
+      "channels",
+      "timeZone"
+    ],
+    "properties": {
+      "enabled": {
+        "type": "boolean"
+      },
+      "channels": {
+        "type": "array",
+        "items": {
+          "type": "string",
+          "pattern": "^[CDG][A-Z0-9]{2,}$"
+        },
+        "maxItems": 5,
+        "uniqueItems": true
+      },
+      "intervalSeconds": {
+        "type": "integer",
+        "minimum": 60,
+        "maximum": 3600
+      },
+      "summaries": {
+        "type": "boolean"
+      },
+      "timeZone": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 64
+      },
+      "quietStart": {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 23
+      },
+      "quietEnd": {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 23
+      }
+    },
+    "additionalProperties": false
+  }
+}

@@ -115,7 +115,7 @@ function message(text: string): InboundMessage {
 
 test("lists commands per surface, sorted, without disabled ones", async () => {
 	const { commands } = await setup(["skills"]);
-	expect(commands.list("tui").map((info) => info.name)).toEqual(["accounts", "fast", "help", "login", "logout", "model", "plugins", "reasoning", "search", "sessions"]);
+	expect(commands.list("tui").map((info) => info.name)).toEqual(["accounts", "fast", "help", "login", "logout", "model", "plugins", "reasoning", "search", "sessions", "slack"]);
 	expect(commands.list("channel").map((info) => info.name)).toEqual(["fast", "help", "model", "plugins", "reasoning", "search", "sessions"]);
 	expect(commands.find("login", "channel")).toBeUndefined();
 	expect(commands.find("skills", "tui")).toBeUndefined();

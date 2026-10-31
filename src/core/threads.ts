@@ -269,6 +269,20 @@ export async function conversationChannel(
 	return undefined;
 }
 
+/** Fail closed for shared channels, malformed/archived bindings, and unbound subagents.
+ * Slack admission constructs this key only after transport, app, team and sender validation. */
+export async function conversationSlackPrincipal(reader: Pick<DocumentReader, "snapshot">, conversationId: ConversationId, context: Context): Promise<{appId:string;teamId:string;channelId:string;userId:string} | undefined> {
+ const root = await rootConversation(reader, conversationId, context);
+ if (root === undefined) return undefined;
+ const thread = await threadOfConversation(reader, root, context);
+ if (thread?.channel !== "slack") return undefined;
+ let key: unknown; try { key = JSON.parse(thread.threadKey); } catch { return undefined; }
+ if (!Array.isArray(key) || key.length !== 5 || !key.every(v => typeof v === "string")) return undefined;
+ const [appId, teamId, channelId, timestamp, userId] = key as [string,string,string,string,string];
+ if (!/^A[A-Z0-9]+$/.test(appId) || !/^T[A-Z0-9]+$/.test(teamId) || !/^D[A-Z0-9]+$/.test(channelId) || !/^[UW][A-Z0-9]+$/.test(userId) || !/^\d+\.\d+$/.test(timestamp)) return undefined;
+ return {appId,teamId,channelId,userId};
+}
+
 /**
  * Unlink `channel:` threads whose conversation never received an entry and has no run or queued input.
  * Opening a TUI binds a thread before the first message, so abandoned openings leave such empty sessions.

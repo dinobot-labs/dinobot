@@ -93,6 +93,8 @@ export type PluginToolCall = {
 	 * links to their root. Undefined when the host cannot attribute the call to a channel thread.
 	 */
 	readonly channel?: () => Promise<string | undefined>;
+	/** Host thread binding only, never parsed from message/model text. Private Slack DMs are user-scoped by authenticated admission. */
+	readonly slackPrincipal?: () => Promise<{ appId: string; teamId: string; userId: string; channelId: string } | undefined>;
 	/** The calling conversation's working directory, when the host runs the call in one. */
 	readonly cwd?: string;
 	/**
@@ -186,6 +188,8 @@ export type PluginTool = {
 
 /** What a plugin hands back once loaded; `close` releases anything `load` opened (connections, child processes). */
 export type PluginInstance = {
+	/** Host-only local command service, never exposed as a model tool. */
+	readonly slackPersonal?: import("./slack_personal/control.ts").SlackPersonalControl;
 	readonly tools: readonly PluginTool[];
 	readonly prompt?: string;
 	/** Named entries the plugin offers besides tools (the skills plugin's skills), for listings like `/skills`. */
@@ -233,6 +237,7 @@ export type Plugin<Config extends TSchema = TSchema> = {
 };
 
 export type LoadedPlugin = {
+	readonly slackPersonal?: import("./slack_personal/control.ts").SlackPersonalControl;
 	readonly id: string;
 	readonly prompt?: string;
 	/** Tools with their exposed, plugin-prefixed names. */
@@ -283,6 +288,7 @@ export async function loadPlugin(plugin: Plugin, rawConfig: unknown, host: Plugi
 	return {
 		id: plugin.id,
 		tools,
+		...(instance.slackPersonal !== undefined ? { slackPersonal: instance.slackPersonal } : {}),
 		...(instance.prompt !== undefined ? { prompt: instance.prompt } : {}),
 		...(instance.catalog !== undefined ? { catalog: instance.catalog } : {}),
 		...(instance.skillPackages !== undefined ? { skillPackages: instance.skillPackages } : {}),

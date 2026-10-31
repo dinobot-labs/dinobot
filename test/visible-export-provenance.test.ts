@@ -109,9 +109,11 @@ test("canonical evidence and absolute memberships survive frozen cursor paginati
  expect(first.complete).toBe(false);expect(first.nextCursor).not.toBeNull();
  await f.h.commit(async tx=>{await tx.appendEntry(f.views[0]!,{kind:"pi.user",model:[{role:"user",content:"LATE",timestamp:2}]});},context);
  const tail=await exportVisible(f.h,f.root.id,context,first.nextCursor!);
- expect(tail.snapshotId).toBe(first.snapshotId);expect(tail.inventory).toEqual(first.inventory);expect(tail.witness).toEqual(first.witness);
+ expect(tail.snapshotId).toBe(first.snapshotId);for(const key of ["conversationIds","entryIds","content","allowedSourceContent","omissions","allowedLeafDiffs"] as const)expect([...first.inventory[key],...tail.inventory[key]]).toEqual(retained.inventory[key]);expect(tail.witness).toEqual(first.witness);
  expect([...first.entries,...tail.entries]).toEqual(retained.entries);
- expect(tail.inventory.provenance!.canonicalEntries[0]!.memberships).toHaveLength(2);
+ expect([...first.inventory.provenance!.canonicalEntries,...tail.inventory.provenance!.canonicalEntries]).toEqual(retained.inventory.provenance!.canonicalEntries);
+ expect([...first.inventory.provenance!.conversations,...tail.inventory.provenance!.conversations]).toEqual(retained.inventory.provenance!.conversations);
+ expect(first.inventory.provenance!.canonicalEntries[0]!.memberships).toHaveLength(2);
  expect(tail.complete).toBe(false);expect(tail.nextCursor).toBeNull();expect(validateVisibleExport(tail,retained)).toBe(false);
  expect(JSON.stringify(tail)).not.toContain("LATE");
  const fresh=await exportVisible(f.h,f.root.id,context);expect(fresh.inventory.provenance!.evidence.canonicalEntryCount).toBe(2);

@@ -20,6 +20,7 @@ import type { ReportService } from "../report/service.ts";
 import { searchCommand, sessionsCommand } from "./sessions.ts";
 import { type SetupDeps, setupCommand } from "./setup.ts";
 import { skillsCommand } from "./skills.ts";
+import { slackCommand } from "./slack.ts";
 import type { CommandEvent, CommandInfo, CommandIO, CommandPromptSpec, ManifestApplyRequest, SlashCommand, Surface } from "./types.ts";
 
 export { currentModel } from "./builtin.ts";
@@ -83,6 +84,7 @@ export function createCommands(deps: CommandDeps): Commands {
 		fastCommand(deps.bot, deps.models),
 		skillsCommand(deps.bot),
 		pluginsCommand(deps.plugins),
+		slackCommand(deps.bot, deps.plugins, deps.setup),
 		searchCommand(deps.bot),
 		sessionsCommand(deps.bot),
 		...(deps.report ? [reportCommand(deps.report)] : []),

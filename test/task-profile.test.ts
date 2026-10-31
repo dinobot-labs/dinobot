@@ -38,6 +38,19 @@ async function systemSections(promptProfile: PromptProfile | undefined, toolMode
 	return sections;
 }
 
+test("full prompt preserves required asks and owner-specific worker controls", async () => {
+	const full = await systemSections(undefined);
+	expect(full.goal_guidance).not.toContain("and only for a genuine ambiguity");
+	expect(full.goal_guidance).toContain("authority");
+	expect(full.goal_guidance).toContain("acceptance");
+	expect(full.goal_guidance).toContain("external");
+	expect(full.preamble).toContain("task-created");
+	expect(full.preamble).toContain("DAG/research-owned");
+	expect(full.scheduling).toContain("top-level");
+	expect(full.scheduling).toContain("receipt");
+	expect(full.scheduling).toContain("self-recurring");
+});
+
 test("the default full profile keeps every messaging and workflow section and adds no task checklist", async () => {
 	const full = await systemSections(undefined);
 	expect(full.preamble).toContain("teammate inside the customer's messaging channels");

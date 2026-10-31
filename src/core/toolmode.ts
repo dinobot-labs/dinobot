@@ -16,7 +16,7 @@ import { RESEARCH_TOOL_NAMES } from "../extensions/research.ts";
 import { toolSearchExtension } from "../extensions/tool-search.ts";
 import type { LoadedPlugin, PluginTool } from "../plugins/types.ts";
 import { pluginResultContent } from "./plugin-content.ts";
-import { conversationChannel } from "./threads.ts";
+import { conversationChannel, conversationSlackPrincipal } from "./threads.ts";
 import { subagentStates } from "../extensions/plugin-hooks.ts";
 import { executeManagedEffect } from "./managed-effects.ts";
 import { compactSchema } from "./schema-compact.ts";
@@ -127,6 +127,7 @@ function directTool(tool: PluginTool, logins: ReadonlySet<string>, providerLogin
 				subagents: () => subagentStates(api, api.conversationId, context),
 				// Resolved on demand and at most once per call; most tools never ask.
 				channel: () => (channel ??= conversationChannel(api, api.conversationId, context)),
+				slackPrincipal: () => conversationSlackPrincipal(api, api.conversationId, context),
 				...(api.env?.cwd !== undefined ? { cwd: api.env.cwd } : {}),
 				...(providerLogin && logins.size > 0
 					? {
