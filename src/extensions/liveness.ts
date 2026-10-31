@@ -4,12 +4,14 @@ import { AsksDoc, LinkDoc } from "../core/ask.ts";
 import { RunDoc } from "../core/dag.ts";
 import { type Goal, GoalDoc, type GoalCriterion } from "../core/goal.ts";
 import { AgentsDoc, ProgressDoc, scanWake, isHostWakeRequest, wakeReader } from "./subagents.ts";
+import type { TodoItem } from "../core/ui-contract.ts";
+import { TodoDoc } from "./todo.ts";
 
 /**
  * Liveness at the end of a turn (ADR 0096). A turn may end while work is unfinished; that is safe only if something will
  * re-enter the conversation by itself. For a top-level conversation that is a running owned subagent or DAG run (the idle
  * wake re-enters when it settles), an unannounced wake event, or an open question to the human. With none of these and
- * an active goal with open criteria, nothing would resume the work until the user asks "did you finish?", so the host
+ * an active goal with non-met criteria or unfinished TODOs, nothing would resume the work until the user asks "did you finish?", so the host
  * continues the run instead of letting it end. Subagents are not continued here: their runner holds their answer until
  * their own DAG runs settle (subagents.ts, ADR 0096), and their parent is woken when they finish.
  *
@@ -40,13 +42,20 @@ export async function pendingWork(reader: Pick<HookApi, "snapshot">, id: HookApi
 	return { subagents, runs, humanAsks, events };
 }
 
-export function goalContinuation(goal: Goal, open: readonly GoalCriterion[], count: number): string {
+export function goalContinuation(goal: Goal | undefined, open: readonly GoalCriterion[], count: number, todos: readonly TodoItem[] = []): string {
 	return [
 		GOAL_CONTINUATION_PREFIX,
-		`Your goal "${goal.objective}" is still active and these criteria are open:`,
-		...open.map((criterion) => `- ${criterion.id}: ${criterion.statement}`),
+		...(goal?.status === "active" ? [
+			`Your goal "${goal.objective}" is still active and these criteria are not met:`,
+			...open.map((criterion) => `- [${criterion.status}] ${criterion.id}: ${criterion.statement}${criterion.evidence ? ` | evidence: ${criterion.evidence}` : ""}`),
+		] : []),
+		...(todos.length ? [
+			"These TODOs are still unfinished; reconcile them with the actual work using todo_write:",
+			...todos.map((todo) => `- [${todo.status}] ${todo.id}: ${todo.content}`),
+			"Complete only work actually finished and verified as required; do not infer success from a report, a finished worker or this reminder. Keep unfinished work pending/in_progress; cancel only work genuinely cancelled or superseded. A terminal goal does not complete TODOs, and stale TODOs do not authorize restarting abandoned work.",
+		] : []),
 		`You ended your turn, but no subagent, DAG run or question to the human is pending, so nothing would resume this work by itself (host continuation ${count}/${GOAL_CONTINUATION_LIMIT}).`,
-		"Continue the work now. If it is genuinely blocked, mark each blocked criterion unmet with the concrete blocker as evidence (goal_update) and tell the user exactly what is needed. If it is done, mark the criteria met with evidence and set the goal achieved. If only the human can decide, use ask. If the user changed course, set the goal abandoned.",
+		"Continue actionable work now. An unmet criterion is not completion: inspect its evidence and resolve it when possible. If genuinely blocked, record the concrete blocker as evidence and report what is needed without claiming completion or repeating ineffective tools. If only the human can decide or supply a prerequisite, use ask. If done, mark criteria met with evidence and set the goal achieved. Abandon a goal only if the user changed course, never to silence this reminder.",
 	].join("\n");
 }
 
@@ -67,9 +76,9 @@ export function livenessExtension(getHarness: () => Harness) {
 				const id = api.conversationId;
 				if ((await api.snapshot(LinkDoc, id, context))?.parent !== undefined) return undefined;
 				const goal = (await api.snapshot(GoalDoc, id, context))?.goal;
-				if (!goal || goal.status !== "active") return undefined;
-				const open = goal.criteria.filter((criterion) => criterion.status === "open");
-				if (!open.length) return undefined;
+				const open = goal?.status === "active" ? goal.criteria.filter((criterion) => criterion.status !== "met") : [];
+				const todos = ((await api.snapshot(TodoDoc, id, context))?.todos ?? []).filter((todo) => todo.status === "pending" || todo.status === "in_progress");
+				if (!open.length && !todos.length) return undefined;
 				// Something else re-enters this conversation: the idle wake, or the human's answer.
 				const pending = await pendingWork(api, id, context);
 				if (pending.subagents.length || pending.runs.length || pending.humanAsks.length || pending.events) return undefined;
@@ -87,7 +96,7 @@ export function livenessExtension(getHarness: () => Harness) {
 					doc.progressed = false;
 					return doc.count;
 				}, context);
-				return count ? { continue: goalContinuation(goal, open, count) } : undefined;
+				return count ? { continue: goalContinuation(goal, open, count, todos) } : undefined;
 			},
 		})],
 	});

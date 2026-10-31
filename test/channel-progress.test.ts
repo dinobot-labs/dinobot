@@ -560,6 +560,8 @@ describe("core and sidecar transport", () => {
 		faux.setResponses([
 			fauxAssistantMessage(fauxToolCall("todo_write", { todos: [{ id: "1", content: "check", status: "in_progress" }] }), { stopReason: "toolUse" }),
 			fauxAssistantMessage("done"),
+			// No tool progress on reconciliation: the hook yields with the TODO still unfinished.
+			fauxAssistantMessage("done"),
 		]);
 		bot = await openBot(
 			{ storage: storage = await openNodeSqliteStorage(":memory:"), models, defaultModel: { provider: "faux", modelId: "faux-1" }, toolMode: "direct", plugins: [] },

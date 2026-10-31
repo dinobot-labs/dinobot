@@ -54,6 +54,7 @@ test("empty plugin configuration still offers and executes native tools through 
 			);
 		},
 		fauxAssistantMessage("done"),
+		fauxAssistantMessage("remaining TODO is unfinished"),
 	]);
 	await send();
 	expect(prompt).toContain("Batch independent reads");
@@ -190,13 +191,14 @@ test("live and replayed TUI todo state survives a later script failure", async (
 
 test("status receipts remain queryable after a cell, and another conversation cannot read them", async () => {
 	const { bot, faux, conversation, send, results } = await setup();
-	faux.setResponses([cell('await tools.todo_write({todos:[{id:"x",content:"done"}]});'), fauxAssistantMessage("done")]);
+	faux.setResponses([cell('await tools.todo_write({todos:[{id:"x",content:"done"}]});'), fauxAssistantMessage("done"), fauxAssistantMessage("remaining TODO is unfinished")]);
 	await send();
 	const id = ((await results())[0]!.details as { codemodeTaskId: number }).codemodeTaskId;
 	expect(id).toBeGreaterThan(0);
 	faux.setResponses([
 		fauxAssistantMessage(fauxToolCall("codemode_status", { task_id: id }), { stopReason: "toolUse" }),
 		fauxAssistantMessage("checked"),
+		fauxAssistantMessage("remaining TODO is unfinished"),
 	]);
 	await send();
 	expect((await results()).at(-1)?.content).toEqual(

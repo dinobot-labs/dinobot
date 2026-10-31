@@ -27,6 +27,8 @@ async function setup() {
 		faux.setResponses([
 			fauxAssistantMessage(fauxToolCall("todo_write", args), { stopReason: "toolUse" }),
 			fauxAssistantMessage("done"),
+			// The yield hook asks to reconcile unfinished TODOs; this tool fixture makes no further changes.
+			fauxAssistantMessage("progress recorded; remaining work is unfinished"),
 		]);
 		const submission = await target.submit({ type: "input", content: "Update progress" }, context);
 		expect((await submission.wait(context)).status).toBe("done");

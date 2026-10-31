@@ -6,6 +6,7 @@ import { fauxAssistantMessage, fauxProvider, fauxToolCall, type FauxResponseFact
 import { MemoryStorage } from "@earendil-works/pi-durable";
 import { type Bot, openBot } from "../src/core/bot.ts";
 import { GoalDoc } from "../src/core/goal.ts";
+import { TodoDoc } from "../src/extensions/todo.ts";
 import { GOAL_CONTINUATION_LIMIT, GOAL_CONTINUATION_PREFIX } from "../src/extensions/liveness.ts";
 import { WAKE_PREFIX } from "../src/extensions/subagents.ts";
 
@@ -56,7 +57,7 @@ function premature(mode: Mode) {
 				case "finish": return results ? fauxAssistantMessage("shipped") : call("goal_update", { expected_revision: 1, criteria: [{ id: "shipped", status: "met", evidence: "fixture shipped" }], status: "achieved" });
 				case "spin": return results ? fauxAssistantMessage("still later") : call("goal_read", {});
 				case "talk": return fauxAssistantMessage("still later");
-				case "block": return results ? fauxAssistantMessage("blocked: the fixture server is down; please start it") : call("goal_update", { expected_revision: 1, criteria: [{ id: "shipped", status: "unmet", evidence: "fixture server down" }] });
+				case "block": return results || user.includes("[unmet]") ? fauxAssistantMessage("blocked: the fixture server is down; please start it") : call("goal_update", { expected_revision: 1, criteria: [{ id: "shipped", status: "unmet", evidence: "fixture server down" }] });
 			}
 		}
 		return undefined;
@@ -85,10 +86,11 @@ test("a continued turn without any tool call (no progress) is not continued agai
 	expect(continuations).toHaveLength(1);
 }, 20_000);
 
-test("a blocker recorded as an unmet criterion ends the continuations", async () => {
+test("an unmet criterion gets a bounded recheck, then a blocker report without tools stops", async () => {
 	const { say, continuations } = await setup(premature("block"));
 	expect((await say("do it")).status).toBe("done");
-	expect(continuations).toHaveLength(1);
+	expect(continuations).toHaveLength(2);
+	expect(continuations[1]).toContain("[unmet]");
 }, 20_000);
 
 test("a new input gets its own continuation budget", async () => {
@@ -222,3 +224,89 @@ test("a subagent that answers while its own DAG runs gets the run's outcome and 
 	expect(childWakes[0]).toContain("You are a subagent");
 	expect(childWakes[0]).toContain("stopped: blocked");
 }, 30_000);
+
+for (const goalStatus of ["absent", "active", "achieved", "abandoned"] as const) {
+	for (const todoStatus of ["pending", "in_progress"] as const) {
+		test(`${goalStatus} goal: ${todoStatus} TODO gets reconciled without automatic completion`, async () => {
+			const { bot, parent, say, continuations } = await setup((user, results) => {
+				if (user.startsWith(GOAL_CONTINUATION_PREFIX)) return fauxAssistantMessage("Checks are still unverified");
+				if (results === 0) return call("todo_write", { todos: [{ id: "verify", content: "Verify fixture", status: todoStatus }] });
+				if (goalStatus !== "absent" && results === 1) return call("goal_set", goal);
+				if (goalStatus !== "absent" && goalStatus !== "active" && results === 2) return call("goal_update", { expected_revision: 1, criteria: goalStatus === "achieved" ? [{ id: "shipped", status: "met", evidence: "fixture shipped" }] : [], status: goalStatus });
+				return fauxAssistantMessage("report only");
+			});
+			expect((await say("do it")).status).toBe("done");
+			expect(continuations).toHaveLength(1);
+			expect(continuations[0]).toContain(`[${todoStatus}] verify: Verify fixture`);
+			expect((await bot.harness.snapshot(TodoDoc, parent.id, context))?.todos[0]?.status).toBe(todoStatus);
+		});
+	}
+}
+
+test("TODO reconciliation can update the list and end without creating a goal", async () => {
+	const { bot, parent, say, continuations } = await setup((user, results) => {
+		if (user.startsWith(GOAL_CONTINUATION_PREFIX)) return results ? fauxAssistantMessage("verified") : call("todo_write", { todos: [{ id: "verify", status: "completed" }] });
+		return results ? fauxAssistantMessage("verified, forgot the list") : call("todo_write", { todos: [{ id: "verify", content: "Verify fixture", status: "in_progress" }] });
+	});
+	expect((await say("do it")).status).toBe("done");
+	expect(continuations).toHaveLength(1);
+	expect((await bot.harness.snapshot(TodoDoc, parent.id, context))?.todos[0]?.status).toBe("completed");
+	expect((await bot.harness.snapshot(GoalDoc, parent.id, context))?.goal).toBeUndefined();
+});
+
+test.each(["completed", "cancelled"])("terminal %s TODOs do not continue a turn", async (status) => {
+	const { say, continuations } = await setup((_user, results) => results ? fauxAssistantMessage("done") : call("todo_write", { todos: [{ id: "verify", content: "Verify fixture", status }] }));
+	expect((await say("do it")).status).toBe("done");
+	expect(continuations).toEqual([]);
+});
+
+test("TODO-only waiting on a human does not continue", async () => {
+	const { say, continuations } = await setup((_user, results) => results === 0
+		? call("todo_write", { todos: [{ id: "verify", content: "Verify fixture" }] })
+		: results === 1 ? call("ask", { to: "human", kind: "decision", question: "Which fixture?", options: ["a", "b"], default: "a" }) : fauxAssistantMessage("waiting for your answer"));
+	expect((await say("do it")).status).toBe("done");
+	expect(continuations).toEqual([]);
+});
+
+test("TODO reconciliation waits for a running child and then follows its wake", async () => {
+	const child = Promise.withResolvers<void>();
+	const reconciled = Promise.withResolvers<void>();
+	const { bot, parent, say, continuations } = await setup(async (user, results) => {
+		if (user === "slow child") { await child.promise; return fauxAssistantMessage("child done"); }
+		if (user === "do it") return results === 0 ? call("todo_write", { todos: [{ id: "verify", content: "Verify child result", status: "in_progress" }] }) : results === 1 ? call("task", { description: "slow", prompt: "slow child", run_in_background: true }) : fauxAssistantMessage("waiting for child");
+		if (user.startsWith(WAKE_PREFIX)) return fauxAssistantMessage("child finished; forgot TODO");
+		if (user.startsWith(GOAL_CONTINUATION_PREFIX)) {
+			if (!results) return call("todo_write", { todos: [{ id: "verify", status: "completed" }] });
+			reconciled.resolve();
+			return fauxAssistantMessage("verified child result");
+		}
+		return undefined;
+	});
+	try {
+		expect((await say("do it")).status).toBe("done");
+		expect(continuations).toEqual([]);
+	} finally { child.resolve(); }
+	await reconciled.promise;
+	expect(continuations).toHaveLength(1);
+	expect((await bot.harness.snapshot(TodoDoc, parent.id, context))?.todos[0]?.status).toBe("completed");
+}, 20_000);
+
+test("an initially unmet goal is not mistaken for completion", async () => {
+	const { bot, parent, say, continuations } = await setup((user, results) => {
+		if (user.startsWith(GOAL_CONTINUATION_PREFIX)) return results ? fauxAssistantMessage("fixed and verified") : call("goal_update", { expected_revision: 2, criteria: [{ id: "shipped", status: "met", evidence: "repaired and shipped" }], status: "achieved" });
+		return results === 0 ? call("goal_set", goal) : results === 1 ? call("goal_update", { expected_revision: 1, criteria: [{ id: "shipped", status: "unmet", evidence: "test failed; repair still possible" }] }) : fauxAssistantMessage("test failed");
+	});
+	expect((await say("do it")).status).toBe("done");
+	expect(continuations).toHaveLength(1);
+	expect(continuations[0]).toContain("test failed; repair still possible");
+	expect((await bot.harness.snapshot(GoalDoc, parent.id, context))?.goal?.status).toBe("achieved");
+});
+
+test("TODO-only tool use cannot evade the continuation budget", async () => {
+	const { say, continuations } = await setup((user, results) => {
+		if (user.startsWith(GOAL_CONTINUATION_PREFIX)) return results ? fauxAssistantMessage("later") : call("goal_read", {});
+		return results ? fauxAssistantMessage("later") : call("todo_write", { todos: [{ id: "verify", content: "Verify fixture" }] });
+	});
+	expect((await say("do it")).status).toBe("done");
+	expect(continuations).toHaveLength(GOAL_CONTINUATION_LIMIT);
+});
