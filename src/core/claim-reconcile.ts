@@ -42,7 +42,7 @@ export type ReconcileResult =
 	| { status: "refused"; error: string; blockers: string[]; required?: TokenRef[]; calls: QuarantinedCall[] };
 
 /** Session audit trail of operator reconciliations, newest last. */
-export const ClaimReconcileAuditDoc = defineDoc<{ entries: { at: number; actor: string; note: string; released: Claim[]; unfenced?: Claim[]; retained: Claim[]; calls: { conversationId: number; taskId: string; evidence: { nonce: string; evidence: string }[] }[] }[] }>({
+export const ClaimReconcileAuditDoc = defineDoc<{ entries: { at: number; actor: string; note: string; snapshot?: string; released: Claim[]; unfenced?: Claim[]; retained: Claim[]; calls: { conversationId: number; taskId: string; evidence: { nonce: string; evidence: string }[] }[] }[] }>({
 	kind: "dinobot.claims.reconcile-audit", version: 1, scope: "session", initial: () => ({ entries: [] }),
 });
 
@@ -229,6 +229,73 @@ export async function reconcileQuarantine(harness: Harness, request: ReconcileRe
 		(await tx.doc(ClaimReconcileAuditDoc)).entries.push({ at, actor, note, released, unfenced, retained, calls: scoped.map(c => ({ conversationId: c.conversationId, taskId: c.taskId, evidence: c.processes.map(p => ({ nonce: p.nonce, evidence: p.evidence.evidence })) })) });
 		return { status: "reconciled" as const, released, unfenced, retained, calls: scoped };
 	}, context);
+}
+
+export type NativeCallRef = { conversationId: number; taskId: string };
+export type TokenlessReconcileRequest = { calls: NativeCallRef[]; snapshot: string; actor: string; note: string };
+
+/** Offline-only, exact-call reconciliation. No token closure, abandonment or automatic invocation. */
+async function tokenlessStateTx(tx: Tx, requested: NativeCallRef[]) {
+ const journal = await readJournalTx(tx);
+ const selected = [];
+ const blockers: string[] = [];
+ if (!requested.length || requested.length > 1000 || new Set(requested.map(c => c.conversationId + ":" + c.taskId)).size !== requested.length) blockers.push("exact_unique_calls_required");
+ const coord = await tx.doc(WorkspaceCoordDoc);
+ for (const target of requested) {
+  if (!Number.isSafeInteger(target.conversationId) || target.conversationId <= 0 || !/^[1-9][0-9]*$/.test(target.taskId) || !Number.isSafeInteger(Number(target.taskId))) { blockers.push("invalid_call_ref"); continue; }
+  const conversationId = target.conversationId as ConversationId;
+  const matches = (await tx.doc(NativeProvenanceDoc, conversationId)).calls.filter(c => c.taskId === target.taskId && c.kind === "process");
+  const task = await tx.task(Number(target.taskId) as TaskId);
+  const leases = coord.leases.filter(l => l.id === "native:" + target.taskId + ":process");
+  if (matches.length !== 1 || matches[0]!.phase !== "unknown") { blockers.push("exact_unknown_process_call_required"); continue; }
+  const call = JSON.parse(JSON.stringify(matches[0]!)) as NativeCall;
+  if (call.tokens.length || call.acquiredTokens?.length) blockers.push("call_is_not_tokenless");
+  if (!task || task.conversationId !== conversationId || task.state.status !== "terminal") blockers.push("terminal_owned_task_required");
+  const lease = leases[0];
+  if (leases.length !== 1 || !lease || lease.conversationId !== String(conversationId) || lease.taskId !== call.taskId || lease.workId !== "" || lease.reason !== "native process provenance" || lease.phase !== "blocked-unknown") blockers.push("exact_native_lease_required");
+  const events = call.processes ?? [];
+  const admitted = events.filter(e => e.phase === "admitted");
+  if (!admitted.length || new Set(admitted.map(e => e.nonce)).size !== admitted.length || events.some(e => !admitted.some(a => a.nonce === e.nonce)) || admitted.some(a => events.filter(e => e.phase === "started" && e.nonce === a.nonce).length !== 1)) blockers.push("complete_process_identities_required");
+  for (const event of events) {
+   if (typeof event.nonce !== "string" || !event.nonce || (event.phase === "started" && (!Number.isSafeInteger(event.pid) || event.pid! <= 0 || typeof event.startTime !== "string" || !event.startTime))) blockers.push("invalid_process_identity");
+   if (event.phase === "settled" && event.canonical && !events.some(s => s.phase === "started" && s.nonce === event.nonce && s.pid === event.pid && s.startTime === event.startTime)) blockers.push("canonical_identity_mismatch");
+  }
+  selected.push({ conversationId, call, task, leases: leases.map(l => ({ ...l })) });
+ }
+ const scope = { tokens: [], calls: journal.calls.flatMap((c, i) => requested.some(r => r.conversationId === Number(c.conversationId) && r.taskId === c.call.taskId && c.call.kind === "process") ? [i] : []) };
+ const maintenance = await maintenanceStateTx(tx, journal, scope);
+ if (maintenance.tasks.some(t => t.status !== "terminal")) blockers.push("related_tasks_must_be_terminal");
+ return { selected, maintenance, blockers, journal: { claims: [], snapshots: [], owners: [], calls: selected.map(s => ({ conversationId: s.conversationId, call: s.call, task: s.task?.state.status === "terminal" ? "terminal" as const : s.task ? "running" as const : "missing" as const })) } satisfies Journal };
+}
+const tokenlessSnapshot = (state: Awaited<ReturnType<typeof tokenlessStateTx>>) => createHash("sha256").update(JSON.stringify([state.selected, state.maintenance, state.blockers])).digest("hex");
+
+export async function planTokenlessReconciliation(harness: Harness, requested: NativeCallRef[], context: Context, observe: ObserveQuiescence = observeNativeProcessQuiescence) {
+ const state = await harness.commit(tx => tokenlessStateTx(tx, requested), context);
+ const calls = await assess(state.journal, observe);
+ return { snapshot: tokenlessSnapshot(state), calls, blockers: [...new Set([...state.blockers, ...calls.flatMap(c => c.blockers)])] };
+}
+
+/** Exclusive offline caller only. Evidence is collected here, never supplied in request JSON. */
+export async function reconcileTokenlessCalls(harness: Harness, request: TokenlessReconcileRequest, context: Context, observe: ObserveQuiescence = observeNativeProcessQuiescence, now = Date.now) {
+ const actor = request.actor.trim(); const note = request.note.trim();
+ if (!actor || !note || actor.length > MAX_ACTOR_LENGTH || note.length > MAX_NOTE_LENGTH) return { status: "refused" as const, error: "actor_and_note_required" };
+ const plan = await planTokenlessReconciliation(harness, request.calls, context, observe);
+ if (plan.snapshot !== request.snapshot) return { status: "refused" as const, error: "snapshot_mismatch" };
+ if (plan.blockers.length) return { status: "refused" as const, error: "not_proven_quiescent", blockers: plan.blockers };
+ return harness.commit(async tx => {
+  const current = await tokenlessStateTx(tx, request.calls);
+  if (tokenlessSnapshot(current) !== request.snapshot) return { status: "refused" as const, error: "changed_during_reconcile" };
+  const at = now();
+  for (const { conversationId, call } of current.selected) {
+   const target = (await tx.doc(NativeProvenanceDoc, conversationId)).calls.find(c => c.taskId === call.taskId && c.kind === "process")!;
+   const evidence = plan.calls.find(c => c.conversationId === Number(conversationId) && c.taskId === call.taskId)!.processes.map(p => ({ nonce: p.nonce, evidence: p.evidence.evidence }));
+   target.phase = "reconciled"; target.reconciled = { at, actor, note, evidence };
+  }
+  const coord = await tx.doc(WorkspaceCoordDoc);
+  coord.leases = coord.leases.filter(l => !current.selected.some(s => l.id === "native:" + s.call.taskId + ":process"));
+  (await tx.doc(ClaimReconcileAuditDoc)).entries.push({ at, actor, note, snapshot: request.snapshot, released: [], unfenced: [], retained: [], calls: plan.calls.map(c => ({ conversationId: c.conversationId, taskId: c.taskId, evidence: c.processes.map(p => ({ nonce: p.nonce, evidence: p.evidence.evidence })) })) });
+  return { status: "reconciled" as const, calls: plan.calls };
+ }, context);
 }
 
 /** Deliberately not a quiescence assertion. Only the offline maintenance command exposes this operation. */
