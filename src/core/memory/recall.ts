@@ -22,7 +22,6 @@ export const NOTE_PREFIX = "[dinobot memory]";
 export const MemoryNote = defineEntry<MemoryNoteData>(MEMORY_NOTE_KIND);
 const MAX_ITEM_CHARS = 300;
 const MAX_NOTED = 2000;
-const MIN_SCORE = 1;
 
 type PendingNote = { requestId: string; text: string; items: { key: string; revision: number }[] };
 const NotedDoc = defineDoc<{ noted: Record<string, number>; pending?: PendingNote | null }>({
@@ -30,24 +29,47 @@ const NotedDoc = defineDoc<{ noted: Record<string, number>; pending?: PendingNot
 	initial: () => ({ noted: {} }),
 });
 
-const STOPWORDS = new Set(["the", "and", "for", "with", "this", "that", "are", "was", "you", "your", "can", "how", "what", "not", "but", "use", "from", "have", "has", "will", "all", "any"]);
-const HANGUL = /\p{Script=Hangul}/u;
+const STOPWORDS = new Set([
+	"the", "and", "for", "with", "this", "that", "are", "was", "you", "your", "can", "how", "what", "not", "but", "use", "from", "have", "has", "will", "all", "any",
+	"같은", "같다", "있는", "없는", "있다", "없다", "있고", "없고", "이것", "그것", "저것", "지금", "현재", "다시", "그냥", "정말", "실제로", "실제",
+	"해줘", "해주세요", "계속", "계속해", "위해", "대한", "에서", "으로", "처럼", "보다", "까지", "부터", "하는", "한다", "하기", "해서", "하고", "해요",
+	"된다", "되는", "되다", "되어", "또한", "그리고", "하지만",
+]);
+// Longest first, one suffix only: bounded lexical normalization, not a morphological analyzer.
+// Never emit internal pieces (e.g. 파일시스템 → 시스/스템 or 설치되어 → 치되).
+// Bare 도/로/만 are too ambiguous: 해상도 and 매크로 must keep their lexical boundary.
+const KOREAN_SUFFIX = /(?:으로부터|에서부터|으로는|으로도|에서는|에서도|에게는|에게도|에는|에도|에만|되었다|되어서|됩니다|습니다|입니다|하려면|하려고|한다면|하는데|한다고|이라고|이라면|으로|에서|에게|한테|까지|부터|처럼|보다|하고|하며|한다|하는|해서|해야|되어|된다|되는|이다|라고|이며|이면|된|은|는|을|를|이|가|와|과|의|에)$/u;
 
-/** Lowercased words of two or more characters, minus a few English stopwords; Hangul words also yield their bigrams. */
+function lexicalTerm(word: string): string {
+	const suffix = word.match(KOREAN_SUFFIX)?.[0];
+	if (!suffix) return word;
+	const stem = word.slice(0, -suffix.length);
+	if ([...stem].length < 2) return word;
+	// Do not strip vowel-only particles from a consonant-ending noun (e.g. 전문가).
+	const last = stem.codePointAt(stem.length - 1)!;
+	if (last >= 0xac00 && last <= 0xd7a3) {
+		const coda = (last - 0xac00) % 28;
+		if (["가", "는", "를", "와"].includes(suffix) && coda !== 0) return word;
+		if (["은", "을", "과", "이"].includes(suffix) && coda === 0) return word;
+	}
+	return stem;
+}
+
+/** Distinct full lexical anchors, with bounded Korean suffix normalization; never substring n-grams. */
 export function recallTerms(text: string): Set<string> {
 	const terms = new Set<string>();
 	for (const word of text.normalize("NFC").toLowerCase().match(/[\p{L}\p{N}_]+/gu) ?? []) {
-		const chars = [...word];
-		if (chars.length < 2 || STOPWORDS.has(word)) continue;
-		terms.add(word);
-		if (HANGUL.test(word)) for (let i = 0; i + 1 < chars.length; i++) terms.add(chars[i]! + chars[i + 1]!);
+		if (STOPWORDS.has(word)) continue;
+		const term = lexicalTerm(word);
+		if ([...term].length >= 2 && !STOPWORDS.has(term)) terms.add(term);
 	}
 	return terms;
 }
 
 /**
- * Score(d) = sum over distinct terms shared by the query and d of ln(1 + N / df(t)), N the number of candidates.
- * A term found in every candidate adds ln 2 < MIN_SCORE, so one ubiquitous word never recalls on its own.
+ * A shared lexical anchor makes a candidate eligible; IDF orders candidates, it is not confidence.
+ * Score(d) = sum over distinct shared anchors of ln(1 + N / df(t)), using the whole project corpus.
+ * In particular a useful single-memory lookup remains eligible at ln(2), independent of corpus size.
  */
 export function rankMemories<T extends Pick<MemoryEntry, "key" | "content">>(entries: readonly T[], query: string): { entry: T; score: number }[] {
 	const wanted = recallTerms(query);
@@ -59,7 +81,7 @@ export function rankMemories<T extends Pick<MemoryEntry, "key" | "content">>(ent
 		let score = 0;
 		for (const term of wanted) if (terms.has(term)) score += Math.log(1 + docs.length / df.get(term)!);
 		return { entry, score };
-	}).filter(({ score }) => score >= MIN_SCORE).sort((a, b) => b.score - a.score || a.entry.key.localeCompare(b.entry.key));
+	}).filter(({ score }) => score > 0).sort((a, b) => b.score - a.score || a.entry.key.localeCompare(b.entry.key));
 }
 
 function clip(text: string, max: number): string {
@@ -101,10 +123,12 @@ export function createMemoryRecall(options: {
 		const project = await projectOf(harness, conversation.id, options.workspaceRoot, context);
 		if (project === undefined) return;
 		const [memory, noted] = await Promise.all([harness.snapshot(MemoryDoc, context), harness.snapshot(NotedDoc, conversation.id, context)]);
-		const candidates = (memory?.entries ?? []).filter((entry) => entry.project === project && noted?.noted[entry.key] !== entry.revision);
+		// Delivery history must not alter document frequencies or another entry's rank.
+		const candidates = (memory?.entries ?? []).filter((entry) => entry.project === project);
 		const selected: { key: string; revision: number; content: string; savedAt?: number }[] = [];
 		let remaining = options.config.budgetChars;
 		for (const { entry } of rankMemories(candidates, text)) {
+			if (noted?.noted[entry.key] === entry.revision) continue;
 			if (selected.length >= options.config.maxItems || remaining < 40) break;
 			const content = clip(entry.content, Math.min(MAX_ITEM_CHARS, remaining));
 			const savedAt = entry.updatedAt ?? entry.createdAt;
