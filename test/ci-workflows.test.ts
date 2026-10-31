@@ -38,7 +38,7 @@ describe("public CI contract", () => {
 		expect(cmd).toContain("bun run typecheck");
 		expect(cmd).toContain("runSkillSandbox");
 		expect(cmd).toContain("bubblewrap");
-		expect(cmd).toContain("timeout 1200 bun test --path-ignore-patterns '**/tui-perf.test.ts'");
+		expect(cmd).toContain('timeout 1200 bun script/ci/functional-shard.ts "${{ matrix.shard }}"');
 		expect(cmd).toContain('HOME="$sandbox"');
 		expect(cmd).toContain("public-artifact-guard");
 		expect(ci.jobs.performance.steps.some((s: any) => s.run === "bun test test/tui-perf.test.ts" && !s.if && !s["continue-on-error"])).toBe(true);
