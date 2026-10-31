@@ -154,11 +154,11 @@ describe("customer manifest", () => {
 
 	test("disables known commands and rejects unknown names", async () => {
 		expect((await parseManifest(manifest(), catalogs)).commands).toEqual({ disabled: [] });
-		expect((await parseManifest(manifest({ commands: { disabled: ["login", "logout"] } }), catalogs)).commands).toEqual({
-			disabled: ["login", "logout"],
+		expect((await parseManifest(manifest({ commands: { disabled: ["login", "logout", "slack"] } }), catalogs)).commands).toEqual({
+			disabled: ["login", "logout", "slack"],
 		});
 		expect(await problems(manifest({ commands: { disabled: ["login", "lgout"] } }))).toEqual([
-			'commands.disabled: unknown command "lgout" (available: accounts, fast, help, login, logout, model, plugins, reasoning, report, search, sessions, setup, skills)',
+			'commands.disabled: unknown command "lgout" (available: accounts, fast, help, login, logout, model, plugins, reasoning, report, search, sessions, setup, skills, slack)',
 		]);
 	});
 

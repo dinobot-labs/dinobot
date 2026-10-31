@@ -162,7 +162,7 @@ describe("dinobot core", () => {
 		]);
 
 		await bot.handle(message("m1", "hi"), context);
-		expect(offered).toEqual([...expected, "session_export", ...(toolMode === "codemode-only" ? [] : [...SKILL_TOOL_NAMES, ...SKILL_EVOLUTION_TOOL_NAMES, ...RESEARCH_TOOL_NAMES]), "tool_search", "read", "write", "edit", "bash", "lsp", "memory_read", "memory_write", "memory_list", "memory_search", "memory_delete", "agreements_list", "agreements_write", "agreements_delete", "goal_set", "goal_update", "goal_read", "work_plan", "work_status", "verify_run", "work_finish"].sort());
+		expect(offered).toEqual([...expected, "schedule_create", "schedule_list", "schedule_update", "schedule_cancel", "session_export", ...(toolMode === "codemode-only" ? [] : [...SKILL_TOOL_NAMES, ...SKILL_EVOLUTION_TOOL_NAMES, ...RESEARCH_TOOL_NAMES]), "tool_search", "read", "write", "edit", "bash", "lsp", "memory_read", "memory_write", "memory_list", "memory_search", "memory_delete", "agreements_list", "agreements_write", "agreements_delete", "goal_set", "goal_update", "goal_read", "work_plan", "work_status", "verify_run", "work_finish"].sort());
 	});
 
 	test("codemode scripts call plugin tools by their prefixed names", async () => {

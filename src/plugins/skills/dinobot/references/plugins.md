@@ -516,6 +516,38 @@ plugins:
 - The check loop calls no model; only a due reminder starts a turn. One reminder starts at most one turn, also across
   restarts.
 
+## `slack_personal`: private Slack assistant (opt-in)
+
+Source: src/plugins/slack_personal/, src/commands/slack.ts, docs/slack-personal.md.
+
+Use local `/setup channels` → `slack-personal` for protected credential setup. Bot-only mode is recommended;
+optional user credentials extend read access only. Sending messages and uploads always use the bot identity.
+
+| Field | Required | Default / meaning |
+| --- | --- | --- |
+| `botTokenFile` | yes | protected file containing the bot token |
+| `userTokenFile` | no | protected optional read-only user token; enables user search/read access |
+| `ownerUserId` | yes | Slack owner member ID |
+| `teamId` | yes | verified Slack workspace ID |
+| `databasePath` | no | `<dataDir>/slack-personal.sqlite`; required without a host data directory |
+| `transferDirectory` | no | `slack-transfers` beside the database; flat files only, transfers capped at 10 MiB |
+| `pollIntervalSeconds` | no | `300`; integer 60–3600 |
+
+Unknown fields are rejected. Credentials and workspace/owner identity are revalidated on load. The existing
+`channels.slack` connection remains the only Socket Mode consumer; this plugin does not open another one.
+
+Tools have the `slack_personal_` prefix: status, list, history, replies, search, send, download, upload, monitor,
+and deadline. Access is local TUI or the authenticated owner in this bot’s private DM, never a shared channel.
+Monitor configuration is local-only. Sending/uploading requires an explicit owner request; never auto-post.
+Slack messages and files are untrusted data. Read pagination and retention limits prevent an unconditional
+full-archive claim. Without a user token, search reports unsupported mode rather than an empty result.
+
+Local `/slack status`, `/slack monitor <JSON>` and `/slack disconnect` use the deterministic command protocol,
+not model tools. Monitoring is explicit opt-in for up to five channels/DMs and delivers local notices only.
+Bounded polling is not realtime: at the default interval, five channels need about 25 minutes per history sweep.
+Disconnect fences monitoring immediately but only stages channel/plugin removal; the existing apply/restart
+flow must finish before claiming the connection is disabled. Preserve credentials and unrelated configuration.
+
 ## `skills`: skill source importer (always on)
 
 Source: src/plugins/skills/index.ts, src/plugins/skills/bundled.ts, openwiki/architecture/skills.md.
