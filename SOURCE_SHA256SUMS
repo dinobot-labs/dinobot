@@ -35,7 +35,7 @@ f1e001dfd10b2d88d8a9e37d4c8c8c9174d7b186e6a43b1b3865089f67dc30d4  docs/wiki/deci
 bfc950f9ce6e51806342f28e657662e4aed5f35cc08d14f9562071cdac383225  patches/@earendil-works%2Fpi-durable@1.0.2.patch
 979841d12108f27f1f1e0e5138f2c129dea46f262b674db04311debe68c6ca5a  patches/@earendil-works%2Fpi-tui@1.0.0.patch
 743d943b34125956a70b67547d346d63d92dbae3a5c78aa274a5b3ddc4596cb1  patches/@oh-my-pi%2Fpi-ai@18.5.0.patch
-944466ab6cd868e25b4ab72d56ec13349a2e0ec0c3fd407c43ca5f99a9374588  release-please-config.json
+8fcf54df5d8eba691697bf10a9c4bcb8acbf9ca73e850980296247e367b08007  release-please-config.json
 29e6c7843f7271e7c08a606a7569f2fe3e881729eca8c1a4e3ca72aff41995c0  script/bench/korean-tool-metadata.ts
 736a003c74a7f3de1f8c3b774b9cc53b1a6acb7a63041dc5b6221e7db80fcda6  script/bench/korean-tool-retrieval.ts
 b75098dce406da4ccf5040f0361487b49499421c1f10228c3de3369d02b3326c  script/bench/tui-cadence.ts
