@@ -152,7 +152,7 @@ Source: src/extensions/skills.ts, src/plugins/skills/, src/core/skills/, openwik
 0037 and 0038.
 
 - **Sources:**
-  - Bundled skills, always on: `programming`, `optimization`, `debugging`, `clarification`, `research`, `dinobot`.
+  - Bundled skills, always on: `programming`, `optimization`, `debugging`, `clarification`, `research`, `delivery`, `dinobot`.
   - Opt-in bundled formal verification skills with `plugins.skills.proofSkills: true` (see plugins.md).
   - External directories from `plugins.skills.dirs` (see plugins.md).
   - Agent-created skills.

@@ -68,7 +68,7 @@ describe("skills plugin", () => {
 		const [skills] = await withDefaultSkills([]);
 		expect(skills).toBeDefined();
 		expect(await withDefaultSkills([skills!])).toEqual([skills!]);
-		expect(skills!.catalog?.map((skill) => skill.name)).toEqual(["programming", "optimization", "debugging", "clarification", "research", "herdr", "dinobot", "writing", "frontend-craft", "explanation", "slack-setup"]);
+		expect(skills!.catalog?.map((skill) => skill.name)).toEqual(["programming", "optimization", "debugging", "clarification", "research", "delivery", "herdr", "dinobot", "writing", "frontend-craft", "explanation", "slack-setup"]);
 		expect(skills!.tools).toEqual([]);
 		for (const source of skills!.skillPackages!) if (source.name !== "dinobot" && source.name !== "writing" && source.name !== "frontend-craft" && source.name !== "explanation" && source.name !== "slack-setup") expect(source.files).toEqual({});
 		// The self guide is a hub: every reference it routes to ships as a companion file, and nothing unrouted ships.
@@ -137,7 +137,7 @@ describe("skills plugin", () => {
 		expect(programming).not.toContain("## Workflow");
 	});
 
-	test.each(["programming", "optimization", "debugging", "clarification", "research", "herdr", "dinobot", "writing", "frontend-craft", "explanation", "slack-setup"])("rejects external replacement of %s", async (name) => {
+	test.each(["programming", "optimization", "debugging", "clarification", "research", "delivery", "herdr", "dinobot", "writing", "frontend-craft", "explanation", "slack-setup"])("rejects external replacement of %s", async (name) => {
 		dir = await mkdtemp(join(tmpdir(), "dinobot-skills-"));
 		await writeSkill(dir, name, `name: ${name}\ndescription: replacement`);
 		const result = await loadPlugin(skillsPlugin, { dirs: [dir] });
@@ -156,7 +156,7 @@ describe("skills plugin", () => {
 			toolMode, plugins: [], workspaceRoot: dir,
 		}, context);
 		try {
-			for (const [name, heading] of [["programming", "## Closed change set"], ["optimization", "## Workflow"], ["debugging", "## Workflow"], ["research", "## Research contract"], ["dinobot", "## Ground rules"]] as const) {
+			for (const [name, heading] of [["programming", "## Closed change set"], ["optimization", "## Workflow"], ["debugging", "## Workflow"], ["research", "## Research contract"], ["delivery", "## Evidence boundaries"], ["dinobot", "## Ground rules"]] as const) {
 				faux.setResponses([
 					(request) => {
 						const system = JSON.stringify(request.messages.filter((message) => message.role === "system"));
@@ -187,7 +187,7 @@ describe("skills plugin", () => {
 		const modulePath = join(import.meta.dir, "..", "src", "plugins", "skills", "index.ts");
 		await writeFile(entry, `import { withDefaultSkills } from ${JSON.stringify(modulePath)};
 const [plugin] = await withDefaultSkills([]);
-for (const name of ["programming", "optimization", "debugging", "clarification", "research", "herdr", "dinobot", "writing", "frontend-craft", "explanation", "slack-setup"]) {
+for (const name of ["programming", "optimization", "debugging", "clarification", "research", "delivery", "herdr", "dinobot", "writing", "frontend-craft", "explanation", "slack-setup"]) {
  console.log(plugin.skillPackages.find(t => t.name === name).body);
 }
 console.log(plugin.skillPackages.find(t => t.name === "dinobot").files["references/models.md"]);`);

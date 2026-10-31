@@ -117,7 +117,7 @@ describe("customer manifest", () => {
 		expect(parsed.toolMode).toBe("codemode-only");
 		expect(parsed.channels.map((channel) => channel.name)).toEqual(["http"]);
 		expect(parsed.plugins.map((plugin) => plugin.tools.map((tool) => tool.name))).toEqual([["jira_search"], []]);
-		expect(parsed.plugins[1]!.skillPackages?.map((skill) => skill.name)).toEqual(["programming", "optimization", "debugging", "clarification", "research", "herdr", "dinobot", "writing", "frontend-craft", "explanation", "slack-setup"]);
+		expect(parsed.plugins[1]!.skillPackages?.map((skill) => skill.name)).toEqual(["programming", "optimization", "debugging", "clarification", "research", "delivery", "herdr", "dinobot", "writing", "frontend-craft", "explanation", "slack-setup"]);
 	});
 
 	test("a disabled bot needs no channels", async () => {
@@ -131,7 +131,7 @@ describe("customer manifest", () => {
 			plugins: (await import("../src/plugins/index.ts")).pluginCatalog,
 		});
 		expect(parsed.plugins.map((plugin) => plugin.id)).toEqual(["image_gen", "web", "skills"]);
-		expect(parsed.plugins[2]!.catalog?.map((skill) => skill.name)).toEqual(["programming", "optimization", "debugging", "clarification", "research", "herdr", "dinobot", "writing", "frontend-craft", "explanation", "slack-setup"]);
+		expect(parsed.plugins[2]!.catalog?.map((skill) => skill.name)).toEqual(["programming", "optimization", "debugging", "clarification", "research", "delivery", "herdr", "dinobot", "writing", "frontend-craft", "explanation", "slack-setup"]);
 	});
 
 	test("reports every problem at once", async () => {

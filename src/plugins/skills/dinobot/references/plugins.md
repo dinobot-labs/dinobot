@@ -525,7 +525,7 @@ Source: src/plugins/skills/index.ts, src/plugins/skills/bundled.ts, openwiki/arc
 | `dirs` | array of non-empty strings | no | `[]` (bundled skills only) | parent directories of extra Agent Skills |
 | `proofSkills` | boolean | no | `false` | adds the bundled formal verification skills `formal-verify`, `tlaplus-model`, `lean-model`, `proof-simplify` (opum-ai/proof-skills, MIT) |
 
-- Bundled skills are always imported: `programming`, `optimization`, `debugging`, `clarification`, `research`, `dinobot`.
+- Bundled skills are always imported: `programming`, `optimization`, `debugging`, `clarification`, `research`, `delivery`, `dinobot`.
 - Each **direct subdirectory** of a dir that contains `SKILL.md` is one skill. Other entries are ignored. Rules:
   - YAML frontmatter is required.
   - `name` is 1 to 64 characters of lowercase `a-z0-9` and single hyphens, and must equal the directory name.

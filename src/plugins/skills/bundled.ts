@@ -1,3 +1,4 @@
+import { deliverySkill } from "./delivery/index.ts";
 import { dinobotSkill } from "./dinobot/index.ts";
 import { writingSkill } from "./writing/index.ts";
 import { frontendCraftSkill } from "./frontend-craft/index.ts";
@@ -18,6 +19,7 @@ Treat every change as a transformation of a system you can state precisely. Anal
 
 Load these only when the situation applies, with skills_load (tools.skills_load in codemode), and follow them in addition to this skill:
 
+- delivery: multi-stage implementation handoff, packaging, installation, or deployment; keep ownership through the requested endpoint and bind claims to actual artifacts and runtime evidence.
 - debugging: bugs, failing tests, unexpected behavior, regressions, timeouts, races.
 - optimization: slow code, latency, throughput, memory, cost, or requests to optimize.
 - research: a bounded evidence-based comparison or hypothesis investigation whose deliverable is a verdict, not search results or implementation. Ordinary code lookup does not require research.
@@ -33,6 +35,12 @@ Before editing, define the closed region of the change: the definitions, callers
 3. For each element in the region, record the preconditions it relies on, the postconditions it provides, and its side effects: state mutation, I/O, ordering, errors, and timing.
 4. The region is closed when every element whose contract changes is updated inside it and every boundary keeps its contract. If a boundary cannot be closed, shrink the change or make the contract change explicit.
 5. After editing, enumerate again (references, diagnostics, type check, tests) and confirm the region is still closed.
+
+## Version and reuse decision
+
+Before claiming a feature is missing or implementing it, identify the canonical repository and distinguish the running executable/package, local checkout SHA, upstream default-branch SHA, and relevant release tag/package. Fetch upstream when available; inspect the target release rather than generalizing from an old checkout. A directory name or version label alone is not artifact identity.
+
+Choose explicitly: update/rebuild when the needed behavior already ships; backport the relevant change when a pinned or locally patched dependency must remain compatible; implement only the remaining gap. Compare the actual divergence and preserved patches before recommending a full upgrade. For offline or deliberately pinned targets, retain the pin, record the last verified upstream identity and unavailable checks, and do not force network access or an upgrade.
 
 ## Reuse before writing
 
@@ -119,6 +127,12 @@ Fix the cause, not the symptom. Prevent guess-based patches and lock the failure
 6. Implement the smallest complete fix addressing the hypothesis, including directly affected callsites. Do not swallow exceptions or add defensive guards without evidence. If it fails, reassess both the hypothesis and the implementation; a failed patch does not by itself disprove the cause.
 7. Verify the original reproduction, the regression guard, and related tests. For intermittent failures, repeat under relevant inputs, schedules, or concurrency conditions; one passing run is insufficient. Explain how the fix prevents the cause and report any remaining uncertainty.
 
+## Defect evidence versus incident attribution
+
+Record the affected running/package identity, reproduction checkout, upstream revision and target release separately; use programming’s version/update/backport decision before patching. Offline or pinned targets retain their stated boundary, with unknown upstream state explicit.
+
+A reproduced defect proves that failure under the tested conditions, not that it caused a particular historical incident. Keep two claims separate: defect reproduced/fixed, and incident cause supported/unresolved. For attribution, correlate the original inputs, timestamps, request/task IDs, versions and state transitions with the hypothesis. State a falsifier, retain counterevidence, and list missing observations. Similar symptoms, successful recovery, or deliberate fault injection do not establish the original cause. Fix a confirmed defect without waiting for unavailable historical evidence, but do not promote the fix’s success into proof of incident attribution.
+
 ## Emergency mitigation
 
 During an active incident, authorized rollback, isolation, or disabling a harmful path can precede full reproduction to limit damage. Distinguish mitigation from a verified root-cause fix. Record evidence, impact, and the action taken; preserve the investigation and regression-test requirement. This skill does not grant deployment, deletion, or other destructive-action authority.
@@ -187,6 +201,7 @@ Record each answer with goal_update({expected_revision, add_decisions:[{text, as
 - The request splits into independent goals: set the first goal, list the rest as out of scope.`,
 	},
 	researchSkill,
+	deliverySkill,
 	// Project-authored optional Herdr integration note.
 	herdrSkill,
 	dinobotSkill,
