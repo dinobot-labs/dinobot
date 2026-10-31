@@ -4,6 +4,7 @@ import { defineDoc, type ConversationId, type Cursor, type Harness, type TaskId,
 import { digest, canonical } from "./verification-execution.ts";
 import { clone } from "./json.ts";
 import { parameterContext, permittedSource } from "./visible-source-policy.ts";
+import { CODEMODE_LIMITS } from "./codemode/protocol.ts";
 
 export type TextSpan = { start: number; end: number; replacement: string };
 export type Omission = { path: string; reason: string; spans?: TextSpan[] };
@@ -162,17 +163,52 @@ export function validateVisibleExport(receipt: VisibleExport, retained: VisibleE
  const provenanceValid=provenance===undefined?receipt.witness.provenanceHash===undefined:receipt.witness.provenanceHash===digest(provenance);
  return provenanceValid && receipt.complete === true && retained.complete === true && receipt.inventory.allowedLeafDiffs.length===0 && canonical(receipt) === canonical(retained) && digest(receipt.entries) === receipt.witness.contentHash && digest(receipt.inventory) === receipt.witness.inventoryHash;
 }
+/** The text + details envelope is also the codemode wire value. Keep sizing and delivery identical. */
+export function visibleExportToolResult(receipt: VisibleExport) {
+ return { content: [{ type: "text" as const, text: JSON.stringify(receipt) }], details: receipt };
+}
+
+// Each array is an independent ordered stream, sliced at the same absolute offset.
+// Exhausted streams contribute []; scalar evidence and full-snapshot hashes repeat.
+function exportLength(receipt: VisibleExport): number {
+ const i=receipt.inventory;
+ return Math.max(receipt.entries.length,i.conversationIds.length,i.entryIds.length,i.content.length,i.allowedSourceContent.length,i.omissions.length,i.allowedLeafDiffs.length,i.provenance?.canonicalEntries.length ?? 0,i.provenance?.conversations.length ?? 0);
+}
+function exportPage(receipt: VisibleExport, offset: number, end: number, total: number): VisibleExport {
+ const i=receipt.inventory;
+ return {...receipt,complete:offset===0&&end===total,entries:receipt.entries.slice(offset,end),inventory:{
+  conversationIds:i.conversationIds.slice(offset,end),entryIds:i.entryIds.slice(offset,end),
+  content:i.content.slice(offset,end),allowedSourceContent:i.allowedSourceContent.slice(offset,end),
+  omissions:i.omissions.slice(offset,end),allowedLeafDiffs:i.allowedLeafDiffs.slice(offset,end),
+  ...(i.provenance?{provenance:{...i.provenance,canonicalEntries:i.provenance.canonicalEntries.slice(offset,end),conversations:i.provenance.conversations.slice(offset,end)}}:{}),
+ },nextCursor:end<total?Buffer.from(JSON.stringify({snapshot:receipt.snapshotId,offset:end})).toString("base64url"):null};
+}
+function boundedExportPage(receipt: VisibleExport, offset: number, limit: number): VisibleExport {
+ const total=exportLength(receipt);
+ const fits=(page:VisibleExport)=>Buffer.byteLength(JSON.stringify(visibleExportToolResult(page)))<=CODEMODE_LIMITS.maxValueBytes-4096;
+ let end=Math.min(offset+limit,total);
+ let page=exportPage(receipt,offset,end,total);
+ if(!fits(page)) {
+  // Monotonic payload size, apart from the tiny final cursor (covered by the reserve).
+  // Do not truncate a body, hash, omission span or canonical membership group.
+  let low=offset,high=end;
+  while(low<high){const mid=Math.ceil((low+high)/2);if(fits(exportPage(receipt,offset,mid,total)))low=mid;else high=mid-1;}
+  end=low;page=exportPage(receipt,offset,end,total);
+  if(end===offset || !fits(page))throw new Error(`export_page_item_too_large: snapshot ${receipt.snapshotId}, offset ${offset}; an indivisible entry or inventory row exceeds the paged transport budget; use the unpaged HTTP export. No content was truncated.`);
+ }
+ return clone(page);
+}
 export async function exportVisible(harness: Harness, root: ConversationId, context: Context, cursor?:string, limit?:number, taskId?:TaskId):Promise<VisibleExport> {
  return harness.commit(async tx=>{
   const doc=await tx.doc(VisibleExportsDoc,root); let receipt:VisibleExport;let offset=0;
   const call=taskId?await tx.doc(VisibleExportCallDoc,taskId):undefined;const argsHash=digest({root,cursor:cursor??null,limit:limit??null});if(call?.argsHash && call.argsHash!==argsHash)throw new Error("export_call_argument_conflict");
   if(!cursor && call?.snapshotId) {receipt=doc.snapshots.find(s=>s.snapshotId===call.snapshotId)!;if(!receipt)throw new Error("missing_host_export_snapshot");}
-  else if(cursor) { const parsed=JSON.parse(Buffer.from(cursor,"base64url").toString()) as {snapshot:string;offset:number}; receipt=doc.snapshots.find(s=>s.snapshotId===parsed.snapshot)!;offset=parsed.offset;if(!receipt||!Number.isSafeInteger(offset)||offset<0||offset>receipt.entries.length)throw new Error("invalid_export_cursor"); }
+  else if(cursor) { const parsed=JSON.parse(Buffer.from(cursor,"base64url").toString()) as {snapshot:string;offset:number}; receipt=doc.snapshots.find(s=>s.snapshotId===parsed.snapshot)!;offset=parsed.offset;if(!receipt||!Number.isSafeInteger(offset)||offset<0||offset>exportLength(receipt))throw new Error("invalid_export_cursor"); }
   else { receipt=await captureVisibleExport(tx,root); const {WorkDoc,syncGoalHeadTx}=await import("./verification.ts");const state=await tx.doc(WorkDoc,root);await syncGoalHeadTx(tx,root,state);const goal=state.goal;if(goal)receipt.goalBinding={epoch:goal.epoch,hash:goal.hash};doc.snapshots.push(receipt); }
   if(call){call.argsHash=argsHash;call.snapshotId=receipt.snapshotId;}
   if(limit===undefined && !cursor) return clone(receipt);
-  limit ??= Math.max(1,receipt.entries.length-offset);
+  limit ??= Math.max(1,exportLength(receipt)-offset);
   if(!Number.isSafeInteger(limit)||limit<1||(limit>10000 && !cursor))throw new Error("invalid_export_limit");
-  const end=Math.min(offset+limit,receipt.entries.length); return {...clone(receipt),complete:offset===0&&end===receipt.entries.length,entries:clone(receipt.entries.slice(offset,end)),nextCursor:end<receipt.entries.length?Buffer.from(JSON.stringify({snapshot:receipt.snapshotId,offset:end})).toString("base64url"):null};
+  return boundedExportPage(receipt,offset,limit);
  },context);
 }

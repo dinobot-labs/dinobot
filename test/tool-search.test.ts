@@ -37,7 +37,7 @@ function resultText(messages: readonly { role: string; content?: unknown }[]): s
 function contracts(messages: readonly { role: string; content?: unknown }[]) {
 	const line = resultText(messages).split("\n").find(line => line.startsWith('{"matches":'));
 	expect(line).toBeDefined();
-	return JSON.parse(line!) as { matches: { name: string; description: string; parameters: unknown }[]; omitted: string[]; limited: boolean };
+	return JSON.parse(line!) as { matches: { name: string; description: string; parameters: unknown }[]; omitted: string[]; limited: boolean; exactMatch: boolean };
 }
 
 test.each(["direct", "hybrid", "codemode-only"] as const)("%s: search returns real schemas without executing or activating tools", async mode => {
@@ -51,7 +51,7 @@ test.each(["direct", "hybrid", "codemode-only"] as const)("%s: search returns re
 		},
 		transcript => {
 			expect(effects()).toBe(0);
-			expect(contracts(transcript.messages)).toEqual({ matches: [{ name: "probe_sum", description: "Add two numbers for an integration probe", parameters: sumSchema }], omitted: [], limited: false });
+			expect(contracts(transcript.messages)).toEqual({ matches: [{ name: "probe_sum", description: "Add two numbers for an integration probe", parameters: sumSchema }], omitted: [], limited: false, exactMatch: true });
 			const declarations = transcript.messages.flatMap(m => m.role === "system" ? (m.toolsAdded ?? []).map(t => t.name) : []);
 			expect(declarations.includes("probe_sum")).toBe(mode !== "codemode-only");
 			return direct ? fauxAssistantMessage(fauxToolCall("probe_sum", { a: 2, b: 3 }), { stopReason: "toolUse" }) : cell("text(await tools.probe_sum({a:2,b:3}));");
@@ -60,6 +60,23 @@ test.each(["direct", "hybrid", "codemode-only"] as const)("%s: search returns re
 	]);
 	expect(await send()).toMatchObject({ status: "answered", text: "done" });
 	expect(effects()).toBe(1);
+});
+
+test("missing exact name is distinguished from semantic suggestions without disabling capability search", async () => {
+	const { faux, send } = await setup("codemode-only", { agents: [{ name: "restricted", description: "restricted", tools: ["codemode", "tool_search", "skill_evolution_schedule"], prompt: "Discover only" }], plugins: [{ id: "fixture", tools: [{ name: "skill_evolution_schedule", description: "Schedule a skill research job", inputSchema: { type: "object", properties: {} }, execute: async () => "unused" }] }] });
+	const observed: ReturnType<typeof contracts>[] = [];
+	faux.setResponses([
+		cell('text(await tools.task({description:"search",prompt:"inspect",subagent_type:"restricted"}));'),
+		searchCell("schedule_create"),
+		transcript => { observed.push(contracts(transcript.messages)); return searchCell("schedule research"); },
+		transcript => { observed.push(contracts(transcript.messages)); return fauxAssistantMessage("child done"); },
+		fauxAssistantMessage("parent done"),
+	]);
+	await send();
+	expect(observed).toHaveLength(2);
+	expect(observed[0]!.exactMatch).toBe(false);
+	expect(observed[0]!.matches.map(t => t.name)).toContain("skill_evolution_schedule");
+	expect(observed[1]!.matches.map(t => t.name)).toContain("skill_evolution_schedule");
 });
 
 test("restricted subagent cannot discover forbidden tool metadata, even by exact name", async () => {
@@ -98,7 +115,7 @@ test("parallel search is bounded by admission order within a cell", async () => 
 test("oversized schemas are explicitly omitted, never partially returned", async () => {
 	const { faux, send } = await setup("codemode-only", { plugins: [{ id: "huge", tools: [{ name: "huge_tool", description: "huge", inputSchema: { type: "object", description: "x".repeat(TOOL_SEARCH_MAX_BYTES + 1) }, execute: async () => { throw new Error("must not execute"); } }] }] });
 	faux.setResponses([searchCell("huge_tool"), transcript => {
-		expect(contracts(transcript.messages)).toEqual({ matches: [], omitted: ["huge_tool"], limited: true });
+		expect(contracts(transcript.messages)).toEqual({ matches: [], omitted: ["huge_tool"], limited: true, exactMatch: true });
 		expect(Buffer.byteLength(resultText(transcript.messages))).toBeLessThan(TOOL_SEARCH_MAX_BYTES);
 		return fauxAssistantMessage("done");
 	}]);

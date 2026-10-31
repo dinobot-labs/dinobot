@@ -14,13 +14,13 @@ test("maintenance request preserves exact tokens and rejects caller evidence", (
  expect(() => parseAbandonRequest({ tokens: [] })).toThrow("invalid_tokens");
 });
 
-test.skipIf(process.platform !== "win32")("offline command refuses an already-open real SQLite connection", async () => {
+for (const tokenless of [false, true]) test.skipIf(!["win32", "darwin"].includes(process.platform))("offline command refuses an already-open real SQLite connection, tokenless=" + tokenless, async () => {
  const dir = await mkdtemp(join(process.env.TMPDIR ?? tmpdir(), "quarantine-lock-"));
  const path = join(dir, "host.sqlite"); const request = join(dir, "request.json");
- await writeFile(request, JSON.stringify({ tokens: [{ key: "host:legacy", holder: "conversation:1", token: 384 }] }));
+ await writeFile(request, JSON.stringify(tokenless ? { calls: [{ conversationId: 1, taskId: "2" }] } : { tokens: [{ key: "host:legacy", holder: "conversation:1", token: 384 }] }));
  const storage = await openNodeSqliteStorage(path);
  try {
-  const child = Bun.spawn([process.execPath, main, "quarantine-recovery", "--database", path, "--request", request, "--apply"], { stdout: "pipe", stderr: "pipe" });
+  const child = Bun.spawn([process.execPath, main, "quarantine-recovery", "--database", path, "--request", request, "--apply", ...(tokenless ? ["--reconcile-tokenless"] : [])], { stdout: "pipe", stderr: "pipe" });
   const [out, err, exit] = await Promise.all([new Response(child.stdout).text(), new Response(child.stderr).text(), child.exited]);
   expect(exit).toBe(1);
   expect(out).toBe("");

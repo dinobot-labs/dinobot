@@ -37,6 +37,8 @@ import { createMemoryCurator, markCuratorDisabled, type MemoryCurator } from "./
 import { createMemoryRecall } from "./memory/recall.ts";
 import { createMemoryRetro, markRetroDisabled, type MemoryRetro } from "./memory/retro.ts";
 import { sessionsExtension } from "../extensions/sessions.ts";
+import { schedulerExtension } from "../extensions/scheduler.ts";
+import { Scheduler, scheduleSubmission } from "./scheduler.ts";
 import { skillsExtension } from "../extensions/skills.ts";
 import { type AgentDefinition, PLUGIN_WAKE_REQUEST_PREFIX, subagentsExtension, type SubagentSpawner, type WakeDeliver, WakeDoc, type WakeHandOver } from "../extensions/subagents.ts";
 import { livenessExtension } from "../extensions/liveness.ts";
@@ -77,6 +79,8 @@ import { reconcileManagedEffects } from "./managed-effects.ts";
 
 export type BotOptions = {
 	readonly storage: Storage;
+	/** Host test clock; no model-controlled timing configuration. */
+	readonly scheduler?: { now?: () => number; timers?: boolean };
 	readonly models: Models;
 	readonly defaultModel: ModelRef;
 	readonly toolMode: ToolMode;
@@ -147,6 +151,7 @@ const PLUGIN_WAKE_MAX_TEXT_BYTES = 16_384;
 
 export interface Bot {
 	readonly harness: Harness;
+	readonly scheduler: Scheduler;
 	readonly models: Models;
 	readonly skills: SkillStore;
 	readonly skillEvolution: SkillEvolutionService;
@@ -245,6 +250,8 @@ export async function openBot(options: BotOptions, context: Context): Promise<Bo
 	const lsp = new LspManager(options.lsp);
 	registry.install(lspExtension(lsp));
 	let openedHarness: Harness | undefined;
+	const scheduler = new Scheduler(() => { if (!openedHarness) throw new Error("Bot harness is not open"); return openedHarness; }, botContext, options.scheduler?.now);
+	registry.install(schedulerExtension(scheduler));
 	let openedIndex: SessionIndex | undefined;
 	let openedSkills: SkillStore | undefined;
 	let openedCuration: SkillCurationService | undefined;
@@ -547,26 +554,28 @@ export async function openBot(options: BotOptions, context: Context): Promise<Bo
 	 * Admission runs on the thread's admission line, so /new cannot rotate the thread between resolution and submission.
 	 */
 	let closed = false;
-	async function wake(pluginId: string, request: PluginWake): Promise<PluginWakeResult> {
+	async function wake(pluginId: string, request: PluginWake, ready?: () => Promise<boolean>): Promise<PluginWakeResult> {
 		if (typeof request.key !== "string" || !PLUGIN_WAKE_KEY.test(request.key)) throw new Error("plugin wake key must match [A-Za-z0-9:._-]{1,200}");
 		if (typeof request.text !== "string" || request.text.trim() === "") throw new Error("plugin wake text must not be empty");
 		if (Buffer.byteLength(request.text, "utf8") > PLUGIN_WAKE_MAX_TEXT_BYTES) throw new Error(`plugin wake text exceeds ${PLUGIN_WAKE_MAX_TEXT_BYTES} bytes`);
 		if (closed) return "unavailable";
 		try {
-			return await admitPluginWake(pluginId, request);
+			return await admitPluginWake(pluginId, request, ready);
 		} catch (error) {
 			if (closed) return "unavailable";
 			throw error;
 		}
 	}
 	const GONE = Symbol("gone");
-	async function admitPluginWake(pluginId: string, request: PluginWake): Promise<PluginWakeResult> {
+	async function admitPluginWake(pluginId: string, request: PluginWake, ready?: () => Promise<boolean>): Promise<PluginWakeResult> {
 		const context = botContext;
 		if (!/^\d+$/.test(request.conversationId)) return "gone";
 		const root = await rootConversation(harness, Number(request.conversationId) as ConversationId, context);
 		if (root === undefined || !(await harness.conversation(root, context))) return "gone";
 		const requestId = `${PLUGIN_WAKE_REQUEST_PREFIX}${pluginId}:${request.key}`;
 		const admit = async (target: Conversation, lineage: readonly ConversationId[]): Promise<PluginWakeResult> => {
+			// Core schedules belong to the exact origin, never a replacement conversation after /new.
+			if (ready && target.id !== root) return "gone";
 			const existing = await harness.commit(async (tx) => {
 				for (const id of [target.id, ...lineage]) {
 					const found = await tx.submissionByRequest(id, requestId);
@@ -583,9 +592,11 @@ export async function openBot(options: BotOptions, context: Context): Promise<Bo
 				}
 				return "duplicate";
 			}
+			if (ready && !await ready()) return "unavailable";
 			// A registration left by a crash before its submission is re-registered with a fresh admission grace, so the
 			// watcher cannot drop it between this commit and the submission below.
 			await wakeHandOver.current?.(target.id, requestId, context, { restartGrace: true });
+			if (ready && !await ready()) return "unavailable";
 			await target.submit({ type: "input", content: `${pluginContinuationPrefix(pluginId)}\n${request.text}`, requestId }, context);
 			return "admitted";
 		};
@@ -617,6 +628,13 @@ export async function openBot(options: BotOptions, context: Context): Promise<Bo
 			console.error(`plugin ${plugin.id} start failed:`, error instanceof Error ? error.message : error);
 		}
 	}
+	scheduler.start((request, ready) => wake("scheduler", request, ready), async (schedule) => {
+		const record = await scheduleSubmission(harness, schedule, botContext);
+		if (record?.type !== "input") return undefined;
+		if (record.status === "done") return { state: "completed", result: answerText((await harness.commit(tx => tx.entry(record.answer), botContext))?.model).slice(0, 4000) };
+		if (record.status === "unanswered") return { state: "failed", result: record.reason };
+		return undefined;
+	}, options.scheduler?.timers ?? true);
 	if (memory.auto.enabled) await memoryCurator.start(harness, context);
 	else await markCuratorDisabled(harness, context);
 	if (memory.retro.enabled) await memoryRetro.start(harness, context);
@@ -677,6 +695,7 @@ export async function openBot(options: BotOptions, context: Context): Promise<Bo
 	let closeTask: Promise<void> | undefined;
 	return {
 		harness,
+		scheduler,
 		models: options.models,
 		skills,
 		skillEvolution,
@@ -768,6 +787,7 @@ export async function openBot(options: BotOptions, context: Context): Promise<Bo
 			return closeTask ??= Promise.resolve().then(async () => {
 				const errors: unknown[] = [];
 				for (const close of [
+					() => scheduler.close(),
 					() => memoryCurator.stop(),
 					() => memoryRetro.stop(),
 					() => curation.stop(),

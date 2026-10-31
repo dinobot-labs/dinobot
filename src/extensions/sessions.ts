@@ -8,7 +8,7 @@ import { formatSessions, sessionsSnapshot } from "../core/sessions.ts";
 import { claimAncestorHolders, claimHolderTx, listThreads } from "../core/threads.ts";
 import { trackOwnerClaimsTx } from "../core/claim-cleanup.ts";
 import { assertGoalAdmissionTx } from "../core/verification.ts";
-import { exportVisible } from "../core/visible-export.ts";
+import { exportVisible, visibleExportToolResult } from "../core/visible-export.ts";
 import { formatTrajectory, readTrajectory } from "../core/trajectory/read.ts";
 import { EVALUATOR_VERSION } from "../core/trajectory/engine.ts";
 import {
@@ -123,9 +123,9 @@ export function sessionsExtension(getHarness: () => Harness, getIndex: () => Ses
 		name: "sessions",
 		sections: [section("session_awareness", () => GUIDANCE)],
 		tools: [
-            defineTool({name:"session_export",description:"Explicit full persisted visible snapshot export with recursive owned children, uncut allowed bodies, privacy omission inventory and host highwater witness. Not session_read preview. Cursor pages retain the frozen snapshot; partial pages are not completion. Historical mutable state provenance remains UNKNOWN.",parameters:Type.Object({conversationId:Type.Optional(Type.Integer({minimum:1})),cursor:Type.Optional(Type.String()),limit:Type.Optional(Type.Integer({minimum:1,maximum:10000}))},{additionalProperties:false}),replay:"safe",executionMode:"sequential",execute:async(args,api,context)=>{
+            defineTool({name:"session_export",description:"Explicit full persisted visible snapshot export with recursive owned children, uncut allowed bodies, privacy omission inventory and host highwater witness. Not session_read preview. Cursor pages retain the frozen snapshot and bound every entries/inventory array independently by limit and transport bytes; concatenate each array across all pages (including provenance arrays). Scalars and hashes describe the full snapshot. Partial pages are not completion; an indivisible oversized row errors rather than truncates (use unpaged HTTP export). Historical mutable state provenance remains UNKNOWN.",parameters:Type.Object({conversationId:Type.Optional(Type.Integer({minimum:1})),cursor:Type.Optional(Type.String()),limit:Type.Optional(Type.Integer({minimum:1,maximum:10000}))},{additionalProperties:false}),replay:"safe",executionMode:"sequential",execute:async(args,api,context)=>{
                 const receipt=await exportVisible(getHarness(),(args.conversationId ?? api.conversationId) as ConversationId,context,args.cursor,args.limit,api.taskId);
-                return {...text(JSON.stringify(receipt)),details:receipt};
+                return visibleExportToolResult(receipt);
             }}),
 			defineTool({
 				name: SESSION_SEARCH_TOOL,
