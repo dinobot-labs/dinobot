@@ -10,7 +10,7 @@ import { openNodeSqliteStorage } from "@earendil-works/pi-durable/storage/sqlite
 import { openBot, type Bot } from "../src/core/bot.ts";
 import { DISABLED_MEMORY, type MemoryConfig } from "../src/core/memory/config.ts";
 import { CURATOR_MARKER } from "../src/core/memory/curator.ts";
-import { NOTE_PREFIX } from "../src/core/memory/recall.ts";
+import { createMemoryRecall, NOTE_PREFIX } from "../src/core/memory/recall.ts";
 import { addAuto, MemoryDoc, mutate } from "../src/core/memory/store.ts";
 import { CuratorDoc } from "../src/core/memory/window.ts";
 import { entryText } from "../src/core/search.ts";
@@ -330,6 +330,124 @@ test("recall: relevant project memory is noted once before the input; team and o
 	const data = createChatData();
 	ingestEntry(data, after[0]!, Date.now());
 	expect(JSON.stringify(data.blocks)).toContain("Recalled 1 project memory: deploy");
+});
+
+test("recall: irrelevant Korean turns do not write notes or pollute model context", async () => {
+	const { bot, workspace, mainRequests, say } = await start({ memory: { ...ENABLED, auto: { ...ENABLED.auto, enabled: false } } });
+	await bot.harness.commit(async (tx) => {
+		const draft = await tx.doc(MemoryDoc);
+		for (const content of ["Vanguard가 설치되어 있다.", "CI는 GitHub Actions으로 실행한다.", "Slack에서 메시지를 웹훅으로 전달한다.", "파일시스템 경로는 NTFS이다."]) addAuto(draft, workspace, content, 50);
+	}, context);
+	for (const text of ["지금 전혀 관련 없는 기억에 서치되는거 같은데?", "수학적으로 분석해서 원인 찾고 개선방안 리서치", "디자인 시스템 Geist 폰트 어드민 UI", "개선하고 테스팅도 다 해줘 실제로"]) await say(text);
+	const conversation = await bot.conversation("test", "T1", context);
+	expect((await entries(conversation)).filter((entry) => entry.kind === MEMORY_NOTE_KIND)).toEqual([]);
+	for (const request of mainRequests) {
+		const messages = (JSON.parse(request) as { messages: { role: string; content: unknown }[] }).messages.filter((message) => message.role !== "system");
+		expect(JSON.stringify(messages)).not.toContain(NOTE_PREFIX);
+		expect(JSON.stringify(messages)).not.toContain("Vanguard가 설치되어");
+	}
+	await say("Vanguard");
+	const list = await entries(conversation);
+	const notes = list.filter((entry) => entry.kind === MEMORY_NOTE_KIND);
+	expect(notes).toHaveLength(1);
+	expect(JSON.stringify(notes[0]!.model)).toContain("Vanguard가 설치되어");
+	expect(notes[0]!.id).toBeLessThan(list.filter((entry) => entry.kind === "pi.user").at(-1)!.id);
+	expect(mainRequests.at(-1)).toContain("Vanguard가 설치되어");
+});
+
+test("recall: delivery history does not change corpus ranking, and maxItems defers unnoted matches", async () => {
+	const { bot, workspace, say } = await start({ memory: { ...ENABLED, auto: { ...ENABLED.auto, enabled: false }, recall: { ...ENABLED.recall, maxItems: 1 } } });
+	await bot.harness.commit(async (tx) => {
+		const draft = await tx.doc(MemoryDoc);
+		for (const [key, content] of [["a", "alpha distinctive"], ["b", "alpha"], ["c", "alpha"], ["d", "beta"], ["e", "beta"]] as const) mutate(draft, key, workspace, content);
+	}, context);
+	const query = "alpha distinctive beta";
+	await say(query);
+	await say(query);
+	await say(query);
+	const conversation = await bot.conversation("test", "T1", context);
+	const notes = (await entries(conversation)).filter((entry) => entry.kind === MEMORY_NOTE_KIND);
+	expect(notes.map((entry) => entry.data)).toEqual([
+		{ schema: 1, items: [{ key: "a", revision: 1 }] },
+		{ schema: 1, items: [{ key: "d", revision: 4 }] },
+		{ schema: 1, items: [{ key: "e", revision: 5 }] },
+	]);
+});
+
+test("recall: SQLite restart preserves deduplication and a changed revision is recalled once", async () => {
+	const workspace = await directory();
+	const path = join(workspace, "recall.sqlite");
+	const config: MemoryConfig = { ...ENABLED, auto: { ...ENABLED.auto, enabled: false } };
+	const first = await start({ workspace, storage: await openNodeSqliteStorage(path), memory: config });
+	await first.bot.harness.commit(async (tx) => { mutate(await tx.doc(MemoryDoc), "runtime", workspace, "Vanguard가 설치되어 있다."); }, context);
+	await first.say("Vanguard");
+	const conversation = await first.bot.conversation("test", "T1", context);
+	expect((await entries(conversation)).filter((entry) => entry.kind === MEMORY_NOTE_KIND)).toHaveLength(1);
+	await first.bot.close(context);
+	bots.splice(bots.indexOf(first.bot), 1);
+	const second = await start({ workspace, storage: await openNodeSqliteStorage(path), memory: config });
+	await second.say("Vanguard");
+	const reopened = await second.bot.conversation("test", "T1", context);
+	expect((await entries(reopened)).filter((entry) => entry.kind === MEMORY_NOTE_KIND)).toHaveLength(1);
+	await second.bot.harness.commit(async (tx) => { mutate(await tx.doc(MemoryDoc), "runtime", workspace, "Vanguard가 업데이트되었다."); }, context);
+	await second.say("Vanguard");
+	await second.say("Vanguard");
+	expect((await entries(reopened)).filter((entry) => entry.kind === MEMORY_NOTE_KIND).map((entry) => entry.data)).toEqual([
+		{ schema: 1, items: [{ key: "runtime", revision: 1 }] },
+		{ schema: 1, items: [{ key: "runtime", revision: 2 }] },
+	]);
+});
+
+for (const accepted of [false, true]) {
+	test("recall: pending note recovers once after " + (accepted ? "accepted write" : "write failure"), async () => {
+		const { bot, workspace } = await start({ memory: DISABLED_MEMORY });
+		await bot.harness.commit(async (tx) => { mutate(await tx.doc(MemoryDoc), "runtime", workspace, "Vanguard is installed."); }, context);
+		const conversation = await bot.conversation("test", "T1", context);
+		const logs: string[] = [];
+		const options = { config: ENABLED.recall, workspaceRoot: workspace, getHarness: () => bot.harness, log: (line: string) => { logs.push(line); } };
+		const failed = new Proxy(conversation, { get(target, property, receiver) {
+			if (property === "submit") return (async (submission, ctx) => {
+				if (accepted) await target.submit(submission, ctx);
+				throw new Error("injected delivery interruption");
+			}) satisfies Conversation["submit"];
+			return Reflect.get(target, property, receiver);
+		} });
+		await createMemoryRecall(options).recall(failed, "Vanguard", context);
+		expect(logs).toHaveLength(1);
+		expect(logs[0]).toContain("injected delivery interruption");
+		expect((await entries(conversation)).filter((entry) => entry.kind === MEMORY_NOTE_KIND)).toHaveLength(accepted ? 1 : 0);
+		const resumed = createMemoryRecall(options);
+		await resumed.recall(conversation, "unrelated", context);
+		await resumed.recall(conversation, "Vanguard", context);
+		expect((await entries(conversation)).filter((entry) => entry.kind === MEMORY_NOTE_KIND)).toHaveLength(1);
+		// Concurrent calls on a fresh conversation share the same serial delivery boundary.
+		const other = await bot.conversation("test", "T2", context);
+		await Promise.all(Array.from({ length: 8 }, () => resumed.recall(other, "Vanguard", context)));
+		expect((await entries(other)).filter((entry) => entry.kind === MEMORY_NOTE_KIND)).toHaveLength(1);
+	});
+}
+
+test("recall: character budget clips Unicode safely and defers the next matching entry", async () => {
+	const { bot, workspace, say } = await start({ memory: { ...ENABLED, auto: { ...ENABLED.auto, enabled: false }, recall: { ...ENABLED.recall, budgetChars: 40 } } });
+	await bot.harness.commit(async (tx) => {
+		const draft = await tx.doc(MemoryDoc);
+		for (const key of ["a", "b"]) mutate(draft, key, workspace, "Vanguard " + "🦖 ".repeat(50));
+	}, context);
+	await say("Vanguard");
+	const conversation = await bot.conversation("test", "T1", context);
+	const note = (await entries(conversation)).find((entry) => entry.kind === MEMORY_NOTE_KIND)!;
+	expect(note.data).toEqual({ schema: 1, items: [{ key: "a", revision: 1 }] });
+	const message = note.model![0]! as { content: string };
+	const clipped = message.content.split("- ")[1]!.split(" (memory key ")[0]!;
+	expect([...clipped]).toHaveLength(40);
+	expect(clipped.endsWith("…")).toBe(true);
+	expect(clipped).not.toContain("�");
+	await say("Vanguard");
+	const notes = (await entries(conversation)).filter((entry) => entry.kind === MEMORY_NOTE_KIND);
+	expect(notes.map((entry) => entry.data)).toEqual([
+		{ schema: 1, items: [{ key: "a", revision: 1 }] },
+		{ schema: 1, items: [{ key: "b", revision: 2 }] },
+	]);
 });
 
 test("both loops are off by default: no curator task and no note", async () => {
