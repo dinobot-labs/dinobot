@@ -96,7 +96,7 @@ Source: `src/update.ts`, `README.md`, `openwiki/runbooks/install-local.md`, `ope
 
 | Method | Command |
 |---|---|
-| Official package (Bun 1.4+) | `bun add -g https://releases.dinobot.workers.dev/core/dinobot.tgz` |
+| Official package (Bun 1.4+) | `bun add -g dinobot@https://releases.dinobot.workers.dev/core/dinobot.tgz` |
 | From a checkout (single binary to `~/.local/bin`) | `bun install && bun run install:local` |
 | From a checkout, no install | `bun start` (TUI/daemon), `bun start serve` |
 

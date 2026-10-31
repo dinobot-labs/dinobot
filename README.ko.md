@@ -37,7 +37,7 @@ https://github.com/user-attachments/assets/6b7d112e-d469-4512-b97b-96999dcf8936
 **Bun 1.4.2 이상**과 본인의 모델 제공자 자격 증명이 필요합니다. Cloudflare에서 정식 CLI/TUI 패키지를 설치하세요.
 
 ```bash
-bun add -g https://releases.dinobot.workers.dev/core/dinobot.tgz
+bun add -g dinobot@https://releases.dinobot.workers.dev/core/dinobot.tgz
 dinobot
 ```
 

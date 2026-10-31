@@ -15,6 +15,7 @@ test.skipIf(process.platform !== "win32")("Windows Bun tgz ownership and checksu
 		if (exitCode) throw new Error(JSON.stringify({ argv, exitCode, stdout, stderr }));
 		return { stdout, exitCode };
 	}
+	let server: ReturnType<typeof Bun.serve> | undefined;
 	try {
 		const pkg = join(home, "package");
 		await mkdir(pkg);
@@ -23,8 +24,21 @@ test.skipIf(process.platform !== "win32")("Windows Bun tgz ownership and checksu
 			await writeFile(join(pkg, "main.js"), ['#!/usr/bin/env bun', 'console.log("' + version + '");', ''].join(String.fromCharCode(10)));
 			await run([join(process.env.SystemRoot!, "System32", "tar.exe"), "-czf", "dinobot-" + version + ".tgz", "package"]);
 		}
-		await run([process.execPath, "add", "-g", join(home, "dinobot-1.2.3.tgz")]);
+		const archives = new Map<string, Buffer>();
+		for (const version of ["1.2.3", "1.2.4"]) archives.set("/dinobot-" + version + ".tgz", await readFile(join(home, "dinobot-" + version + ".tgz")));
+		server = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch(request) {
+			const bytes = archives.get(new URL(request.url).pathname);
+			return bytes ? new Response(bytes, { headers: { "content-type": "application/gzip" } }) : new Response(null, { status: 404 });
+		} });
+		const spec = (version: string) => "dinobot@" + new URL("dinobot-" + version + ".tgz", server!.url);
+		await run([process.execPath, "add", "-g", spec("1.2.3")]);
 		const main = join(env.BUN_INSTALL_GLOBAL_DIR, "node_modules", "dinobot", "main.js");
+		expect((await run([process.execPath, main])).stdout.trim()).toBe("1.2.3");
+		// Explicit package name replaces an existing URL dependency; a bare different URL can retain old bytes in Bun 1.4.3.
+		await run([process.execPath, "add", "-g", spec("1.2.4")]);
+		expect((await run([process.execPath, main])).stdout.trim()).toBe("1.2.4");
+		await run([process.execPath, "add", "-g", spec("1.2.3")]);
+		expect((await run([process.execPath, main])).stdout.trim()).toBe("1.2.3");
 		const bytes = await readFile(join(home, "dinobot-1.2.4.tgz"));
 		const release = { name: "dinobot", version: "1.2.4", dist: { tarball: "https://releases.dinobot.workers.dev/core/releases/1.2.4/dinobot-1.2.4.tgz", integrity: "sha512-" + createHash("sha512").update(bytes).digest("base64") } };
 		let installs = 0;
@@ -52,5 +66,5 @@ test.skipIf(process.platform !== "win32")("Windows Bun tgz ownership and checksu
 		await writeFile(shimPath, shim);
 		await rm(join(env.BUN_INSTALL_BIN, "dinobot.exe"));
 		expect(await detectUpdateManager(deps)).toBeNull();
-	} finally { await rm(home, { recursive: true, force: true }); }
+	} finally { if (server) await server.stop(true); await rm(home, { recursive: true, force: true }); }
 }, 60_000);

@@ -37,7 +37,7 @@ See [dinobot.example.yaml](dinobot.example.yaml) for configuration examples. Ena
 You need **Bun 1.4.2 or newer** and your own model-provider credentials. Install the official CLI/TUI package from Cloudflare:
 
 ```bash
-bun add -g https://releases.dinobot.workers.dev/core/dinobot.tgz
+bun add -g dinobot@https://releases.dinobot.workers.dev/core/dinobot.tgz
 dinobot
 ```
 

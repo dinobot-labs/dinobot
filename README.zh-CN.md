@@ -37,7 +37,7 @@ https://github.com/user-attachments/assets/6b7d112e-d469-4512-b97b-96999dcf8936
 需要 **Bun 1.4.2 或更高版本**和你自己的模型提供商凭据。从 Cloudflare 安装正式 CLI/TUI 软件包：
 
 ```bash
-bun add -g https://releases.dinobot.workers.dev/core/dinobot.tgz
+bun add -g dinobot@https://releases.dinobot.workers.dev/core/dinobot.tgz
 dinobot
 ```
 

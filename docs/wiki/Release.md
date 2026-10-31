@@ -3,11 +3,13 @@
 Official CLI/TUI packages are hosted on Cloudflare R2 through the dedicated `releases` Worker. Desktop downloads use a separate service and are unchanged.
 
 ```sh
-bun add -g https://releases.dinobot.workers.dev/core/dinobot.tgz
+bun add -g dinobot@https://releases.dinobot.workers.dev/core/dinobot.tgz
 dinobot update
 ```
 
-The short installation URL redirects to the latest immutable version. Older npm builds need the URL install once: their embedded updater still queries npm. Bun and npm remain supported installation managers; third-party dependencies still come from npm. No npm publishing account is required.
+The short installation URL redirects to the latest immutable version. Older npm builds need the URL install once: their embedded updater still queries npm. Keep the explicit `dinobot@` name: Bun 1.4.3 can retain an old URL dependency when given only a different tarball URL. The named URL was verified to migrate 0.8.4 to 0.8.5. Bun and npm remain supported installation managers; third-party dependencies still come from npm. No npm publishing account is required.
+
+Version 0.8.5 bootstrapped this channel through the audited local publisher from source `4f6576eed7f6599e5f22d1c5f59bb0060bfd3b96`. It is already immutable. Do not republish it from a different build: Windows Bun 1.4.3 and hosted Linux Bun 1.4.2 produced different archive hashes. Subsequent versions should be published by the GitHub release workflow below, using its single checked artifact.
 
 ## Source and package identity
 
