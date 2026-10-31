@@ -13,6 +13,7 @@ export type ScheduleCondition = { thread: string; conversationId: number; goalCr
 export type Schedule = {
  id: string; owner: number; key: string; text: string; at: number; createdAt: number;
  condition?: ScheduleCondition;
+ continuationGoal?: { createdAt: number; objective: string };
  state: "pending" | "admitted" | "completed" | "failed" | "cancelled";
  reason?: string; admittedAt?: number; result?: string;
 };
@@ -20,7 +21,7 @@ export const SchedulesDoc = defineDoc<{ schedules: Schedule[] }>({
  kind: "dinobot.schedules", version: 1, scope: "session", initial: () => ({ schedules: [] }),
 });
 const UpdateReceipt = defineDoc<{ result?: Schedule }>({ kind: "dinobot.schedule.update", version: 1, scope: "task", initial: () => ({}) });
-export type ScheduleInput = { key: string; text: string; at?: string; after_thread?: string };
+export type ScheduleInput = { key: string; text: string; at?: string; after_thread?: string; continue_goal?: boolean };
 export type ScheduleWake = (request: PluginWake, ready: () => Promise<boolean>) => Promise<PluginWakeResult>;
 export type ScheduleResult = (schedule: Schedule) => Promise<{ state: "completed" | "failed"; result: string } | undefined>;
 const copy = <T>(value: T): T => JSON.parse(JSON.stringify(value));
@@ -114,7 +115,11 @@ export class Scheduler {
    return this.#harness().commit(async tx => {
     const doc = await tx.doc(SchedulesDoc);
     if (doc.schedules.filter(s => s.owner === owner).length >= 500) throw new Error("Schedule history limit reached (500 per origin)");
-    const row: Schedule = { id, owner, key: input.key, text: input.text, at, createdAt: this.#now(), state: "pending", ...(condition ? { condition } : {}) };
+    const goal = input.continue_goal ? (await tx.doc(GoalDoc, owner)).goal : undefined;
+    if (input.continue_goal && goal?.status !== "active") throw new Error("continue_goal requires an active origin goal");
+    if (input.continue_goal && condition?.conversationId === owner) throw new Error("A goal continuation cannot wait for its own goal to complete");
+    const row: Schedule = { id, owner, key: input.key, text: input.text, at, createdAt: this.#now(), state: "pending", ...(condition ? { condition } : {}),
+     ...(goal ? { continuationGoal: { createdAt: goal.createdAt, objective: goal.objective } } : {}) };
     doc.schedules.push(row); return copy(row);
    }, this.#context);
   });

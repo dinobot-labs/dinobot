@@ -1,6 +1,7 @@
 import type { Context } from "@earendil-works/chord";
 import { defineDoc, defineExtension, GenerationTask, type Harness, hook, type HookApi, LiveDoc } from "@earendil-works/pi-durable";
 import { AsksDoc, LinkDoc } from "../core/ask.ts";
+import { SchedulesDoc } from "../core/scheduler.ts";
 import { RunDoc } from "../core/dag.ts";
 import { type Goal, GoalDoc, type GoalCriterion } from "../core/goal.ts";
 import { AgentsDoc, ProgressDoc, scanWake, isHostWakeRequest, wakeReader } from "./subagents.ts";
@@ -10,7 +11,7 @@ import { TodoDoc } from "./todo.ts";
 /**
  * Liveness at the end of a turn (ADR 0096). A turn may end while work is unfinished; that is safe only if something will
  * re-enter the conversation by itself. For a top-level conversation that is a running owned subagent or DAG run (the idle
- * wake re-enters when it settles), an unannounced wake event, or an open question to the human. With none of these and
+ * wake re-enters when it settles), a pending explicitly registered continuation of this goal, an unannounced wake event, or an open question to the human. With none of these and
  * an active goal with non-met criteria or unfinished TODOs, nothing would resume the work until the user asks "did you finish?", so the host
  * continues the run instead of letting it end. Subagents are not continued here: their runner holds their answer until
  * their own DAG runs settle (subagents.ts, ADR 0096), and their parent is woken when they finish.
@@ -26,7 +27,7 @@ export const LivenessDoc = defineDoc<{ run?: string; count: number; progressed: 
 export const GOAL_CONTINUATION_PREFIX = "<from host=\"goal\"/>";
 export const GOAL_CONTINUATION_LIMIT = 3;
 
-export type PendingWork = { subagents: string[]; runs: string[]; humanAsks: string[]; events: number };
+export type PendingWork = { subagents: string[]; runs: string[]; humanAsks: string[]; schedules: string[]; events: number };
 
 /** What will re-enter conversation `id` by itself, from committed documents. */
 export async function pendingWork(reader: Pick<HookApi, "snapshot">, id: HookApi["conversationId"], context: Context): Promise<PendingWork> {
@@ -39,7 +40,12 @@ export async function pendingWork(reader: Pick<HookApi, "snapshot">, id: HookApi
 	const runs = ((await reader.snapshot(RunDoc, id, context))?.runs ?? []).filter((run) => !run.owner && run.status === "running").map((run) => run.id);
 	const humanAsks = ((await reader.snapshot(AsksDoc, id, context))?.asks ?? []).filter((ask) => ask.to === "human" && ask.state === "open").map((ask) => ask.id);
 	const events = (await scanWake(wakeReader(reader, id, context))).events.length;
-	return { subagents, runs, humanAsks, events };
+	const goal = (await reader.snapshot(GoalDoc, id, context))?.goal;
+	// Only an explicit continuation of this goal, not a reminder or a different goal, can defer its work.
+	// Admitted wakes must not suppress liveness inside their own scheduled turn.
+	const schedules = goal?.status === "active" ? ((await reader.snapshot(SchedulesDoc, context))?.schedules ?? [])
+		.filter(s => s.owner === id && s.state === "pending" && s.continuationGoal?.createdAt === goal.createdAt && s.continuationGoal.objective === goal.objective).map(s => s.id) : [];
+	return { subagents, runs, humanAsks, schedules, events };
 }
 
 export function goalContinuation(goal: Goal | undefined, open: readonly GoalCriterion[], count: number, todos: readonly TodoItem[] = []): string {
@@ -54,7 +60,7 @@ export function goalContinuation(goal: Goal | undefined, open: readonly GoalCrit
 			...todos.map((todo) => `- [${todo.status}] ${todo.id}: ${todo.content}`),
 			"Complete only work actually finished and verified as required; do not infer success from a report, a finished worker or this reminder. Keep unfinished work pending/in_progress; cancel only work genuinely cancelled or superseded. A terminal goal does not complete TODOs, and stale TODOs do not authorize restarting abandoned work.",
 		] : []),
-		`You ended your turn, but no subagent, DAG run or question to the human is pending, so nothing would resume this work by itself (host continuation ${count}/${GOAL_CONTINUATION_LIMIT}).`,
+		`You ended your turn, but no subagent, DAG run, registered continuation of this goal or question to the human is pending, so nothing would resume this work by itself (host continuation ${count}/${GOAL_CONTINUATION_LIMIT}).`,
 		"Continue actionable work now. An unmet criterion is not completion: inspect its evidence and resolve it when possible. If genuinely blocked, record the concrete blocker as evidence and report what is needed without claiming completion or repeating ineffective tools. If only the human can decide or supply a prerequisite, use ask. If done, mark criteria met with evidence and set the goal achieved. Abandon a goal only if the user changed course, never to silence this reminder.",
 	].join("\n");
 }
@@ -81,7 +87,7 @@ export function livenessExtension(getHarness: () => Harness) {
 				if (!open.length && !todos.length) return undefined;
 				// Something else re-enters this conversation: the idle wake, or the human's answer.
 				const pending = await pendingWork(api, id, context);
-				if (pending.subagents.length || pending.runs.length || pending.humanAsks.length || pending.events) return undefined;
+				if (pending.subagents.length || pending.runs.length || pending.humanAsks.length || pending.schedules.length || pending.events) return undefined;
 				// The budget belongs to the latest human input: a run started by a host wake keeps counting against it, so
 				// wakes and continuations cannot chain without a human (ADR 0096). A run's first input identifies it.
 				const first = (await api.snapshot(LiveDoc, id, context))?.run?.inputs?.[0];

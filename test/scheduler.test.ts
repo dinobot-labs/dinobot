@@ -15,6 +15,8 @@ import { TodoDoc } from "../src/extensions/todo.ts";
 import { AgentsDoc, ProgressDoc, PLUGIN_WAKE_REQUEST_PREFIX } from "../src/extensions/subagents.ts";
 import { RunDoc, createRun } from "../src/core/dag.ts";
 import { rotateThread } from "../src/core/threads.ts";
+import { pendingWork } from "../src/extensions/liveness.ts";
+import { schedulerExtension } from "../src/extensions/scheduler.ts";
 
 const clean: (() => Promise<void>)[] = [];
 afterEach(async () => { for (const f of clean.splice(0).reverse()) await f(); });
@@ -62,6 +64,66 @@ async function goal(bot: Bot, id: ConversationId, achieved = false) {
   (await tx.doc(GoalDoc, id)).goal = g;
  }, context);
 }
+
+test("continuation registration pins active goal identity across revisions and restart, not unrelated schedules", async () => {
+ const h = await setup();
+ const input = { key: "resume", text: "Resume the authorized work", at: "2026-10-01T00:00:05Z", continue_goal: true };
+ await expect(h.bot.scheduler.create(h.owner.id, input)).rejects.toThrow("active origin goal");
+ await goal(h.bot, h.owner.id);
+ await expect(h.bot.scheduler.create(h.owner.id, { ...input, after_thread: "tui:owner" })).rejects.toThrow("own goal");
+ const row = await h.bot.scheduler.create(h.owner.id, input);
+ expect(row.continuationGoal).toEqual({ createdAt: epoch, objective: "Finish work" });
+ expect((await pendingWork(h.bot.harness, h.owner.id, context)).schedules).toEqual([row.id]);
+ expect((await pendingWork(h.bot.harness, h.other.id, context)).schedules).toEqual([]);
+ await h.bot.harness.commit(async tx => { (await tx.doc(GoalDoc, h.owner.id)).goal!.revision++; }, context);
+ await h.bot.scheduler.update(h.owner.id, row.id, { text: "Updated instruction" });
+ await h.bot.close(context);
+ const second = await h.open();
+ expect((await pendingWork(second.harness, h.owner.id, context)).schedules).toEqual([row.id]);
+ expect((await second.scheduler.list(h.owner.id))[0]!.continuationGoal).toEqual(row.continuationGoal);
+ for (const state of ["cancelled", "failed", "completed", "admitted"] as const) {
+  await second.harness.commit(async tx => { (await tx.doc(SchedulesDoc)).schedules[0]!.state = state; }, context);
+  expect((await pendingWork(second.harness, h.owner.id, context)).schedules).toEqual([]);
+ }
+ await second.harness.commit(async tx => { (await tx.doc(SchedulesDoc)).schedules[0]!.state = "pending"; (await tx.doc(GoalDoc, h.owner.id)).goal!.createdAt++; }, context);
+ expect((await pendingWork(second.harness, h.owner.id, context)).schedules).toEqual([]);
+ // Same key replay cannot silently bind a replacement goal.
+ expect((await second.scheduler.create(h.owner.id, input)).continuationGoal).toEqual(row.continuationGoal);
+ await second.harness.commit(async tx => { const g = (await tx.doc(GoalDoc, h.owner.id)).goal!; g.createdAt = epoch; g.objective = "Different work"; }, context);
+ expect((await pendingWork(second.harness, h.owner.id, context)).schedules).toEqual([]);
+ for (const status of ["achieved", "abandoned"] as const) {
+  await second.harness.commit(async tx => { const g = (await tx.doc(GoalDoc, h.owner.id)).goal!; g.objective = "Finish work"; g.status = status; }, context);
+  expect((await pendingWork(second.harness, h.owner.id, context)).schedules).toEqual([]);
+  await expect(second.scheduler.create(h.owner.id, { ...input, key: status })).rejects.toThrow("active origin goal");
+ }
+}, 20000);
+
+test("scheduler contracts disclose top-level scope, UTF-8 bytes and identical update time constraints", async () => {
+ const h = await setup();
+ const tools = schedulerExtension(h.bot.scheduler).tools!;
+ const create = tools.find(t => t.name === "schedule_create")!;
+ const update = tools.find(t => t.name === "schedule_update")!;
+ for (const tool of tools) expect(tool.description).toContain("Top-level origin only");
+ const createParams = create.parameters as unknown as { properties: { text: { description: string }; at: unknown } };
+ const updateParams = update.parameters as unknown as typeof createParams;
+ expect(createParams.properties.text.description).toContain("UTF-8 bytes");
+ expect(updateParams.properties.text).toEqual(createParams.properties.text);
+ expect(updateParams.properties.at).toEqual(createParams.properties.at);
+ const row = await h.bot.scheduler.create(h.owner.id, { key: "bytes", text: "한".repeat(4000), at: "2026-10-01T00:00:05Z" });
+ await expect(h.bot.scheduler.create(h.owner.id, { key: "too-many-bytes", text: "한".repeat(4001), at: "2026-10-01T00:00:05Z" })).rejects.toThrow("too long");
+ await expect(h.bot.scheduler.update(h.owner.id, row.id, { text: "한".repeat(4001) })).rejects.toThrow("too long");
+ await expect(h.bot.scheduler.update(h.owner.id, row.id, { at: "2026-10-01T00:00:06" })).rejects.toThrow("explicit offset");
+});
+
+test("a scheduled goal wake does not suppress liveness inside its own turn", async () => {
+ const h = await setup(); await goal(h.bot, h.owner.id);
+ const row = await h.bot.scheduler.create(h.owner.id, { key: "wake", text: "Resume authorized work", at: "2026-10-01T00:00:01Z", continue_goal: true });
+ h.clock.now += 2000;
+ await h.bot.scheduler.tick(); await settle(h.bot, h.owner.id, row.id);
+ const entries = (await h.owner.entries({}, 100, undefined, context)).items;
+ expect(entries.flatMap(e => e.model ?? []).some(m => m.role === "user" && JSON.stringify(m.content).includes("registered continuation of this goal"))).toBe(true);
+ expect((await h.bot.scheduler.list(h.owner.id))[0]!.state).toBe("completed");
+});
 
 test("strict future dates, offsets, invalid dates and timer boundaries", () => {
  expect(scheduleTime("2026-10-01T09:00:01+09:00", epoch, false)).toBe(epoch + 1000);

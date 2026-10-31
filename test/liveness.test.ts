@@ -25,7 +25,7 @@ const goal = { objective: "Ship the fixture feature", criteria: [{ id: "shipped"
 type Mode = "finish" | "spin" | "talk" | "block";
 
 type Route = (user: string, results: number, t: Parameters<FauxResponseFactory>[0]) => Awaited<ReturnType<FauxResponseFactory>> | undefined | Promise<Awaited<ReturnType<FauxResponseFactory>> | undefined>;
-async function setup(route: Route) {
+async function setup(route: Route, toolMode: "direct" | "codemode-only" = "direct") {
 	const faux = fauxProvider({ provider: "faux", models: [{ id: "faux-1" }] });
 	const continuations: string[] = [];
 	const router: FauxResponseFactory = async (t) => {
@@ -39,7 +39,7 @@ async function setup(route: Route) {
 	faux.setResponses(Array.from({ length: 120 }, () => router));
 	const models = createModels();
 	models.setProvider(faux.provider);
-	const bot = await openBot({ storage: new MemoryStorage(), models, defaultModel: { provider: "faux", modelId: "faux-1" }, toolMode: "direct", plugins: [], settings: { retry: { enabled: false } } }, context);
+	const bot = await openBot({ storage: new MemoryStorage(), models, defaultModel: { provider: "faux", modelId: "faux-1" }, toolMode, plugins: [], scheduler: { timers: false }, settings: { retry: { enabled: false } } }, context);
 	bots.push(bot);
 	const parent = await bot.conversation("test", "liveness", context);
 	const say = async (content: string) => (await parent.submit({ type: "input", content }, context)).wait(context);
@@ -63,6 +63,33 @@ function premature(mode: Mode) {
 		return undefined;
 	};
 }
+
+test.each(["direct", "codemode-only"] as const)("%s: an explicitly authorized scheduled continuation waits instead of falsely reporting no resumption", async (mode) => {
+	const invoke = (name: string, args: Record<string, unknown>) => mode === "direct" ? call(name, args) : call("codemode", { code: `text(await tools.${name}(${JSON.stringify(args)}));` });
+	const at = new Date(Date.now() + 3600000).toISOString();
+	const request = "Resume this goal in one hour; do not do the work now";
+	const { bot, parent, say, continuations } = await setup((user, results) => {
+		if (user.startsWith(GOAL_CONTINUATION_PREFIX)) return fauxAssistantMessage("unexpected immediate continuation");
+		if (user === request) return results === 0 ? invoke("goal_set", goal) : results === 1
+			? invoke("schedule_create", { key: "resume", text: "Ship the fixture feature", at, continue_goal: true }) : fauxAssistantMessage("Registered; waiting for the scheduled wake");
+		return undefined;
+	}, mode);
+	expect((await say(request)).status).toBe("done");
+	expect(await bot.scheduler.list(parent.id)).toHaveLength(1);
+	expect(continuations).toEqual([]);
+	expect((await bot.harness.snapshot(GoalDoc, parent.id, context))?.goal?.status).toBe("active");
+}, 20000);
+
+test("an unrelated reminder never suppresses active-goal continuation", async () => {
+	const { bot, parent, say, continuations } = await setup((user, results) => {
+		if (user.startsWith(GOAL_CONTINUATION_PREFIX)) return fauxAssistantMessage("work still pending");
+		return results === 0 ? call("goal_set", goal) : results === 1
+			? call("schedule_create", { key: "reminder", text: "Drink water", at: new Date(Date.now() + 3600000).toISOString() }) : fauxAssistantMessage("will work later");
+	});
+	expect((await say("Work on the feature and separately remind me to drink water in an hour")).status).toBe("done");
+	expect(await bot.scheduler.list(parent.id)).toHaveLength(1);
+	expect(continuations).toHaveLength(1);
+});
 
 test("an active goal left with nothing running is continued, and the continued turn finishes it", async () => {
 	const { bot, parent, say, continuations } = await setup(premature("finish"));
