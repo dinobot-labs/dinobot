@@ -564,7 +564,7 @@ test("app: Esc during a prompt cancels it and aborts the run; unknown commands s
 		"/quit                      Quit dinobot",
 		"/sessions                  Browse live sessions and attach a conversation",
 		"/skills                    List available skills",
-		"/theme [name]              Pick a dinosaur theme (mascot and brand colors)",
+		"/theme [name]              Pick a theme (dinosaur or DOS blue/black)",
 		"/thread <name>             Switch to a thread",
 	]);
 
