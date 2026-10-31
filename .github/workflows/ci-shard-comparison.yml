@@ -15,7 +15,7 @@ jobs:
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
-          ref: 5c1e4bd88d52e3456d1a2b18e1c2c0a6a92b56e5
+          ref: 63443643053bed6e9c9e1b1b186b1d9e62afd7c3
           persist-credentials: false
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
@@ -59,7 +59,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: original-discovery-5c1e4bd
+          name: original-discovery-6344364
           path: reports/baseline/*
           if-no-files-found: warn
           retention-days: 14
@@ -67,5 +67,5 @@ jobs:
   sharded:
     uses: ./.github/workflows/ci.yml
     with:
-      source_sha: 5c1e4bd88d52e3456d1a2b18e1c2c0a6a92b56e5
+      source_sha: 63443643053bed6e9c9e1b1b186b1d9e62afd7c3
       functional_shards: '2'
