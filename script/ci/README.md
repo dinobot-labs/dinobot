@@ -46,6 +46,48 @@ Inspect membership without executing tests:
 
 ## Same-source comparison
 
+### Required original-discovery baseline
+
+A `functional_shards=1` run still uses the custom discovery/runner. It measures
+partitioning overhead, not parity with the original Bun discovery command. For
+the primary comparison, also run the original command on the SAME checkout SHA
+as the two-shard run, including the same product code, tests and bunfig.toml.
+Do not use the pre-sharding commit as the baseline checkout.
+
+Create a temporary standalone comparison workflow (not a caller that merely sets
+`functional_shards=1`). Copy the current CI jobs and gates, but make its `test` job
+a single non-matrix job: remove matrix-dependent conditions so typecheck, title
+validation and artifact guard still run, preserving the PR-event title condition.
+Use a literal baseline job/artifact name instead of matrix/strategy expressions,
+and replace the shard artifact path with `reports/original-junit.xml`.
+Keep Ubuntu 22.04, Bun 1.4.2, frozen install, real namespace probe, job timeout,
+credential-free HOME/XDG setup, package/performance jobs and aggregate gate. All
+checkout steps must explicitly use the same source SHA as the two-shard run. The
+temporary workflow definition may be on a different ref; do not alter the checked
+out `.github/workflows/ci.yml` or test files to run the baseline.
+
+In the functional step, retain the sandbox setup and replace only the shard
+invocation with the original discovery command:
+
+```sh
+env HOME="$sandbox" XDG_CONFIG_HOME="$sandbox/config" XDG_DATA_HOME="$sandbox/data" XDG_CACHE_HOME="$sandbox/cache" DINOBOT_NO_UPDATE_CHECK=1 timeout 1200 bun test --path-ignore-patterns '**/tui-perf.test.ts'
+```
+
+Archive its complete log and step/job timestamps. For machine-readable membership
+and totals, append only `--reporter=junit --reporter-outfile=reports/original-junit.xml`
+to that command (create `reports` first) and upload that file with `if: always()`.
+Do not pass explicit file paths, the custom runner, native sharding or test-name
+filters in this baseline. Apply identical JUnit reporting to both measurements.
+Compare the original JUnit per-file list against the union of both shard selection
+lists and JUnit file lists: normalize path separators and optional `./`, require
+exact set equality and no duplicates across shards, then compare test/pass/fail/skip
+totals. Missing JUnit, unexplained totals or membership differences invalidate the
+comparison; do not claim discovery parity from the custom one-shard list alone.
+Remove the temporary workflow after collecting evidence. Remote execution and
+cleanup are owned by the parent delivery; this procedure is not a recorded result.
+
+### Optional custom-runner one-versus-two comparison
+
 Use the SAME commit SHA containing this runner and workflow for both runs. Replace
 REF and SHA below. The workflow_dispatch input only changes the runner count;
 product code, test code, Bun pin, timeout and the remaining CI checks are identical.
@@ -62,9 +104,12 @@ full functional step duration and all job durations. Download each run separatel
 
     gh run download RUN_ID -R dinobot-labs/dinobot --dir comparison/RUN_ID
 
-Check the union of the two selection lists equals the one-runner list with no
-duplicates; compare JUnit test/pass/fail/skip totals. Compare baseline functional
-wall time with max(shard wall times), and report total runner-minutes separately.
+Check the union of the two selection lists equals the custom one-runner list with
+no duplicates; compare JUnit test/pass/fail/skip totals. This is supplementary to
+the original-discovery baseline above. Compare original baseline functional wall
+time with max(shard wall times), and report total runner-minutes separately. Label
+any custom one-runner timings separately; do not substitute them for the original
+baseline or infer native Bun sharding performance from these measurements.
 The typecheck is only on shard 1, so also report end-to-end job/gate latency rather
 than presenting the functional-step reduction as the whole pipeline reduction.
 A failed/skipped suite is not a successful speedup measurement.
