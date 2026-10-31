@@ -44,17 +44,23 @@ export function sseStream(
 		controller.error(error);
 		void stop(error);
 	};
+	let pumping = false;
 	const pump = () => {
-		while (frame && offset < frame.byteLength && (controller.desiredSize ?? 0) > 0) {
-			const end = Math.min(frame.byteLength, offset + 64 * 1024, offset + controller.desiredSize!);
-			controller.enqueue(frame.slice(offset, end));
-			offset = end;
-		}
-		if (frame && offset === frame.byteLength) {
-			frame = undefined; offset = 0;
-		}
-		if (draining && !frame && controller.desiredSize === maxQueuedBytes) release();
-		if (closing && !frame) { controller.close(); void stop(); }
+		// Bun may synchronously request another pull while enqueue delivers to an active reader.
+		if (pumping) return;
+		pumping = true;
+		try {
+			while (frame && offset < frame.byteLength && (controller.desiredSize ?? 0) > 0) {
+				const end = Math.min(frame.byteLength, offset + 64 * 1024, offset + controller.desiredSize!);
+				controller.enqueue(frame.slice(offset, end));
+				offset = end;
+			}
+			if (frame && offset === frame.byteLength) {
+				frame = undefined; offset = 0;
+			}
+			if (draining && !frame && controller.desiredSize === maxQueuedBytes) release();
+			if (closing && !frame) { controller.close(); void stop(); }
+		} finally { pumping = false; }
 	};
 	const guarded: SseController = {
 		get desiredSize() { return ended || draining ? 0 : controller.desiredSize; },

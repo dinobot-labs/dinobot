@@ -545,7 +545,10 @@ async function eventStream(bot: Bot, conversationId: ConversationId, context: Co
 								await controller.drained();
 								for (const replay of republish.values()) replay();
 							});
-						} else send(event);
+						} else {
+							send(event);
+							await controller.drained();
+						}
 					}
 					await syncWorkflow();
 				});
