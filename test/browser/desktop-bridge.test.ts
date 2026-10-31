@@ -32,17 +32,16 @@ test("browser_use prefers authenticated desktop even for status without starting
  await expect(run(p, "ui_import", { confirmed: true })).rejects.toThrow("unknown action"); expect(commands).toHaveLength(3);
 });
 test("loopback credentials bypass ambient proxies and never follow redirects", async () => {
- const root = await dir(); let proxyRequests = 0;
- const proxy = listen(() => { proxyRequests++; return ok("proxy must not see credentials"); });
- const endpoint = listen(() => ok("direct")); const path = descriptor(root, endpoint.port!);
- const names = ["HTTP_PROXY", "http_proxy", "HTTPS_PROXY", "https_proxy", "NO_PROXY", "no_proxy"];
- const previous = names.map((name) => process.env[name]);
+ // Restoring environment variables cannot clear Bun's cached proxy settings.
+ const child = Bun.spawn([process.execPath, join(import.meta.dir, "../fixtures/browser-desktop-proxy.ts")], { stdout: "pipe", stderr: "pipe" });
  try {
-  for (const name of names) process.env[name] = name.toLowerCase() === "no_proxy" ? "" : `http://127.0.0.1:${proxy.port}`;
-  expect((await callDesktop(path, "open", { url: "https://example.test" }))?.text).toBe("direct"); expect(proxyRequests).toBe(0);
-  const redirectRoot = await dir(); const redirect = listen(() => new Response(null, { status: 307, headers: { Location: `http://127.0.0.1:${proxy.port}/steal` } }));
-  await expect(callDesktop(descriptor(redirectRoot, redirect.port!), "open", { url: "https://example.test" })).rejects.toThrow(); expect(proxyRequests).toBe(0);
- } finally { names.forEach((name, index) => { if (previous[index] === undefined) delete process.env[name]; else process.env[name] = previous[index]; }); }
+  const [stdout, stderr, code] = await Promise.all([new Response(child.stdout).text(), new Response(child.stderr).text(), child.exited]);
+  expect({ code, stderr }).toEqual({ code: 0, stderr: "" });
+  expect(stdout).toContain("desktop credentials bypass proxy and redirects");
+  // A later file must still reach its real loopback listener in this process.
+  const endpoint = listen(() => new Response("direct after proxy fixture"));
+  expect(await (await fetch(endpoint.url)).text()).toBe("direct after proxy fixture");
+ } finally { child.kill(); }
 });
 test("refused safe status probe falls back to isolated host", async () => {
  const root = await dir(); const s = listen(() => ok("unused")); const port = s.port!; await s.stop(true); servers.splice(servers.indexOf(s), 1);
