@@ -4,6 +4,7 @@ import type { PluginRuntime } from "../types.ts";
 import { SlackPersonalClient, type Data } from "./client.ts";
 
 export type Watch = { conversationId: string; channels: string[]; quietStart: number; quietEnd: number; timeZone: string; summaries: boolean };
+type ThreadScan = {channel:string;ts:string;oldest:string;latest?:string;cursor:string;turn:number};
 type Candidate = { channel: string; ts: string; user: string; text: string; thread: string; permalink: string; answered: boolean; checkedAt?: number; due?: number };
 /** Durable state + single-flight polling. A persisted outbox and host wake keys cover crash-after-admission. */
 export class SlackMonitor {
@@ -16,6 +17,7 @@ export class SlackMonitor {
  private readonly abort = new AbortController();
  lastError: string | undefined;
  lastPollAt: number | undefined;
+ lastThreadError: string | undefined;
  constructor(path: string, private readonly client: SlackPersonalClient, private readonly owner: string, private readonly now = Date.now, private readonly timers = true, private readonly intervalMs = 300_000, identity = owner) {
   this.db = new Database(path, { create: true });
   this.db.exec("PRAGMA journal_mode=DELETE; PRAGMA secure_delete=ON; CREATE TABLE IF NOT EXISTS state (key TEXT PRIMARY KEY, value TEXT NOT NULL); CREATE TABLE IF NOT EXISTS outbox (key TEXT PRIMARY KEY, conversation TEXT NOT NULL, text TEXT NOT NULL, delivered INTEGER NOT NULL DEFAULT 0)");
@@ -24,7 +26,7 @@ export class SlackMonitor {
  }
  private get<T>(key: string): T | undefined { const row = this.db.query<{value:string},[string]>("SELECT value FROM state WHERE key=?").get(key); return row ? JSON.parse(row.value) : undefined; }
  private put(key: string, value: unknown): void { this.db.query("INSERT OR REPLACE INTO state VALUES (?,?)").run(key, JSON.stringify(value)); }
- status(): Data { return { enabled: !!this.get<Watch>("watch"), watch: this.get<Watch>("watch") ?? null, lastPollAt: this.lastPollAt ?? null, lastError: this.lastError ?? null, intervalSeconds: this.intervalMs / 1000, delivery: "local only; one history page per interval, round-robin selected channels; 1 thread answer check per interval. Backlog and rate limits can delay notices." }; }
+ status(): Data { return { enabled: !!this.get<Watch>("watch"), watch: this.get<Watch>("watch") ?? null, lastPollAt: this.lastPollAt ?? null, lastError: this.lastError ?? null, intervalSeconds: this.intervalMs / 1000, threadError: this.lastThreadError ?? null, trackedThreads: this.db.query<{n:number},[]>("SELECT count(*) n FROM state WHERE key LIKE 'thread:%'").get()!.n, delivery: "local only; one history page (rotating channels), one fair tracked-thread reply page and at most one answer check per interval. Initial discovery walks retained history without notifying old messages. Thread count, backlog, permissions and rate limits can delay notices; not realtime." }; }
  configure(watch: Watch | undefined): void {
   // Rebinding drops pending old notices; do not leak a prior local conversation into a new destination.
   this.revision++;
@@ -65,6 +67,7 @@ export class SlackMonitor {
   if (this.closed || !this.runtime) return;
   const w = this.get<Watch>("watch"); if (!w) return;
   const now = this.now(), revision = this.revision;
+  const turn = (this.get<number>("pollTurn") ?? 0) + 1; this.put("pollTurn",turn);
   const current = () => !this.closed && revision === this.revision;
   // One history page per interval, rotating channels even on errors (Slack may allow only 1/min).
   const scanIndex = (this.get<number>("scanIndex") ?? 0) % w.channels.length;
@@ -72,11 +75,44 @@ export class SlackMonitor {
   for (const channel of w.channels.slice(scanIndex, scanIndex + 1)) {
    if (this.closed || this.get<Watch>("watch")?.conversationId !== w.conversationId) return;
    const key = "scan:" + channel;
-   const scan = this.get<{oldest:string;latest:string;cursor:string}>(key) ?? { oldest: this.get<string>("water:" + channel) ?? this.get<string>("baseline")!, latest: String(now / 1000), cursor: "" };
+   const scan = this.get<{oldest:string;latest:string;cursor:string}>(key) ?? { oldest: this.get<string>("water:" + channel) ?? "0", latest: String(now / 1000), cursor: "" };
    const page = await this.client.pages("conversations.history", { channel, oldest: scan.oldest, latest: scan.latest, inclusive: true, cursor: scan.cursor }, 1, this.abort.signal);
    if (!current()) return;
-   // Persist each record before moving a cursor; replay is safe through candidate/outbox keys.
-   for (const m of [...page.messages].reverse() as Data[]) {
+   // Discover every retained root, including old roots with later replies. Fixed history windows terminate under new arrivals.
+   for (const m of page.messages as Data[]) {
+    if (typeof m.ts !== "string" || m.thread_ts && m.thread_ts !== m.ts) continue;
+    const threadKey = "thread:"+channel+":"+m.ts;
+    if (!this.get(threadKey)) this.put(threadKey,{channel,ts:m.ts,oldest:this.get<string>("baseline")!,cursor:"",turn} satisfies ThreadScan);
+   }
+   await this.ingest(w,channel,page.messages,current);
+   if (!current()) return;
+   if (page.complete) { this.put("water:" + channel, scan.latest); this.db.query("DELETE FROM state WHERE key=?").run(key); }
+   else if (page.nextCursor) this.put(key, { ...scan, cursor: page.nextCursor });
+   else throw new Error("Incomplete history without cursor");
+  }
+  // Least recently serviced first, including failed/incomplete pages. Persist cursor per thread, not globally.
+  const row = this.db.query<{key:string;value:string},[]>("SELECT key,value FROM state WHERE key LIKE 'thread:%' ORDER BY json_extract(value, '$.turn'), rowid LIMIT 1").get();
+  if (row) {
+   const scan = JSON.parse(row.value) as ThreadScan;
+   const latest = scan.latest ?? String(now/1000);
+   this.put(row.key,{...scan,turn});
+   try {
+    const page = await this.client.pages("conversations.replies",{channel:scan.channel,ts:scan.ts,oldest:scan.oldest,latest,inclusive:true,cursor:scan.cursor},1,this.abort.signal);
+    if (!current()) return;
+    await this.ingest(w,scan.channel,page.messages,current);
+    if (!current()) return;
+    if (page.complete) this.put(row.key,{...scan,oldest:latest,latest:undefined,cursor:"",turn});
+    else if (page.nextCursor && page.nextCursor !== scan.cursor) this.put(row.key,{...scan,latest,cursor:page.nextCursor,turn});
+    else throw new Error("Incomplete/repeated thread cursor");
+    this.lastThreadError = undefined;
+   } catch { if (!current()) return; this.lastThreadError = "Thread read incomplete (permission/rate limit/network). Cursor retained; other threads rotate. Check access/scopes for this conversation; no completeness claim while errors remain."; }
+  }
+  await this.finishPoll(w,now,current);
+ }
+ private async ingest(w: Watch, channel: string, messages: Data[], current: () => boolean): Promise<void> {
+   for (const m of [...messages].reverse()) {
+    if (Number(m.ts) < Number(this.get<string>("baseline"))) continue;
+    if (!current()) return;
     if (typeof m.ts !== "string" || typeof m.text !== "string" || !m.user || m.subtype) continue;
     const ts = m.ts, thread = m.thread_ts ?? ts;
     if (m.user === this.owner) {
@@ -96,12 +132,11 @@ export class SlackMonitor {
     }
     if (w.summaries) this.put("summary:" + channel + ":" + ts, { channel, ts, text: m.text.slice(0, 1000) });
    }
-   if (page.complete) { this.put("water:" + channel, scan.latest); this.db.query("DELETE FROM state WHERE key=?").run(key); }
-   else if (page.nextCursor) this.put(key, { ...scan, cursor: page.nextCursor });
-   else throw new Error("Incomplete history without cursor");
-  }
+ }
+ private async finishPoll(w: Watch, now: number, current: () => boolean): Promise<void> {
+  const runtime = this.runtime; if (!runtime) return;
   let checkedReplies = false;
-  for (const row of this.rows("candidate:")) {
+  for (const row of this.db.query<{key:string;value:string},[number]>("SELECT key,value FROM state WHERE key LIKE 'candidate:%' AND json_extract(value, '$.answered') = 0 AND CAST(json_extract(value, '$.ts') AS REAL)*1000 <= ? ORDER BY COALESCE(json_extract(value, '$.checkedAt'),0), key LIMIT 100").all(now-3600_000)) {
    const c = JSON.parse(row.value) as Candidate;
    if (c.answered || now - Number(c.ts) * 1000 < 3600_000) continue;
    const answer = this.get<number>("answer:" + c.channel + ":" + (c.channel.startsWith("D") ? "dm" : c.thread)) ?? 0;
@@ -114,7 +149,7 @@ export class SlackMonitor {
    // Incomplete evidence never becomes an unanswered assertion.
    if (replies.complete) this.enqueue("unanswered:" + c.channel + ":" + c.ts, w, "Possible unanswered Slack request, not a confirmed obligation. Do not auto-post.\n" + JSON.stringify(c));
   }
-  for (const row of this.rows("deadline:")) {
+  for (const row of this.db.query<{key:string;value:string},[number]>("SELECT key,value FROM state WHERE key LIKE 'deadline:%' AND json_extract(value, '$.due') <= ? ORDER BY json_extract(value, '$.due'), key LIMIT 100").all(now)) {
    const d = JSON.parse(row.value) as {channel:string;ts:string;due:number};
    if (d.due > now) continue;
    const link = await this.permalink(d.channel, d.ts);
@@ -136,7 +171,7 @@ export class SlackMonitor {
   const pending = this.db.query<{key:string;conversation:string;text:string},[]>("SELECT key,conversation,text FROM outbox WHERE delivered=0 ORDER BY rowid LIMIT 10").all();
   for (const row of pending) {
    if (!current()) return;
-   const result = await this.runtime.wake({ conversationId: row.conversation, key: "slack:" + row.key, text: row.text });
+   const result = await runtime.wake({ conversationId: row.conversation, key: "slack:" + row.key, text: row.text });
    if (result === "admitted" || result === "duplicate" || result === "gone") this.db.query("UPDATE outbox SET delivered=1 WHERE key=?").run(row.key);
   }
  }

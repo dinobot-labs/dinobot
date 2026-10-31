@@ -93,6 +93,8 @@ export type PluginToolCall = {
 	 * links to their root. Undefined when the host cannot attribute the call to a channel thread.
 	 */
 	readonly channel?: () => Promise<string | undefined>;
+	/** Host thread binding only, never parsed from message/model text. Private Slack DMs are user-scoped by authenticated admission. */
+	readonly slackPrincipal?: () => Promise<{ appId: string; teamId: string; userId: string; channelId: string } | undefined>;
 	/** The calling conversation's working directory, when the host runs the call in one. */
 	readonly cwd?: string;
 	/**

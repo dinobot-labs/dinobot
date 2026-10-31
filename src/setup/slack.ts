@@ -18,10 +18,10 @@ const MAX_TOKEN_LENGTH = 1024;
 const HELLO_TIMEOUT_MS = 15_000;
 
 /** 봇 토큰에 필요한 권한과 이벤트(슬랙 연동 스킬의 매니페스트와 같다). interactivity 는 질문 버튼에 쓴다. */
-export const SLACK_BOT_SCOPES = ["app_mentions:read", "chat:write", "channels:history", "groups:history", "im:history", "files:read", "files:write"] as const;
+export const SLACK_BOT_SCOPES = ["app_mentions:read", "chat:write", "channels:history", "groups:history", "im:history", "files:read", "files:write", "channels:read", "groups:read", "im:read", "mpim:read", "mpim:history"] as const;
 /** User credentials are read-only. Do not request chat:write or files:write here. */
 export const SLACK_USER_SCOPES = ["channels:read", "groups:read", "im:read", "mpim:read", "channels:history", "groups:history", "im:history", "mpim:history", "search:read", "files:read"] as const;
-export const SLACK_BOT_EVENTS = ["app_mention", "message.channels", "message.groups", "message.im"] as const;
+export const SLACK_BOT_EVENTS = ["app_mention", "message.channels", "message.groups", "message.im", "message.mpim"] as const;
 
 export type SlackAppManifest = {
 	readonly display_information: { readonly name: string; readonly description: string; readonly background_color: string };

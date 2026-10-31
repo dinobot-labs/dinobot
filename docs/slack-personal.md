@@ -1,69 +1,87 @@
-# Slack personal assistant (opt-in)
+# Slack assistant (opt-in, bot-only sending)
 
 ## Desktop integration contract
 
-Use the existing daemon command protocol. Start "/setup channels" in a **local tui conversation** and select checklist option id **slack-personal**. This is also the reconnect entry, including when channels.slack already exists. Do not submit credentials as chat messages or add a secret-bearing HTTP endpoint.
+Use the existing daemon command protocol: start /setup channels in a **local tui conversation**, select checklist id **slack-personal**. This also reconnects an existing configuration. Do not send credentials as chat messages or add a secret-bearing HTTP endpoint.
 
-The command emits:
-1. text prompt: app name.
-2. print: official Slack app-create URL with encoded manifest (bot scopes plus read-only user scopes).
-3. secret prompt: bot xoxb token; server auth.test + bots.info.
-4. secret prompt: app xapp token with connections:write; server apps.connections.open + short hello probe, then socket closes. Bot/app app IDs must both exist and match.
-5. secret prompt: user xoxp token; auth.test derives owner ID, requires matching team and exactly the allowed read scopes (no write/unknown scopes).
-6. ordinary setup apply event: candidate manifest contains file paths, never token values. Existing apply/CAS/restart flow applies. No custom endpoint is introduced.
+Prompt sequence:
+1. Text: separate Slack app name.
+2. Select: **bot** (recommended, two tokens) or **personal** (optional read-only user-token access). All sending stays bot-only.
+3. Print: official app-create URL with encoded manifest. Bot scopes cover message/file sending, channel/DM listing and history. Only personal includes read-only user scopes. Create the app, enable Socket Mode, install it, invite it to channels.
+4. Secret: xoxb bot token; server auth.test + bots.info.
+5. Secret: xapp app token with connections:write; server apps.connections.open and short hello probe, then close. Bot/app IDs must exist and match.
+6. Bot mode: text Slack member ID (profile → Copy member ID), configured by the local operator as owner. This is configuration, not proof that the operator owns that Slack account; remote calls still require that authenticated Slack sender. Personal mode: secret xoxp token; auth.test derives owner, checks matching workspace and exactly approved read-only scopes (no write/unknown scopes).
+7. Normal setup apply event stages paths, never token values. Existing CAS/apply/restart flow remains the only configuration endpoint.
 
-Errors are SlackSetupError kinds: invalidAuth, revoked, inactive, missingScope, network, unexpected, badResponse, socketModeOff. app-mismatch and team-mismatch are unexpected details. Failed validation offers retry/skip. Tokens must be rendered as secret fields and sent only through existing command replies.
+Tokens render as secret fields and travel through existing command replies. SlackSetupError kinds: invalidAuth, revoked, inactive, missingScope, network, unexpected, badResponse, socketModeOff. App/team mismatch use unexpected details. Validation failure offers retry/skip; cancellation cannot overwrite active credentials.
 
-New credentials live in slack/<random-generation>/{bot,app,user}.token next to the manifest, protected by existing cross-platform private-file utility. Cancelled reconnect never overwrites active credentials. After successful reconnect, old generations are not automatically deleted (no unsafe cleanup of a possibly running daemon's credentials).
+New credentials are protected files in slack/<random-generation>/{bot,app,user}.token beside the manifest. Bot mode creates no user file. Reconnect does not delete old generations automatically because the running daemon may still hold them.
 
 Staged configuration:
 
     channels.slack:
       transport: socket
-      botTokenFile: <protected path>
-      appTokenFile: <protected path>
+      botTokenFile: <protected bot path>
+      appTokenFile: <protected app path>
       databasePath: <data>/slack.sqlite
       port: 0
       appId: <verified app>
       teamId: <verified team>
       botUserId: <verified bot>
-      allowedUserIds: [<derived owner>]
+      allowedUserIds: [<owner>]
       allowedChannelIds: ["*"]
     plugins.slack_personal:
       botTokenFile: <same protected bot path>
-      userTokenFile: <protected user path>
-      ownerUserId: <derived owner>
+      # userTokenFile: <optional protected read-only user path>
+      ownerUserId: <owner>
       teamId: <verified team>
       databasePath: <data>/slack-personal.sqlite
 
-Optional plugin keys: transferDirectory (default sibling slack-transfers), pollIntervalSeconds (60..3600; default 300). Plugin disabled by default. Credentials are revalidated when loaded, including owner/team/scopes. Existing channel is the sole long-lived Socket Mode consumer.
+Optional keys: transferDirectory (default sibling slack-transfers), pollIntervalSeconds (60..3600, default 300). Plugin is opt-in. Credentials revalidate on load. Existing channel remains the sole long-lived Socket Mode consumer. Changing workspace, owner, bot app or read mode discards old monitoring state.
 
-## Tool/status contract
+## Tools and permissions
 
-All tools use prefix slack_personal_. status returns teamId, ownerUserId, access="local-only", transferDirectory, enabled, watch|null, lastPollAt|null, lastError|null, intervalSeconds and delivery explanation. This is a plugin tool, **not** a new public HTTP route. Loading needs network access; failures are ordinary plugin-load errors. No real-account connectivity claim should be inferred from configuration presence.
+Prefix: slack_personal_. Tools: status, list, history, replies, search, download, send, upload, monitor, deadline. Schemas are in the plugin catalog; status is a tool, not an HTTP route.
 
-Tools: list, history, replies, search, download, send, upload, monitor, deadline, status. JSON schemas are provided by the plugin catalog. Cursor methods return messages/channels, nextCursor, complete, pages. Limit is 15/page, 1..5 pages/call. search has page 1..100, count 50 and Slack's native paging response. No claim of complete history without exhausting continuation within Slack access/retention limits.
+Status includes teamId, ownerUserId, access=local-or-owner-private-dm, readIdentity=bot or user, transferDirectory, enabled, watch, lastPollAt, lastError, threadError, trackedThreads, intervalSeconds and delivery explanation. Config presence is not live connectivity evidence.
 
-User token is used only for a fixed read-method allowlist. Bot token sends messages and files. Files use Slack files.info and HTTPS files.slack.com only, redirects denied. Signed upload URLs carry no bearer. File size max 10 MiB; flat filenames in dedicated transfer directory; no overwrite, traversal, alternate streams, device names, symlinks or hardlinks. Copy upload files into this directory first.
+Bot-only mode reads conversations/files the bot can access and sends messages/files as that bot. Optional user token extends reads to user-accessible channels/DMs and enables search. It never enables user-identity sending. Search without a user token gives an explicit unsupported-mode error, not an empty successful result. All reads obey Slack permissions, membership, retention and API limits; neither credential grants administrator access.
 
-## Privacy / delivery boundary
+Cursor tools return messages/channels, nextCursor, complete and pages. Pages are 15 records, 1..5 pages/call. Continue nextCursor until complete to enumerate accessible history. Search: page 1..100, count 50 with Slack native paging. No full-archive claim without exhausting continuation.
 
-The current core plugin call contract exposes a trusted channel but no trusted remote sender. Therefore **all remote conversations are denied**, including the owner's Slack conversation. Only local Desktop/TUI can use personal tools. This deliberately fails closed instead of trusting a name in a model prompt. Remote owner access requires a future authenticated principal contract.
+Only fixed read methods use the optional user token. Only bot token calls write methods. Files use files.info and HTTPS files.slack.com, redirects denied; signed upload URLs receive no bearer. Max 10 MiB. Dedicated flat transfer directory: no overwrite, traversal, alternate streams, device names, links or hardlinks. Copy upload files there first.
 
-auth.test establishes the user's workspace/identity/scopes, not a user-token app ID. Bot/app identity is verified against Socket Mode hello; a user token from another app in the same workspace with identical approved read scopes cannot be distinguished by this flow. Do not claim three-way app identity verification.
+Slack replies reference (retrieved during implementation; lists bot and user history scopes):
+https://docs.slack.dev/reference/methods/conversations.replies
 
-Monitoring is separately enabled with monitor in the local conversation. It selects up to 5 channels/DMs and starts at activation time; it does not backfill old history. Each interval polls one 15-message history page, rotating selected channels, preserving a fixed window/cursor until exhausted. At default settings 5 quiet channels take about 25 minutes per sweep; backlog and Slack 429 Retry-After increase delay. Only selected-channel top-level history is scanned; threaded mentions not surfaced in channel history and group-DM request inference are not comprehensive. Manual search/replies remain available.
+## Trusted owner / private disclosure boundary
 
-DM messages and owner mentions become candidates, not confirmed tasks. After one hour, at most one candidate thread is checked per interval; incomplete replies never establish an unanswered assertion. A later owner DM reply is a conservative suppression heuristic, not proof of semantic resolution. Explicit deadline accepts an offset-qualified datetime only; natural-language deadlines remain candidates. Hourly summaries are bounded samples (10 messages per summary), not full-channel reports.
+Slack admission verifies transport credentials, app/team, sender allowlist and canonical destination, then constructs a host thread key [app, team, channel, rootTimestamp, sender]. Host PluginToolCall.slackPrincipal resolves that committed binding, following subagent parents. It never parses message text, names, from-markup or model arguments for identity.
 
-Quiet hours default 22–08 in the explicitly supplied IANA zone; equal start/end disables quiet hours. SQLite outbox plus stable host wake keys prevents repeated host admission after crashes. Configure/disable fences in-flight polling; account changes discard prior monitoring state. Monitoring wakes only the opted-in local conversation and never directly calls Slack send APIs. Tool prompts prohibit model auto-posting; explicit send requests are still available locally. This is not a separate human-confirmation system for each send.
+Plugin permits local tui calls or a Slack principal matching the loaded bot app, configured team and owner, **only in a D-prefixed one-to-one DM**. Other senders, shared C/G channels, foreign app/team, unknown/malformed/unbound/cyclic/archived bindings fail closed before private API calls. Missing bot app identity denies remote access. Subagents inherit the same destination boundary, not additional privilege. Local daemon API access remains local-operator authority (pre-existing single-user trust boundary), not a sandbox against a compromised local process.
 
-Monitoring database contains private snippets and IDs, is created as a protected file, and is registered as host storage; it is not encrypted. Keep the daemon data directory private. No live user-token, actual Slack send, installation, daemon restart or publication was performed in backend tests.
+Monitor configure/disable is **local-only even for the verified Slack owner**. Its persisted destination is the opted-in local conversation; automatic private summaries never post to Slack. Owner may manually request reads or explicit bot sends from their private bot DM. Prompts prohibit auto-posting; there is no new human-confirmation system for each send.
 
-## Backend verification
+User auth.test establishes workspace/identity/scopes, not app identity. A same-workspace user token from another app with identical approved read scopes cannot be distinguished. Do not claim three-way app matching.
 
-- Relevant setup/client/monitor suite: 59 passed, 0 failed (351 assertions).
-- Full TypeScript check: passed with DEEPWORK_TYPECHECK_JOBS=2.
-- git diff --check: passed.
-- Expanded regression run: 96 passed, 2 POSIX-only skipped, 3 failed. All three failures reproduced on untouched canonical base 51495a58ac8c9087be9f366b936088c4d69d64e5: existing CLI test reaches live daemon lock because Windows HOME isolation is incomplete; existing research-readiness manifest expectation fails; independent PowerShell ACL inspection cannot autoload Microsoft.PowerShell.Security in this environment. No production daemon was stopped or restarted.
-- Existing plugin-wake integration tests: all 8 passed in that expanded run. Private file creation/read and exposed-ACL rejection tests passed; the independent Get-Acl inspection remains environment-blocked.
+## Monitoring and latency
+
+Select up to five channels/DMs. Each interval:
+- One history page, rotating channels, with fixed oldest/latest window and durable cursor until complete. Initial discovery walks retained history so old roots with new replies can be found; pre-activation messages never create new notices.
+- One tracked-thread reply page, least-recently-serviced first, with separate durable fixed window/cursor per root. Failed/incomplete roots rotate too; more than 100 roots are not truncated. Roots remain until monitoring reset, so registry size grows with discovered history.
+- At most one unanswered-candidate check. Incomplete evidence never establishes unanswered status.
+- Up to 100 due deadlines selected **by due time before the bound**, then ten pending local wake deliveries. Future deadlines cannot hide a lexically later due deadline. Remaining due/outbox work drains on later intervals without duplicate host admission.
+
+At defaults, five quiet channels need about 25 minutes per history sweep. T tracked roots need roughly T × 5 minutes for one reply-page sweep: 100 roots can take about 8 hours 20 minutes. Initial history discovery, multi-page threads, API errors and Retry-After add latency. This is fair bounded polling, **not realtime** and not guaranteed coverage before Slack retention removes data. Status reports root count and errors. Permission failures are not empty successful reads.
+
+DM messages and owner mentions, including discovered thread replies, are candidates, not confirmed tasks. After one hour an unanswered check can create a notice. Later owner replies suppress queued unanswered notices; later DM answers are only a conservative semantic heuristic. Candidate evidence retains a bounded 100-record sample; hourly summaries sample up to ten messages, not full channels. Natural-language deadlines remain uncertain; explicit deadline requires an offset-qualified datetime.
+
+Quiet hours default 22–08 in an explicit IANA zone; equal endpoints disable quiet hours. Durable SQLite outbox and stable host wake keys deduplicate replay/crash-after-admission. Configure/disable fences in-flight polling. State contains private snippets/IDs, is a protected file registered as host storage, and is not encrypted.
+
+## Verification boundary
+
+Tests use injected Slack responses, real temporary SQLite/private files, and existing signed HTTP / local WebSocket channel integration. Deadline starvation reproduced before the fix (expected ten admissions, actual zero). Regression covers 100 future deadlines plus 105 due deadlines, eventual delivery once and no future delivery. Added old-root threaded mention, restart/cursor fairness, 105-root fairness, bot-only setup, owner-private-DM allow/deny and credential-identity tests.
+
+Final focused/setup/principal/host-wake/codemode run: 86 passed / 0 failed, 500 assertions (six files). Direct and codemode-only host tests prove private-owner admission and shared-channel denial despite forged model text. Earlier channel integration/socket/recovery run: all 120 tests passed (846 assertions, eight files, overlapping the focused suite); the 46 native-channel tests passed there and channel code was not changed afterward. Final full TypeScript check passed with DEEPWORK_TYPECHECK_JOBS=2; git diff --check passed.
+
+No real-account tokens, actual Slack sends, daemon restart, install, push or release. Source/API-fixture verification does not prove a live workspace installation or Desktop UI execution.

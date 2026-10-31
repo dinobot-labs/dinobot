@@ -456,8 +456,9 @@ class SetupSession {
 	private async slackPersonal(label: string): Promise<void> {
 		const { io, copy } = this;
 		const name = await io.prompt({ type: "text", message: `${label}\n${copy.slackName}`, placeholder: copy.slackNamePlaceholder });
-		io.print(slackCreateAppUrl(buildSlackManifest(name, true)), "success");
-		io.print("Create from this manifest, enable Socket Mode, install to workspace. Copy Bot User OAuth Token, App-Level Token (connections:write), then User OAuth Token. User scopes must be read-only.");
+		const personal = await this.select("Reading access (all sends remain bot-only)", [{id:"bot",label:"Bot access · two tokens (recommended)"},{id:"personal",label:"Also read personal DMs / search · optional read-only user token"}]) === "personal";
+		io.print(slackCreateAppUrl(buildSlackManifest(name, personal)), "success");
+		io.print("Create a separate Slack app from this manifest, enable Socket Mode, install to workspace. Copy Bot User OAuth Token and App-Level Token (connections:write). Invite the bot to channels to read them. User-token reading is optional; all outgoing messages and files use the bot.");
 		for (;;) {
 			try {
 				const botToken = cleanSlackToken(await io.prompt({ type: "secret", message: copy.slackBotToken, placeholder: "xoxb-…" }));
@@ -466,17 +467,18 @@ class SetupSession {
 				const appToken = cleanSlackToken(await io.prompt({ type: "secret", message: copy.slackAppToken, placeholder: "xapp-…" }));
 				if (tokenProblem("app", appToken)) throw new SlackSetupError("invalidAuth", "app-token-format");
 				const appId = requireSlackAppMatch(bot, await verifySlackAppToken(appToken, this.slackDeps()));
-				const userToken = cleanSlackToken(await io.prompt({ type: "secret", message: "User OAuth Token (read-only, xoxp-)", placeholder: "xoxp-…" }));
-				const owner = await verifySlackUserToken(userToken, bot.teamId, this.slackDeps());
+				const userToken = personal ? cleanSlackToken(await io.prompt({ type: "secret", message: "User OAuth Token (optional personal reading, read-only, xoxp-)", placeholder: "xoxp-…" })) : undefined;
+				const ownerUserId = userToken ? (await verifySlackUserToken(userToken, bot.teamId, this.slackDeps())).ownerUserId : (await io.prompt({type:"text",message:"Your Slack member ID (profile → Copy member ID)",placeholder:"U0123ABCD"})).trim();
+				if (!/^[UW][A-Z0-9]{2,}$/.test(ownerUserId) || ownerUserId === bot.botUserId) throw new SlackSetupError("unexpected", "invalid-owner-id");
 				// Unique generation: cancelled reconnect cannot overwrite the currently active credentials.
 				const dir = join(dirname(this.deps.manifestPath), "slack", crypto.randomUUID());
 				const botTokenFile = join(dir, "bot.token"), appTokenFile = join(dir, "app.token"), userTokenFile = join(dir, "user.token");
 				for (const [path, token] of [[botTokenFile, botToken], [appTokenFile, appToken], [userTokenFile, userToken]] as const) {
-					await writePrivateFile(path, `${token}\n`); this.created.add(path);
+					if (token) { await writePrivateFile(path, `${token}\n`); this.created.add(path); }
 				}
-				this.stage({ section: "channels", key: "slack", value: { transport: "socket", botTokenFile, appTokenFile, databasePath: join(this.deps.dataDir, "slack.sqlite"), port: 0, appId, teamId: bot.teamId, botUserId: bot.botUserId, allowedUserIds: [owner.ownerUserId], allowedChannelIds: ["*"] } });
-				this.stage({ section: "plugins", key: "slack_personal", value: { botTokenFile, userTokenFile, teamId: bot.teamId, ownerUserId: owner.ownerUserId, databasePath: join(this.deps.dataDir, "slack-personal.sqlite") } });
-				io.print(`Verified ${bot.teamName} · ${owner.ownerUserId}. Personal tools are local-only. Monitoring is off until explicitly enabled in a local conversation. Apply then restart to load.`, "success");
+				this.stage({ section: "channels", key: "slack", value: { transport: "socket", botTokenFile, appTokenFile, databasePath: join(this.deps.dataDir, "slack.sqlite"), port: 0, appId, teamId: bot.teamId, botUserId: bot.botUserId, allowedUserIds: [ownerUserId], allowedChannelIds: ["*"] } });
+				this.stage({ section: "plugins", key: "slack_personal", value: { botTokenFile, ...(userToken ? {userTokenFile} : {}), teamId: bot.teamId, ownerUserId, databasePath: join(this.deps.dataDir, "slack-personal.sqlite") } });
+				io.print(`Verified ${bot.teamName} bot · configured owner ${ownerUserId}. Tools allow local access and this owner in a private bot DM. Monitoring is off until locally enabled; notifications stay local. Apply then restart to load.`, "success");
 				return;
 			} catch (error) {
 				if (cancelled(error, io)) throw error;

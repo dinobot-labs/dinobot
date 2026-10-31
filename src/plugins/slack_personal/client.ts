@@ -25,14 +25,15 @@ export async function boundedBytes(response: Response, limit: number): Promise<U
 /** All credentials stay here; callers choose predeclared methods, never arbitrary URLs. */
 export class SlackPersonalClient {
  private retryAt = 0;
- constructor(private readonly user: string, private readonly bot: string, private readonly fetcher: SlackFetch = (url, init) => fetch(url, init), private readonly now = Date.now) {}
+ constructor(private readonly user: string | undefined, private readonly bot: string, private readonly fetcher: SlackFetch = (url, init) => fetch(url, init), private readonly now = Date.now) {}
  private signal(signal?: AbortSignal): AbortSignal { return signal ? AbortSignal.any([signal, AbortSignal.timeout(20_000)]) : AbortSignal.timeout(20_000); }
  async request(method: string, args: Data = {}, signal?: AbortSignal): Promise<Data> {
   const read = READ_METHODS.has(method);
+  if (!this.user && method === "search.messages") throw new Error("Slack search requires optional read-only user token; bot history/list remain available");
   if (!read && !SEND_METHODS.has(method)) throw new Error("Slack method not allowed");
   if (this.now() < this.retryAt) throw new SlackRateLimit(this.retryAt);
   let response: Response;
-  try { response = await this.fetcher("https://slack.com/api/" + method, { method: "POST", redirect: "error", headers: { authorization: "Bearer " + (read ? this.user : this.bot), "content-type": "application/x-www-form-urlencoded" }, body: new URLSearchParams(Object.entries(args).filter(([,v]) => v !== undefined).map(([k,v]): [string, string] => [k, typeof v === "object" ? JSON.stringify(v) : String(v)])).toString(), signal: this.signal(signal) }); }
+  try { response = await this.fetcher("https://slack.com/api/" + method, { method: "POST", redirect: "error", headers: { authorization: "Bearer " + (read ? this.user ?? this.bot : this.bot), "content-type": "application/x-www-form-urlencoded" }, body: new URLSearchParams(Object.entries(args).filter(([,v]) => v !== undefined).map(([k,v]): [string, string] => [k, typeof v === "object" ? JSON.stringify(v) : String(v)])).toString(), signal: this.signal(signal) }); }
   catch { throw new Error("Slack network request failed"); }
   if (response.status === 429) {
    const seconds = Number(response.headers.get("retry-after"));
@@ -68,7 +69,7 @@ export class SlackPersonalClient {
   if (!file || Number(file.size) > MAX_FILE_BYTES) throw new Error("File missing or too large");
   const url = slackFileUrl(file.url_private_download ?? file.url_private);
   let response: Response;
-  try { response = await this.fetcher(url, { redirect: "error", headers: { authorization: "Bearer " + this.user }, signal: this.signal(signal) }); } catch { throw new Error("Slack file download failed"); }
+  try { response = await this.fetcher(url, { redirect: "error", headers: { authorization: "Bearer " + (this.user ?? this.bot) }, signal: this.signal(signal) }); } catch { throw new Error("Slack file download failed"); }
   if (!response.ok) throw new Error("Slack file HTTP " + response.status);
   return boundedBytes(response, MAX_FILE_BYTES);
  }

@@ -20,7 +20,7 @@ import { parseManifest } from "../src/manifest.ts";
 import { pluginCatalog } from "../src/plugins/index.ts";
 import type { ReportService } from "../src/report/service.ts";
 import { detectLocale, resolveLocale, setupCopy, systemLocale } from "../src/setup/locale.ts";
-import { SLACK_USER_SCOPES, type ProbeSocketConstructor } from "../src/setup/slack.ts";
+import { SLACK_BOT_SCOPES, SLACK_USER_SCOPES, type ProbeSocketConstructor } from "../src/setup/slack.ts";
 import { sha256Hex } from "../src/setup/manifest-file.ts";
 import { readSetupState } from "../src/setup/state.ts";
 
@@ -134,7 +134,7 @@ async function world(options: { loggedIn?: boolean; report?: ReportService; fail
 				if (method === "auth.test" && new Headers(init.headers).get("authorization")?.includes("xoxp-")) return Response.json({ ok: true, team_id: "T01234", user_id: "UOWNER" }, { headers: { "x-oauth-scopes": SLACK_USER_SCOPES.join(",") } });
 				if (method === "auth.test") {
 					return new Response(JSON.stringify({ ok: true, team: "Faux Workspace", team_id: "T01234", user_id: "U9999", bot_id: "B8888", user: "dinobot", url: "https://foux.slack.com/" }), {
-						headers: { "x-oauth-scopes": "app_mentions:read,chat:write,channels:history,groups:history,im:history,files:read,files:write" },
+						headers: { "x-oauth-scopes": SLACK_BOT_SCOPES.join(",") },
 					});
 				}
 				if (method === "bots.info") return Response.json({ ok: true, bot: { app_id: "A01234", name: "dinobot" } });
@@ -654,7 +654,7 @@ describe("slack wizard", () => {
    if (prompt.type === "checklist") return ["slack-personal"];
    if (prompt.type === "text") return "personal";
    if (prompt.type === "secret") return prompt.message.includes("User OAuth") ? "xoxp-personal-test" : prompt.message.includes("app-level") ? APP_TOKEN : BOT_TOKEN;
-   if (prompt.type === "select") return prompt.options.some(o => o.id === "apply") ? "apply" : "skip";
+   if (prompt.type === "select") return prompt.options.some(o => o.id === "personal") ? "personal" : prompt.options.some(o => o.id === "apply") ? "apply" : "skip";
    throw new Error("Unexpected prompt");
   });
   const request = applied(events)!;
@@ -667,17 +667,34 @@ describe("slack wizard", () => {
   expect(request.candidate).not.toContain("xoxp-personal-test");
   expect(prompts(events).filter(p => p.type === "secret")).toHaveLength(3);
  });
+ test("bot-only assistant stages two protected tokens without requesting a user token", async () => {
+  const w = await world({loggedIn:true});
+  const events = await drive(w.commands,"channels",prompt=>{
+   if(prompt.type === "checklist")return ["slack-personal"];
+   if(prompt.type === "text")return prompt.message.includes("member ID") ? "UOWNER" : "bot";
+   if(prompt.type === "secret")return prompt.message.includes("app-level") ? APP_TOKEN : BOT_TOKEN;
+   if(prompt.type === "select")return prompt.options.some(o=>o.id === "bot") ? "bot" : "apply";
+   throw new Error("Unexpected prompt");
+  });
+  const candidate = Bun.YAML.parse(applied(events)!.candidate) as any;
+  expect(candidate.plugins.slack_personal.userTokenFile).toBeUndefined();
+  expect(candidate.channels.slack.allowedUserIds).toEqual(["UOWNER"]);
+  expect(prompts(events).filter(p=>p.type === "secret")).toHaveLength(2);
+  const url=outputs(events).find(s=>s.startsWith("https://api.slack.com/apps?"))!;
+  expect(JSON.parse(new URL(url).searchParams.get("manifest_json")!).oauth_config.scopes.user).toBeUndefined();
+ });
  test("personal app mismatch stages no config or credentials", async () => {
   const w = await world({ loggedIn: true }); w.slack.helloAppId = "AOTHER";
   const events = await drive(w.commands, "channels", prompt => {
    if (prompt.type === "checklist") return ["slack-personal"];
    if (prompt.type === "text") return "personal";
    if (prompt.type === "secret") return prompt.message.includes("app-level") ? APP_TOKEN : BOT_TOKEN;
-   if (prompt.type === "select") return "skip";
+   if (prompt.type === "select") return prompt.options.some(o=>o.id === "bot") ? "bot" : "skip";
    throw new Error("Unexpected prompt");
   });
   expect(applied(events)).toBeUndefined();
   expect(existsSync(join(w.config, "slack"))).toBe(false);
+  expect(outputs(events).join("\n")).toContain("app-mismatch");
  });
 
 	const BOT_TOKEN = "xoxb-777-faux-token-for-tests";

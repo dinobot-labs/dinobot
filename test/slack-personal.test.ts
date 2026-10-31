@@ -33,6 +33,11 @@ describe("personal setup", () => {
 });
 
 describe("personal client", () => {
+ test("bot-only reading and sending never require or use a user credential",async()=>{
+  const tokens:string[]=[];const c=new SlackPersonalClient(undefined,"xoxb-bot",async(_,init)=>{tokens.push(new Headers(init.headers).get("authorization")!);return ok({});});
+  await c.request("conversations.history");await c.request("chat.postMessage");expect(tokens).toEqual(["Bearer xoxb-bot","Bearer xoxb-bot"]);
+  await expect(c.request("search.messages")).rejects.toThrow("optional");expect(tokens).toHaveLength(2);
+ });
  test("user reads, bot sends, arbitrary methods forbidden; redirects disabled", async () => {
   const tokens: string[]=[];
   const c = new SlackPersonalClient("xoxp-user","xoxb-bot",async(_,init)=>{ tokens.push(new Headers(init.headers).get("authorization")!); expect(init.redirect).toBe("error"); return ok({}); });
@@ -81,6 +86,24 @@ test("every remote/unknown caller denied before any personal tool execution", as
  try { const initial=calls; for(const tool of plugin.tools)await expect(tool.execute({}, {conversationId:"1",channel:async()=>"slack"})).rejects.toThrow("local");expect(calls).toBe(initial); const status=await plugin.tools.find(t=>t.name==="slack_personal_status")!.execute({}, {conversationId:"1",channel:async()=>"tui"}); expect(status).toMatchObject({enabled:false,ownerUserId:"U123"}); } finally {await plugin.close?.();}
 });
 
+test("bot-only plugin permits owner private DM reads and bot sends, but never remote monitoring",async()=>{
+ const dir=temp();createPrivateFile(join(dir,"bot"),"xoxb-test");const requests:string[]=[];
+ const fetch:SlackFetch=async(url,init)=>{expect(new Headers(init.headers).get("authorization")).toBe("Bearer xoxb-test");requests.push(url);if(url.endsWith("bots.info"))return ok({bot:{app_id:"A123"}});if(url.endsWith("auth.test"))return ok({team_id:"T123",user_id:"UBOT",bot_id:"B123"},SLACK_BOT_SCOPES);return ok({messages:[{text:"bot accessible"}]});};
+ const plugin=await loadPlugin(createSlackPersonalPlugin({fetch,timers:false}),{botTokenFile:join(dir,"bot"),teamId:"T123",ownerUserId:"U123"},{dataDir:dir,resolveDependency:async()=>undefined});if(Array.isArray(plugin))throw new Error(plugin.join(";"));
+ const call={conversationId:"1",channel:async()=>"slack",slackPrincipal:async()=>({appId:"A123",teamId:"T123",userId:"U123",channelId:"D123"})};
+ const tool=(name:string)=>plugin.tools.find(t=>t.name === "slack_personal_"+name)!;
+ try {expect(await tool("status").execute({},call)).toMatchObject({readIdentity:"bot",access:"local-or-owner-private-dm"});expect(await tool("history").execute({channel:"C123"},call)).toMatchObject({complete:true});await tool("send").execute({channel:"C123",text:"explicit request"},call);expect(requests.at(-1)).toEndWith("chat.postMessage");await expect(tool("monitor").execute({enabled:true,channels:["C123"],timeZone:"UTC"},call)).rejects.toThrow("locally");const count=requests.length;await expect(tool("history").execute({channel:"C123"},{...call,slackPrincipal:async()=>({...await call.slackPrincipal(),userId:"UOTHER"})})).rejects.toThrow();expect(requests).toHaveLength(count);}finally{await plugin.close?.();}
+});
+
+test("owner private DM authorization rejects other users, app/team mismatch, shared and forged text",async()=>{
+ const owner={userId:"U123",teamId:"T123",appId:"A123"};const p={...owner,channelId:"D123"};
+ const call={conversationId:"1",channel:async()=>"slack",slackPrincipal:async()=>p};
+ await requireLocalOwner(call,owner);
+ for(const bad of [{...p,userId:"UOTHER"},{...p,teamId:"T999"},{...p,appId:"A999"},{...p,channelId:"C123"},{...p,channelId:"G123"}])await expect(requireLocalOwner({...call,slackPrincipal:async()=>bad},owner)).rejects.toThrow();
+ await expect(requireLocalOwner({conversationId:call.conversationId,channel:call.channel},owner)).rejects.toThrow();
+ await expect(requireLocalOwner({...call,channel:async()=>"http"},owner)).rejects.toThrow();
+});
+
 const watch: Watch={conversationId:"10",channels:["D123"],timeZone:"UTC",quietStart:0,quietEnd:0,summaries:false};
 function monitorWorld(path: string) {
  let now=Date.parse("2026-10-01T12:00:00Z");let messages: object[]=[];let replies: object[]=[];const calls:string[]=[];
@@ -88,6 +111,37 @@ function monitorWorld(path: string) {
  return {client,calls,get now(){return now;},set now(v){now=v;},set messages(v:object[]){messages=v;},set replies(v:object[]){replies=v;},make:()=>new SlackMonitor(path,client,"U123",()=>now,false)};
 }
 describe("durable monitoring",()=>{
+ test("old roots discover new threaded mentions with fair durable cursors and no old-message notification",async()=>{
+  const path=join(temp(),"state.sqlite");let now=1000000;const calls:URLSearchParams[]=[];const notices:string[]=[];
+  const client=new SlackPersonalClient("u","b",async(url,init)=>{
+   const a=new URLSearchParams(String(init.body));
+   if(url.endsWith("conversations.history"))return ok({messages:[{ts:"100.1",user:"UOTHER",text:"old <@U123>"},{ts:"101.1",user:"UOTHER",text:"old"}]});
+   if(url.endsWith("chat.getPermalink"))return ok({permalink:"https://example.slack.com/archives/C123/p123"});
+   calls.push(a);return ok({messages:[{ts:a.get("ts") === "100.1" ? "1001.1" : "1002.1",thread_ts:a.get("ts"),user:"UOTHER",text:"new <@U123> reply"}],response_metadata:{next_cursor:a.get("ts") === "100.1" && !a.get("cursor") ? "next" : ""}});
+  },()=>now);
+  let m=new SlackMonitor(path,client,"U123",()=>now,false);m.configure({...watch,channels:["C123"]});now+=3000;const wake=async(r:{text:string})=>{notices.push(r.text);return "admitted" as const;};
+  m.start({wake});await m.tick();await m.tick();await m.close();
+  m=new SlackMonitor(path,client,"U123",()=>now,false);m.start({wake});await m.tick();
+  try {expect(calls.map(a=>a.get("ts"))).toEqual(["100.1","101.1","100.1"]);expect(calls[2]!.get("cursor")).toBe("next");expect(calls[2]!.get("latest")).toBe(calls[0]!.get("latest"));expect(notices).toHaveLength(2);expect(notices.every(n=>n.includes("new <@U123> reply"))).toBe(true);}finally{await m.close();}
+ });
+ test("more than 100 tracked roots receive fair service rather than lexicographic starvation",async()=>{
+  const path=join(temp(),"state.sqlite");const seen:string[]=[];
+  const client=new SlackPersonalClient("u","b",async(url,init)=>{if(url.endsWith("conversations.history"))return ok({messages:[]});seen.push(new URLSearchParams(String(init.body)).get("ts")!);return ok({messages:[]});});
+  const m=new SlackMonitor(path,client,"U123",()=>1000000,false);m.configure(watch);
+  for(let i=0;i<105;i++)m.db.query("INSERT INTO state VALUES (?,?)").run("thread:D123:"+i,JSON.stringify({channel:"D123",ts:`${i}.1`,oldest:"1000",cursor:"",turn:0}));
+  try {m.start({wake:async()=>"admitted"});await m.tick();for(let i=1;i<105;i++)await m.tick();expect(new Set(seen).size).toBe(105);expect(seen).toHaveLength(105);}finally{await m.close();}
+ });
+ test("due deadlines cannot starve behind 100 future keys and drain more than 100 exactly once",async()=>{
+  const w=monitorWorld(join(temp(),"state.sqlite"));const m=w.make();m.configure(watch);const keys:string[]=[];
+  for(let i=0;i<100;i++)m.deadline("D123",`1.${String(i).padStart(6,"0")}`,w.now+86400000);
+  for(let i=0;i<105;i++)m.deadline("D123",`9.${String(i).padStart(6,"0")}`,w.now+1000);
+  w.now+=2000;m.start({wake:async r=>{keys.push(r.key);return "admitted";}});await m.tick();
+  expect(keys).toHaveLength(10);
+  for(let i=0;i<11;i++)await m.tick();
+  expect(keys).toHaveLength(105);expect(new Set(keys).size).toBe(105);
+  expect(m.db.query<{n:number},[]>("SELECT count(*) n FROM state WHERE key LIKE 'deadline:%'").get()!.n).toBe(100);
+  await m.tick();expect(keys).toHaveLength(105);await m.close();
+ });
  test("dedup, restart, quiet hours and host duplicate recovery; never sends",async()=>{
   const w=monitorWorld(join(temp(),"state.sqlite"));let m=w.make();m.configure({...watch,quietStart:12,quietEnd:13});const delivered:string[]=[];const wake=async(r:{key:string})=>{delivered.push(r.key);return "admitted" as const;};
   w.messages=[{ts:String(w.now/1000+1),text:"please review tomorrow",user:"UOTHER"}];w.now+=2000;m.start({wake});await m.tick();expect(delivered).toHaveLength(0);await m.close();
