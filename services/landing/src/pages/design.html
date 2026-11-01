@@ -1,1 +1,800 @@
-<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex"><title>Dinobot · Paper / Forest</title><script type="module" src="/src/client/main.ts"></script></head><body><main class="container guide"><a href="/">← Dinobot</a><p class="eyebrow">DESIGN SYSTEM / PAPER + FOREST</p><h1>Product first.<br>Quiet by design.</h1><p>Geist for words. Geist Mono for commands. A licensed Pretendard subset for Korean. Original dinosaur artwork stays unchanged.</p><div class="swatches"><div class="swatch">Paper<br>#f7f7f2</div><div class="swatch swatch--ink">Ink<br>#20211e</div><div class="swatch swatch--action">Action<br>#285544</div><div class="swatch swatch--muted">Muted<br>#62665d</div></div><section class="section"><h2>Type and controls</h2><h3>A clear starting point.</h3><p>18px body, 15px captions, fluid 48–76px English display type. At least 44px for interactive targets. Focus uses a three-pixel forest outline.</p><p><a class="button primary" href="/#install">Get Dinobot ↗</a> <a class="button secondary" href="/#product">View product</a></p><details><summary>Disclosure / closed → open</summary><p>Native keyboard and screen-reader semantics. No height animation.</p></details><p class="status" data-state="manual">Copy unavailable. Select and copy the command.</p></section><section class="section"><h2>Composition and motion</h2><p>1240px shared content edge; 20px mobile gutters. Section rhythm 112px / 72px. Flat surfaces, 1px rules, 5px button radius. Real native screenshots, with scrollable detail at mobile sizes. No looping or hidden explanatory content. Reduced motion retains every control.</p><a href="/ko/">한국어 페이지 보기</a></section></main></body></html>
+<!doctype html>
+<html lang="{{$.lang}}">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<meta name="description" content="Signal Paper, the design system of the dinobot landing site: tokens, type, motion and components.">
+<meta name="theme-color" content="#f9fbfa">
+<title>Signal Paper · dinobot design system</title>
+<link rel="canonical" href="{{$.url}}">
+<link rel="icon" href="/src/client/styleguide/favicon.svg" type="image/svg+xml">
+<link rel="preload" href="/fonts/geist-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="/fonts/geist-mono-latin.woff2" as="font" type="font/woff2" crossorigin>
+<script type="module" src="/src/client/styleguide/main.ts"></script>
+</head>
+<body class="sg">
+<a class="skip-link" href="#main">Skip to content</a>
+
+<header class="nav sg-nav" data-sg-nav>
+	<div class="nav__inner container--wide container">
+		<a class="brand" href="/">
+			<span class="brand__mark sg-mark" data-dino-mark aria-hidden="true"></span>
+			<span class="brand__word">dinobot</span>
+		</a>
+		<span class="sg-nav__crumb t-label"><span class="text-3">/</span> Signal Paper</span>
+		<nav class="nav__links" aria-label="Style guide">
+			<a class="nav__link" href="#color">Tokens</a>
+			<a class="nav__link" href="#components">Components</a>
+			<a class="nav__link" href="#principles">Principles</a>
+		</nav>
+		<div class="nav__actions">
+			<span class="tag tag--outline sg-hide-sm">v1.0 · 2026-10-11</span>
+			<a class="btn btn--primary btn--sm" href="/#download">Download</a>
+		</div>
+	</div>
+</header>
+
+<div class="sg-shell container container--wide">
+	<aside class="sg-toc" aria-label="Contents">
+		<p class="t-label text-3 sg-toc__title">Contents</p>
+		<ol class="sg-toc__list" role="list">
+			<li><a href="#principles" data-toc><span>01</span>Principles</a></li>
+			<li><a href="#color" data-toc><span>02</span>Color</a></li>
+			<li><a href="#type" data-toc><span>03</span>Typography</a></li>
+			<li><a href="#space" data-toc><span>04</span>Space</a></li>
+			<li><a href="#shape" data-toc><span>05</span>Shape</a></li>
+			<li><a href="#elevation" data-toc><span>06</span>Elevation</a></li>
+			<li><a href="#layout" data-toc><span>07</span>Layout</a></li>
+			<li><a href="#motion" data-toc><span>08</span>Motion</a></li>
+			<li><a href="#dot" data-toc><span>09</span>The dot</a></li>
+			<li><a href="#dinos" data-toc><span>10</span>Dinosaur themes</a></li>
+			<li><a href="#components" data-toc><span>11</span>Components</a></li>
+		</ol>
+		<ol class="sg-toc__sub" role="list">
+			<li><a href="#c-buttons" data-toc>Button</a></li>
+			<li><a href="#c-inputs" data-toc>Input</a></li>
+			<li><a href="#c-waitlist" data-toc>Waitlist form</a></li>
+			<li><a href="#c-checkbox" data-toc>Checkbox</a></li>
+			<li><a href="#c-messages" data-toc>Inline message</a></li>
+			<li><a href="#c-nav" data-toc>Nav</a></li>
+			<li><a href="#c-pills" data-toc>Pill and eyebrow</a></li>
+			<li><a href="#c-cards" data-toc>Card and bento</a></li>
+			<li><a href="#c-kbd" data-toc>Kbd and tag</a></li>
+			<li><a href="#c-marquee" data-toc>Marquee</a></li>
+			<li><a href="#c-accordion" data-toc>Accordion</a></li>
+			<li><a href="#c-tooltip" data-toc>Tooltip</a></li>
+			<li><a href="#c-section-head" data-toc>Section header</a></li>
+			<li><a href="#c-locale" data-toc>Locale toggle</a></li>
+			<li><a href="#c-dividers" data-toc>Dividers</a></li>
+			<li><a href="#c-toast" data-toc>Toast</a></li>
+			<li><a href="#c-footer" data-toc>Footer</a></li>
+		</ol>
+	</aside>
+
+	<main id="main" class="sg-main">
+		<!-- ============================================================ Masthead -->
+		<section class="sg-hero" aria-labelledby="sg-title">
+			<div class="sg-hero__copy">
+				<span class="pill pill--tint" data-signal="mint"><span class="pill__dot"></span>Design system<span class="pill__sep"></span><span class="text-2">v1.0</span></span>
+				<h1 id="sg-title" class="t-display-xl sg-hero__title">Signal Paper</h1>
+				<p class="t-lede sg-hero__lede">The system behind the dinobot landing page. Paper and ink, five flat signals used one at a time, and a single dot that builds everything from the mascot to the loaders.</p>
+				<dl class="sg-meta">
+					<div><dt>Typefaces</dt><dd>Geist, Geist Mono, Doto, dinobot KR</dd></div>
+					<div><dt>Tokens</dt><dd data-sg-count="tokens">tokens.css</dd></div>
+					<div><dt>Contrast</dt><dd data-sg-count="contrast">every pair checked</dd></div>
+					<div><dt>Motion</dt><dd>transform + opacity, 120 fps</dd></div>
+				</dl>
+			</div>
+			<figure class="sg-hero__art dot-paper" aria-label="The dinobot T-rex drawn in 540 dots">
+				<div class="sg-hero__dino" data-dino data-dino-state="idle" data-dino-unlit></div>
+				<div class="sg-hero__ground stripes" aria-hidden="true"></div>
+				<figcaption class="sg-hero__caption t-label"><span>30 × 18 grid</span><span>5 stops, 1 per dot</span></figcaption>
+			</figure>
+		</section>
+
+		<!-- ============================================================ 01 Principles -->
+		<section id="principles" class="sg-section" aria-labelledby="h-principles">
+			<header class="section-head sg-section__head">
+				<p class="eyebrow eyebrow--plain"><span class="eyebrow__num">01</span> Principles</p>
+				<h2 id="h-principles" class="t-h2">Fifteen rules. <span class="muted">Each one earned from a reference.</span></h2>
+				<p class="t-lede section-head__lede">Derived from 35 documented sites (R01-R35 in docs/references.md). When a decision is unclear, these settle it.</p>
+			</header>
+			<ol class="sg-principles" role="list">
+				<li class="sg-principle"><span class="t-dot sg-principle__n">01</span><h3 class="t-h4">Paper first</h3><p>About 90% of every screen is neutral: paper, white surfaces, ink, and grays from one cool hue.</p><p class="sg-refs">R01 R02 R05 R10 R12</p></li>
+				<li class="sg-principle"><span class="t-dot sg-principle__n">02</span><h3 class="t-h4">One signal per screen</h3><p>The five brand stops are flat fills. A section opts into one; text in that color uses its deep variant.</p><p class="sg-refs">R13 R14 R15 R29 R35</p></li>
+				<li class="sg-principle"><span class="t-dot sg-principle__n">03</span><h3 class="t-h4">The primary action is ink</h3><p>One filled CTA style, an ink pill. Secondary is paper with a ring. Color never decorates a button.</p><p class="sg-refs">R01 R10 R19 R21 R32</p></li>
+				<li class="sg-principle"><span class="t-dot sg-principle__n">04</span><h3 class="t-h4">The dot builds everything</h3><p>Mascot, loaders, dividers, glyphs and texture. The only gradient is quantized: one solid color per dot or stripe.</p><p class="sg-refs">R10 R11 R12 R20 R29</p></li>
+				<li class="sg-principle"><span class="t-dot sg-principle__n">05</span><h3 class="t-h4">The character lives in a frame</h3><p>The dot T-rex stays inside a screen: the chat card, the runner, a scene. Around it, smooth type and hairlines.</p><p class="sg-refs">R04 R11 R13 R14</p></li>
+				<li class="sg-principle"><span class="t-dot sg-principle__n">06</span><h3 class="t-h4">Big, tight, calm type</h3><p>Geist display at -0.045em and line-height 1. Mono uppercase labels are the system's voice. Korean gets air.</p><p class="sg-refs">R01 R04 R07 R15 R34</p></li>
+				<li class="sg-principle"><span class="t-dot sg-principle__n">07</span><h3 class="t-h4">Emphasis in two tones</h3><p>The claim in ink, the continuation in gray, at one size. No colored or gradient words in headlines.</p><p class="sg-refs">R01 R05 R09 R23 R32</p></li>
+				<li class="sg-principle"><span class="t-dot sg-principle__n">08</span><h3 class="t-h4">Structure from hairlines</h3><p>1px rings and a visible grid of dots. Two shadow levels, float and pop, only for what leaves the page; shadows never separate sections.</p><p class="sg-refs">R03 R06 R07 R09 R28</p></li>
+				<li class="sg-principle"><span class="t-dot sg-principle__n">09</span><h3 class="t-h4">Controls on a rhythm</h3><p>36, 44 and 52 px heights, one radius family, 16px input text and a 2px focus ring at 2px.</p><p class="sg-refs">R01 R02 R03 R09 R10</p></li>
+				<li class="sg-principle"><span class="t-dot sg-principle__n">10</span><h3 class="t-h4">Motion with intent</h3><p>UI moves in 120 to 320 ms; characters spring. Only transform and opacity. Nothing loops in the reading zone.</p><p class="sg-refs">R01 R04 R15 R18 R35</p></li>
+				<li class="sg-principle"><span class="t-dot sg-principle__n">11</span><h3 class="t-h4">120 fps is a design rule</h3><p>No video, blur or WebGL. Scenes pause offscreen; will-change only while something moves.</p><p class="sg-refs">R05 R09 R11 R25 R26</p></li>
+				<li class="sg-principle"><span class="t-dot sg-principle__n">12</span><h3 class="t-h4">Show the agent at work</h3><p>Request, steps that turn from present to past with a check, the answer, a mono receipt. Decisions as button pairs.</p><p class="sg-refs">R05 R25 R30 R31 R32</p></li>
+				<li class="sg-principle"><span class="t-dot sg-principle__n">13</span><h3 class="t-h4">Autoplay with manners</h3><p>Every loop has a visible pause, stops on hover, focus and offscreen, and shows its final frame under reduced motion.</p><p class="sg-refs">R15 R17 R26 R35</p></li>
+				<li class="sg-principle"><span class="t-dot sg-principle__n">14</span><h3 class="t-h4">Honest forms, plain words</h3><p>Visible labels, required consent, a honeypot, errors that keep the input, and one true trust line.</p><p class="sg-refs">R03 R23 R31 R33 R34</p></li>
+				<li class="sg-principle"><span class="t-dot sg-principle__n">15</span><h3 class="t-h4">One character, many states</h3><p>The T-rex changes only its 3x3 eye cell and props. A state machine with time limits drives it.</p><p class="sg-refs">R16 R17 R18 R20 R21 R22</p></li>
+			</ol>
+		</section>
+
+		<!-- ============================================================ 02 Color -->
+		<section id="color" class="sg-section" aria-labelledby="h-color">
+			<header class="section-head sg-section__head">
+				<p class="eyebrow eyebrow--plain"><span class="eyebrow__num">02</span> Color</p>
+				<h2 id="h-color" class="t-h2">Paper and ink. <span class="muted">Five signals, one at a time.</span></h2>
+				<p class="t-lede section-head__lede">Twelve neutrals from one cool hue carry the page. The brand stops are flat fills with a deep variant for text and a tint for fills. Ratios below are computed live from the shipped tokens.</p>
+			</header>
+
+			<div class="sg-block">
+				<div class="sg-block__head"><h3 class="sg-h3">Neutral scale</h3><p class="sg-note">OKLCH hue 170, chroma at most 0.0065. Ratio against <code>--n-1</code> paper.</p></div>
+				<div class="sg-ramp" data-sg="neutrals"></div>
+			</div>
+
+			<div class="sg-block">
+				<div class="sg-block__head"><h3 class="sg-h3">Signals</h3><p class="sg-note">Solid for dots and fills behind ink. Deep for text (at least 4.8:1 on paper, white and its tint). Tint and soft for fills.</p></div>
+				<div class="sg-signals" data-sg="signals"></div>
+				<div class="sg-stripe-demo">
+					<span class="stripes sg-stripe-demo__bar" aria-hidden="true"></span>
+					<p class="sg-note">The signature: five flat stripes, mint to indigo. Use it sparingly: the logo lockup, the runner's top edge, a success state.</p>
+				</div>
+			</div>
+
+			<div class="sg-block">
+				<div class="sg-block__head"><h3 class="sg-h3">Semantic roles</h3><p class="sg-note">Components use roles, never raw steps. <code>[data-signal]</code> rescopes <code>--accent</code> for a section.</p></div>
+				<div class="sg-roles" data-sg="roles"></div>
+			</div>
+
+			<div class="sg-block">
+				<div class="sg-block__head"><h3 class="sg-h3">Contrast</h3><p class="sg-note">Every text and UI pair the system defines. Text needs 4.5:1, large text and boundaries 3:1. Also checked in CI-able form: <code>bun src/client/styleguide/contrast-report.ts</code>.</p></div>
+				<div class="sg-contrast" data-sg="contrast"></div>
+			</div>
+		</section>
+
+		<!-- ============================================================ 03 Typography -->
+		<section id="type" class="sg-section" aria-labelledby="h-type">
+			<header class="section-head sg-section__head">
+				<p class="eyebrow eyebrow--plain"><span class="eyebrow__num">03</span> Typography</p>
+				<h2 id="h-type" class="t-h2">A precise grotesk, <span class="muted">a mono voice and a dot.</span></h2>
+				<p class="t-lede section-head__lede">Sizes are fluid between a 390px and a 1440px viewport. Korean keeps the same scale with looser tracking and leading, and breaks lines between words.</p>
+			</header>
+
+			<div class="sg-block">
+				<div class="sg-faces">
+					<article class="sg-face">
+						<p class="sg-face__sample sg-face__sample--sans">Aa</p>
+						<div><h3 class="t-h4">Geist</h3><p class="sg-note">Display, UI and body. Variable 100-900. Latin slice, 29 KB.</p></div>
+						<p class="t-label text-3">OFL · Vercel</p>
+					</article>
+					<article class="sg-face">
+						<p class="sg-face__sample sg-face__sample--mono">{ }</p>
+						<div><h3 class="t-h4">Geist Mono</h3><p class="sg-note">Eyebrows, labels, receipts, code. Latin slice, 23 KB.</p></div>
+						<p class="t-label text-3">OFL · Vercel</p>
+					</article>
+					<article class="sg-face">
+						<p class="sg-face__sample sg-face__sample--dot t-dot">042</p>
+						<div><h3 class="t-h4">Doto</h3><p class="sg-note">Round-dot numerals: scores, #positions, steps. 16px and up, 6 KB.</p></div>
+						<p class="t-label text-3">OFL · Óliver Lalan</p>
+					</article>
+					<article class="sg-face">
+						<p class="sg-face__sample sg-face__sample--ko" lang="ko">가</p>
+						<div><h3 class="t-h4">dinobot KR</h3><p class="sg-note">Pretendard Variable, subset at build time to the Hangul the site uses, renamed per the OFL.</p></div>
+						<p class="t-label text-3">OFL · Kil Hyung-jin</p>
+					</article>
+				</div>
+			</div>
+
+			<div class="sg-block">
+				<div class="sg-block__head"><h3 class="sg-h3">Scale</h3><p class="sg-note">Each step: size range in px, then the live value at this viewport. English first, Korean below.</p></div>
+				<div class="sg-type-scale" data-sg="type-scale"></div>
+			</div>
+
+			<div class="sg-block">
+				<div class="sg-block__head"><h3 class="sg-h3">Emphasis and inline objects</h3><p class="sg-note">Two tones instead of color, a signal pill inside a headline, and dot numerals.</p></div>
+				<div class="sg-emphasis">
+					<p class="t-display">AI agents, for <span class="pill-word" data-signal="mint">everyone</span>.</p>
+					<p class="t-h2">Ask once. <span class="muted">dinobot plans, splits and checks the work.</span></p>
+					<p class="t-h2" lang="ko">한 번만 부탁하세요. <span class="muted">계획하고, 나누고, 확인합니다.</span></p>
+					<div class="sg-dot-numerals">
+						<span class="t-dot sg-dot-numerals__big">#0042</span>
+						<span class="t-dot">01 02 03 04</span>
+						<span class="t-dot text-3">HI 00127 00049</span>
+					</div>
+				</div>
+			</div>
+		</section>
+
+		<!-- ============================================================ 04 Space -->
+		<section id="space" class="sg-section" aria-labelledby="h-space">
+			<header class="section-head sg-section__head">
+				<p class="eyebrow eyebrow--plain"><span class="eyebrow__num">04</span> Space</p>
+				<h2 id="h-space" class="t-h2">A 4px base. <span class="muted">Generous between, tight within.</span></h2>
+				<p class="t-lede section-head__lede">Fourteen steps for components, plus two fluid tokens for page rhythm: <code>--space-section</code> (80 to 144) and <code>--space-stack</code> (32 to 56).</p>
+			</header>
+			<div class="sg-block">
+				<div class="sg-space" data-sg="space"></div>
+			</div>
+		</section>
+
+		<!-- ============================================================ 05 Shape -->
+		<section id="shape" class="sg-section" aria-labelledby="h-shape">
+			<header class="section-head sg-section__head">
+				<p class="eyebrow eyebrow--plain"><span class="eyebrow__num">05</span> Shape</p>
+				<h2 id="h-shape" class="t-h2">Six radii and a pill. <span class="muted">Hairlines, never heavy borders.</span></h2>
+				<p class="t-lede section-head__lede">Controls are pills, echoing the dot. Containers step up with their size. Lines are 1px insets so they never move layout.</p>
+			</header>
+			<div class="sg-block">
+				<div class="sg-radii" data-sg="radii"></div>
+			</div>
+			<div class="sg-block">
+				<div class="sg-block__head"><h3 class="sg-h3">Lines</h3><p class="sg-note">Decorative hairlines may be faint. Anything that identifies a control meets 3:1.</p></div>
+				<div class="sg-lines">
+					<div class="sg-line-spec"><span class="sg-line-spec__box sg-line-spec__box--line"></span><p><code>--line</code> hairline, cards</p></div>
+					<div class="sg-line-spec"><span class="sg-line-spec__box sg-line-spec__box--strong"></span><p><code>--line-strong</code> buttons, kbd</p></div>
+					<div class="sg-line-spec"><span class="sg-line-spec__box sg-line-spec__box--ui"></span><p><code>--line-ui</code> inputs, 3:1</p></div>
+					<div class="sg-line-spec"><span class="sg-line-spec__box sg-line-spec__box--focus"></span><p><code>--focus</code> 2px at 2px</p></div>
+				</div>
+			</div>
+		</section>
+
+		<!-- ============================================================ 06 Elevation -->
+		<section id="elevation" class="sg-section" aria-labelledby="h-elevation">
+			<header class="section-head sg-section__head">
+				<p class="eyebrow eyebrow--plain"><span class="eyebrow__num">06</span> Elevation</p>
+				<h2 id="h-elevation" class="t-h2">Flat first. <span class="muted">Two shadows, only for things that float.</span></h2>
+				<p class="t-lede section-head__lede">Sections separate by paper tone and hairlines. Only the floating nav pill, popovers and toasts leave the page.</p>
+			</header>
+			<div class="sg-block">
+				<div class="sg-elevation dot-paper">
+					<div class="sg-elev"><span class="t-label text-3">0 · flat</span><p>On the page. A band of <code>--bg-band</code> at most.</p></div>
+					<div class="sg-elev sg-elev--ring"><span class="t-label text-3">1 · ring</span><p><code>--ring-1</code>: cards, tiles, inputs.</p></div>
+					<div class="sg-elev sg-elev--float"><span class="t-label text-3">2 · float</span><p><code>--shadow-float</code>: nav pill, popovers.</p></div>
+					<div class="sg-elev sg-elev--pop"><span class="t-label">3 · pop</span><p><code>--shadow-pop</code>: toasts, on ink.</p></div>
+				</div>
+			</div>
+			<div class="sg-block">
+				<div class="sg-block__head"><h3 class="sg-h3">Z-index</h3><p class="sg-note">The runner sits above the nav; toasts sit above the runner.</p></div>
+				<div class="sg-table-wrap"><table class="sg-table" data-sg="z"><thead><tr><th scope="col">Token</th><th scope="col">Value</th><th scope="col">Use</th></tr></thead><tbody></tbody></table></div>
+			</div>
+		</section>
+
+		<!-- ============================================================ 07 Layout -->
+		<section id="layout" class="sg-section" aria-labelledby="h-layout">
+			<header class="section-head sg-section__head">
+				<p class="eyebrow eyebrow--plain"><span class="eyebrow__num">07</span> Layout</p>
+				<h2 id="h-layout" class="t-h2">Twelve columns <span class="muted">inside a dotted frame.</span></h2>
+				<p class="t-lede section-head__lede">A 1200px container with fluid gutters (20 to 40). Chapters split 5 and 7 columns with a sticky scene; below 1024px everything stacks.</p>
+			</header>
+			<div class="sg-block">
+				<div class="sg-grid-demo" aria-hidden="true">
+					<div class="sg-grid-demo__cols"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></div>
+					<div class="sg-grid-demo__row"><span class="sg-grid-demo__a">5 · copy</span><span class="sg-grid-demo__b">7 · sticky scene</span></div>
+					<div class="sg-grid-demo__row"><span class="sg-grid-demo__c">4</span><span class="sg-grid-demo__c">4</span><span class="sg-grid-demo__c">4</span></div>
+				</div>
+			</div>
+			<div class="sg-block sg-layout-tables">
+				<div class="sg-table-wrap">
+					<table class="sg-table">
+						<caption class="sg-h3">Breakpoints</caption>
+						<thead><tr><th scope="col">Name</th><th scope="col">Min width</th><th scope="col">Changes</th></tr></thead>
+						<tbody>
+							<tr><td><code>base</code></td><td>0</td><td>One column, 48px runner, 56px nav</td></tr>
+							<tr><td><code>sm</code></td><td>480px</td><td>Forms go inline</td></tr>
+							<tr><td><code>md</code></td><td>768px</td><td>Nav links appear, 2-up tiles</td></tr>
+							<tr><td><code>lg</code></td><td>1024px</td><td>Sticky chapters, 12 columns</td></tr>
+							<tr><td><code>xl</code></td><td>1280px</td><td>Wide container (1344)</td></tr>
+						</tbody>
+					</table>
+				</div>
+				<div class="sg-table-wrap">
+					<table class="sg-table" data-sg="layout-tokens">
+						<caption class="sg-h3">Layout tokens</caption>
+						<thead><tr><th scope="col">Token</th><th scope="col">Value</th></tr></thead>
+						<tbody></tbody>
+					</table>
+				</div>
+			</div>
+		</section>
+
+		<!-- ============================================================ 08 Motion -->
+		<section id="motion" class="sg-section" aria-labelledby="h-motion">
+			<header class="section-head sg-section__head">
+				<p class="eyebrow eyebrow--plain"><span class="eyebrow__num">08</span> Motion</p>
+				<h2 id="h-motion" class="t-h2">Short and precise. <span class="muted">Springy where a character moves.</span></h2>
+				<p class="t-lede section-head__lede">Five durations, four curves and three springs written as <code>linear()</code>. Only transform and opacity animate. Under reduced motion every duration becomes zero; demos started with Play still run.</p>
+			</header>
+			<div class="sg-block">
+				<div class="sg-block__head sg-block__head--row">
+					<div><h3 class="sg-h3">Durations</h3><p class="sg-note">On <code>--ease-out</code>.</p></div>
+					<button class="btn btn--secondary btn--sm" type="button" data-play="durations"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M5 3.5v9l7-4.5z"/></svg>Play all</button>
+				</div>
+				<div class="sg-motion motion-ok" data-sg="durations"></div>
+			</div>
+			<div class="sg-block">
+				<div class="sg-block__head sg-block__head--row">
+					<div><h3 class="sg-h3">Curves and springs</h3><p class="sg-note">Plot over time, then the same curve moving a dot.</p></div>
+					<button class="btn btn--secondary btn--sm" type="button" data-play="easings"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M5 3.5v9l7-4.5z"/></svg>Play all</button>
+				</div>
+				<div class="sg-curves motion-ok" data-sg="easings"></div>
+			</div>
+			<div class="sg-block">
+				<div class="sg-block__head sg-block__head--row">
+					<div><h3 class="sg-h3">Stagger and assembly</h3><p class="sg-note"><code>--stagger</code> 50ms between items; the T-rex assembles tail to head on <code>--dur-character</code>.</p></div>
+					<button class="btn btn--secondary btn--sm" type="button" data-play="assemble"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8a5 5 0 1 0 1.5-3.5M3 3v2.5h2.5"/></svg>Replay</button>
+				</div>
+				<div class="sg-assemble motion-ok dot-paper">
+					<div class="sg-assemble__dots" data-stagger><i></i><i></i><i></i><i></i><i></i></div>
+					<div class="sg-assemble__dino" data-dino data-dino-state="done" data-assemble></div>
+				</div>
+			</div>
+			<div class="sg-block">
+				<div class="sg-rules">
+					<div><p class="t-label">Animate</p><p>transform, opacity. Visibility flips at the end of a fade.</p></div>
+					<div><p class="t-label">Never animate</p><p>width, height, top, left, margins, grid tracks, filters, shadows, clip-path, backdrop-filter.</p></div>
+					<div><p class="t-label">Reduced motion</p><p>Durations to 0, no parallax, assembly, marquee or autoplay. Final states show; Play still works.</p></div>
+					<div><p class="t-label">Budget</p><p>About 10 running animations outside the active scene. <code>will-change</code> only while moving.</p></div>
+				</div>
+			</div>
+		</section>
+
+		<!-- ============================================================ 09 The dot -->
+		<section id="dot" class="sg-section" aria-labelledby="h-dot">
+			<header class="section-head sg-section__head">
+				<p class="eyebrow eyebrow--plain"><span class="eyebrow__num">09</span> The dot</p>
+				<h2 id="h-dot" class="t-h2">One dot, <span class="muted">from texture to character.</span></h2>
+				<p class="t-lede section-head__lede">The TUI draws the T-rex in braille dots; the web draws the same grid as round dots, never square pixels. Texture stays sparse and faint.</p>
+			</header>
+			<div class="sg-block">
+				<div class="sg-dot-papers">
+					<figure class="sg-dot-paper dot-paper"><figcaption class="sg-cap"><code>.dot-paper</code> · 24px pitch · 1.2px dots · n-6</figcaption></figure>
+					<figure class="sg-dot-paper dot-paper dot-paper--dense"><figcaption class="sg-cap"><code>.dot-paper--dense</code> · 12px · 1px dots</figcaption></figure>
+					<figure class="sg-dot-paper dot-paper dot-paper--surface"><figcaption class="sg-cap"><code>.dot-paper--surface</code> · on white</figcaption></figure>
+				</div>
+			</div>
+			<div class="sg-block">
+				<div class="sg-block__head"><h3 class="sg-h3">States in the eye cell</h3><p class="sg-note">Only the 3x3 eye cell (outlined) and the mouth change. Each state is shown with its head enlarged above the full specimen. Body dots step through the five stops by column, tail to head.</p></div>
+				<div class="sg-dino-states">
+					<figure class="sg-eye"><div class="sg-eye__zoom" data-dino data-dino-state="idle" data-dino-crop="head" data-dino-unlit></div><div class="sg-eye__full" data-dino data-dino-state="idle" data-dino-unlit></div><figcaption class="sg-eye__cap"><span class="t-label">idle</span><span class="sg-eye__note">resting</span></figcaption></figure>
+					<figure class="sg-eye"><div class="sg-eye__zoom" data-dino data-dino-state="done" data-dino-crop="head" data-dino-unlit></div><div class="sg-eye__full" data-dino data-dino-state="done" data-dino-unlit></div><figcaption class="sg-eye__cap"><span class="t-label">done</span><span class="sg-eye__note">work done</span></figcaption></figure>
+					<figure class="sg-eye"><div class="sg-eye__zoom" data-dino data-dino-state="failed" data-dino-crop="head" data-dino-unlit></div><div class="sg-eye__full" data-dino data-dino-state="failed" data-dino-unlit></div><figcaption class="sg-eye__cap"><span class="t-label">failed</span><span class="sg-eye__note">run failed</span></figcaption></figure>
+				</div>
+			</div>
+			<div class="sg-block">
+				<div class="sg-block__head"><h3 class="sg-h3">Dot glyphs</h3><p class="sg-note">Icons on a 5x5 grid of the same dot. Names render as text beside them; no third-party logos.</p></div>
+				<div class="sg-glyphs" data-sg="glyphs"></div>
+			</div>
+		</section>
+
+		<!-- ============================================================ 10 Dinosaur themes -->
+		<section id="dinos" class="sg-section" aria-labelledby="h-dinos">
+			<header class="section-head sg-section__head">
+				<p class="eyebrow eyebrow--plain"><span class="eyebrow__num">10</span> Dinosaur themes</p>
+				<h2 id="h-dinos" class="t-h2">Four dinosaurs, <span class="muted">one grid and one set of rules.</span></h2>
+				<p class="t-lede section-head__lede">A theme is a species (ADR 0100): the T-rex (Signal, the default), the pterodactyl (Dusk), the brachiosaurus (Fern) and the triceratops (Canyon). Each brings its own 30x18 bitmap, five body stops and an accent family. Status colors never change: running stays amber, done mint, failed coral, waiting indigo.</p>
+			</header>
+			<div class="sg-block">
+				<div class="sg-block__head"><h3 class="sg-h3">What a theme changes</h3><p class="sg-note"><code>&lt;html data-dino&gt;</code> swaps the mascot (every mounted one, the runner, the head marks) and points <code>--accent</code>, <code>--accent-deep</code>, <code>--accent-tint</code>, <code>--accent-soft</code> and <code>--selection</code> at the species' family. Text, surfaces, <code>[data-signal]</code> chapters, <code>--success</code> and <code>--danger</code> stay put. The choice is kept in <code>localStorage</code> as <code>dn-dino</code>.</p></div>
+				<div class="sg-themes" data-sg="dinos"></div>
+			</div>
+		</section>
+
+		<!-- ============================================================ 11 Components -->
+		<section id="components" class="sg-section" aria-labelledby="h-components">
+			<header class="section-head sg-section__head">
+				<p class="eyebrow eyebrow--plain"><span class="eyebrow__num">11</span> Components</p>
+				<h2 id="h-components" class="t-h2">Every component, <span class="muted">in every state.</span></h2>
+				<p class="t-lede section-head__lede">Hover, press and focus are pinned with <code>data-force</code> so they can be read side by side. Try the live ones.</p>
+			</header>
+
+			<!-- Button -->
+			<div class="sg-specimen" id="c-buttons">
+				<div class="sg-specimen__head"><h3 class="sg-h3">Button</h3><p class="sg-classes">.btn · --primary · --secondary · --ghost · --sm · --lg · --icon</p></div>
+				<div class="sg-specimen__stage">
+					<div class="sg-states" role="table" aria-label="Button states">
+						<div class="sg-states__row sg-states__row--head" role="row"><span role="columnheader"></span><span role="columnheader">Default</span><span role="columnheader">Hover</span><span role="columnheader">Pressed</span><span role="columnheader">Focus</span><span role="columnheader">Disabled</span><span role="columnheader">Loading</span></div>
+						<div class="sg-states__row" role="row">
+							<span class="sg-states__label" role="rowheader">Primary</span>
+							<span role="cell"><button class="btn btn--primary" type="button">Join waitlist</button></span>
+							<span role="cell"><button class="btn btn--primary" type="button" data-force="hover">Join waitlist</button></span>
+							<span role="cell"><button class="btn btn--primary" type="button" data-force="active">Join waitlist</button></span>
+							<span role="cell"><button class="btn btn--primary" type="button" data-force="focus">Join waitlist</button></span>
+							<span role="cell"><button class="btn btn--primary" type="button" disabled>Join waitlist</button></span>
+							<span role="cell"><button class="btn btn--primary" type="button" aria-busy="true"><span class="btn__label">Join waitlist</span><span class="btn__loader" aria-hidden="true"><span class="loader loader--signal"><i></i><i></i><i></i></span></span></button></span>
+						</div>
+						<div class="sg-states__row" role="row">
+							<span class="sg-states__label" role="rowheader">Secondary</span>
+							<span role="cell"><button class="btn btn--secondary" type="button">How it works</button></span>
+							<span role="cell"><button class="btn btn--secondary" type="button" data-force="hover">How it works</button></span>
+							<span role="cell"><button class="btn btn--secondary" type="button" data-force="active">How it works</button></span>
+							<span role="cell"><button class="btn btn--secondary" type="button" data-force="focus">How it works</button></span>
+							<span role="cell"><button class="btn btn--secondary" type="button" disabled>How it works</button></span>
+							<span role="cell"><button class="btn btn--secondary" type="button" aria-busy="true"><span class="btn__label">How it works</span><span class="btn__loader" aria-hidden="true"><span class="loader"><i></i><i></i><i></i></span></span></button></span>
+						</div>
+						<div class="sg-states__row" role="row">
+							<span class="sg-states__label" role="rowheader">Ghost</span>
+							<span role="cell"><button class="btn btn--ghost" type="button">Replay</button></span>
+							<span role="cell"><button class="btn btn--ghost" type="button" data-force="hover">Replay</button></span>
+							<span role="cell"><button class="btn btn--ghost" type="button" data-force="active">Replay</button></span>
+							<span role="cell"><button class="btn btn--ghost" type="button" data-force="focus">Replay</button></span>
+							<span role="cell"><button class="btn btn--ghost" type="button" disabled>Replay</button></span>
+							<span role="cell"><button class="btn btn--ghost" type="button" aria-busy="true"><span class="btn__label">Replay</span><span class="btn__loader" aria-hidden="true"><span class="loader"><i></i><i></i><i></i></span></span></button></span>
+						</div>
+					</div>
+					<div class="sg-row sg-row--wrap">
+						<button class="btn btn--primary btn--sm" type="button">Small 36</button>
+						<button class="btn btn--primary" type="button">Medium 44</button>
+						<button class="btn btn--primary btn--lg" type="button">Large 52<svg class="icon icon--nudge" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8h10M9 4l4 4-4 4"/></svg></button>
+						<button class="btn btn--secondary btn--lg" type="button">Secondary<svg class="icon icon--nudge" viewBox="0 0 16 16" aria-hidden="true"><path d="M5 11l6-6M6 5h5v5"/></svg></button>
+						<button class="btn btn--secondary btn--icon btn--sm" type="button" aria-label="Pause"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M6 4v8M10 4v8"/></svg></button>
+						<button class="btn btn--primary btn--icon" type="button" aria-label="Next"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8h10M9 4l4 4-4 4"/></svg></button>
+						<button class="btn btn--ghost btn--icon btn--sm" type="button" aria-label="Close"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8"/></svg></button>
+					</div>
+				</div>
+			</div>
+
+			<!-- Input -->
+			<div class="sg-specimen" id="c-inputs">
+				<div class="sg-specimen__head"><h3 class="sg-h3">Input</h3><p class="sg-classes">.field · .label · .input · .hint · .msg</p></div>
+				<div class="sg-specimen__stage">
+					<div class="sg-grid sg-grid--3">
+						<div class="field"><label class="label" for="in-1">Default</label><input class="input" id="in-1" type="email" placeholder="you@company.com" autocomplete="off"></div>
+						<div class="field"><label class="label" for="in-2">Hover</label><input class="input" id="in-2" type="email" placeholder="you@company.com" data-force="hover" autocomplete="off"></div>
+						<div class="field"><label class="label" for="in-3">Focus</label><input class="input" id="in-3" type="email" placeholder="you@company.com" data-force="focus" autocomplete="off"></div>
+						<div class="field"><label class="label" for="in-4">Filled</label><input class="input" id="in-4" type="email" value="ada@northwind.io" autocomplete="off"><p class="hint">We only use it for the waitlist.</p></div>
+						<div class="field"><label class="label" for="in-5">Invalid</label><input class="input" id="in-5" type="email" value="ada@northwind" aria-invalid="true" aria-describedby="in-5-msg" autocomplete="off"><p class="msg msg--error" id="in-5-msg">Check the email address and try again.</p></div>
+						<div class="field"><label class="label" for="in-6">Disabled</label><input class="input" id="in-6" type="email" placeholder="you@company.com" disabled></div>
+					</div>
+				</div>
+			</div>
+
+			<!-- Waitlist form -->
+			<div class="sg-specimen" id="c-waitlist">
+				<div class="sg-specimen__head"><h3 class="sg-h3">Waitlist form</h3><p class="sg-classes">.waitlist[data-state] · .inline-field · .check · .msg · .hp</p></div>
+				<div class="sg-specimen__stage sg-waitlist-stage">
+					<div class="sg-waitlist-live card card--float">
+						<p class="t-label text-3">Live demo · nothing is sent</p>
+						<form class="waitlist" data-state="idle" data-sg-waitlist novalidate>
+							<div class="waitlist__body">
+								<div class="field">
+									<label class="label" for="wl-email">Email</label>
+									<div class="inline-field">
+										<input class="inline-field__input" id="wl-email" name="email" type="email" inputmode="email" autocomplete="email" placeholder="you@company.com" required aria-describedby="wl-msg">
+										<button class="btn btn--primary" type="submit"><span class="btn__label">Join the waitlist</span><span class="btn__loader" aria-hidden="true"><span class="loader loader--signal"><i></i><i></i><i></i></span></span></button>
+									</div>
+								</div>
+								<label class="check"><input class="checkbox" type="checkbox" name="consent" required aria-describedby="wl-msg"><span>I'm 14 or older and agree to the collection and use of my email for the waitlist (stored on Cloudflare's servers outside Korea). <a href="/privacy/">Privacy notice</a></span></label>
+								<div class="hp" aria-hidden="true"><label for="wl-website">Website</label><input id="wl-website" name="website" type="text" tabindex="-1" autocomplete="off"></div>
+								<div class="waitlist__foot">
+									<p class="msg" id="wl-msg" role="status" aria-live="polite"></p>
+									<p class="waitlist__trust"><span>No spam</span><span>Leave any time</span><span>Early access and updates only</span></p>
+								</div>
+							</div>
+							<div class="waitlist__done" role="status">
+								<p class="waitlist__done-title">You're on the list.</p>
+								<p class="waitlist__position t-dot" data-sg-position>#0042</p>
+								<p class="waitlist__done-sub">We'll email you when the waitlist opens.</p>
+							</div>
+						</form>
+						<div class="sg-row sg-row--wrap sg-waitlist-live__ctrl">
+							<span class="t-label text-3">Next submit</span>
+							<div class="locale" role="radiogroup" aria-label="Demo outcome">
+								<button class="locale__opt" type="button" role="radio" aria-checked="true" aria-current="true" data-sg-outcome="success">Success</button>
+								<button class="locale__opt" type="button" role="radio" aria-checked="false" data-sg-outcome="error">Error</button>
+							</div>
+							<button class="btn btn--ghost btn--sm" type="button" data-sg-reset><svg class="icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8a5 5 0 1 0 1.5-3.5M3 3v2.5h2.5"/></svg>Reset</button>
+						</div>
+					</div>
+					<div class="sg-waitlist-states">
+						<figure class="sg-wl-state">
+							<figcaption class="t-label text-3">idle</figcaption>
+							<form class="waitlist" data-state="idle" novalidate aria-label="Idle state">
+								<div class="waitlist__body">
+									<div class="inline-field"><input class="inline-field__input" type="email" placeholder="you@company.com" aria-label="Email" tabindex="-1"><button class="btn btn--primary" type="button" tabindex="-1"><span class="btn__label">Join the waitlist</span></button></div>
+									<label class="check"><input class="checkbox" type="checkbox" tabindex="-1"><span>I'm 14 or older and agree to the waitlist terms.</span></label>
+								</div>
+							</form>
+						</figure>
+						<figure class="sg-wl-state">
+							<figcaption class="t-label text-3">submitting</figcaption>
+							<form class="waitlist" data-state="submitting" novalidate aria-label="Submitting state">
+								<div class="waitlist__body">
+									<div class="inline-field"><input class="inline-field__input" type="email" value="ada@northwind.io" aria-label="Email" readonly tabindex="-1"><button class="btn btn--primary" type="button" aria-busy="true" tabindex="-1"><span class="btn__label">Join the waitlist</span><span class="btn__loader" aria-hidden="true"><span class="loader loader--signal"><i></i><i></i><i></i></span></span></button></div>
+									<label class="check"><input class="checkbox" type="checkbox" checked tabindex="-1"><span>I'm 14 or older and agree to the waitlist terms.</span></label>
+								</div>
+							</form>
+						</figure>
+						<figure class="sg-wl-state">
+							<figcaption class="t-label text-3">error</figcaption>
+							<form class="waitlist" data-state="error" novalidate aria-label="Error state">
+								<div class="waitlist__body">
+									<div class="inline-field"><input class="inline-field__input" type="email" value="ada@northwind" aria-label="Email" aria-invalid="true" tabindex="-1"><button class="btn btn--primary" type="button" tabindex="-1"><span class="btn__label">Join the waitlist</span></button></div>
+									<p class="msg msg--error">Check the email address and try again.</p>
+								</div>
+							</form>
+						</figure>
+						<figure class="sg-wl-state">
+							<figcaption class="t-label text-3">success</figcaption>
+							<form class="waitlist" data-state="success" novalidate aria-label="Success state">
+								<div class="waitlist__body"></div>
+								<div class="waitlist__done">
+									<p class="waitlist__done-title">You're on the list.</p>
+									<p class="waitlist__position t-dot">#0042</p>
+									<p class="waitlist__done-sub">We'll email you when the waitlist opens.</p>
+								</div>
+							</form>
+						</figure>
+					</div>
+				</div>
+			</div>
+
+			<!-- Checkbox -->
+			<div class="sg-specimen" id="c-checkbox">
+				<div class="sg-specimen__head"><h3 class="sg-h3">Checkbox</h3><p class="sg-classes">.check · .checkbox</p></div>
+				<div class="sg-specimen__stage">
+					<div class="sg-grid sg-grid--4">
+						<label class="check"><input class="checkbox" type="checkbox">Unchecked</label>
+						<label class="check"><input class="checkbox" type="checkbox" data-force="hover">Hover</label>
+						<label class="check"><input class="checkbox" type="checkbox" checked>Checked</label>
+						<label class="check"><input class="checkbox" type="checkbox" checked data-force="focus">Focus</label>
+						<label class="check"><input class="checkbox" type="checkbox" aria-invalid="true">Required, missing</label>
+						<label class="check"><input class="checkbox" type="checkbox" disabled>Disabled</label>
+						<label class="check"><input class="checkbox" type="checkbox" checked disabled>Disabled, checked</label>
+					</div>
+					<label class="check sg-consent" lang="ko"><input class="checkbox" type="checkbox"><span>만 14세 이상이며, 대기자 안내를 위한 이메일 수집·이용(국외 소재 Cloudflare 서버 보관 포함)에 동의합니다. <a href="/ko/privacy/">개인정보 처리방침</a></span></label>
+				</div>
+			</div>
+
+			<!-- Inline message -->
+			<div class="sg-specimen" id="c-messages">
+				<div class="sg-specimen__head"><h3 class="sg-h3">Inline message</h3><p class="sg-classes">.msg · --info · --success · --error · role=status</p></div>
+				<div class="sg-specimen__stage">
+					<div class="sg-stack">
+						<p class="msg msg--info">We'll email you when the waitlist opens.</p>
+						<p class="msg msg--success">You're already on the list.</p>
+						<p class="msg msg--error">Too many tries. Please wait a minute and try again.</p>
+						<p class="msg msg--error">We couldn't save that. Your email is still here; it's safe to retry.</p>
+					</div>
+				</div>
+			</div>
+
+			<!-- Nav -->
+			<div class="sg-specimen" id="c-nav">
+				<div class="sg-specimen__head"><h3 class="sg-h3">Nav</h3><p class="sg-classes">.nav · [data-stuck] · --float · .brand · .nav__link</p></div>
+				<div class="sg-specimen__stage sg-specimen__stage--flush">
+					<p class="sg-stage-caption t-label text-3">At the top: no rule</p>
+					<div class="nav sg-nav-demo">
+						<div class="nav__inner sg-nav-demo__inner">
+							<a class="brand" href="/"><span class="brand__mark sg-mark" data-dino-mark aria-hidden="true"></span><span class="brand__word">dinobot</span></a>
+							<nav class="nav__links" aria-label="Demo"><a class="nav__link" href="#c-nav">Strengths</a><a class="nav__link" href="#c-nav" data-force="hover">How it works</a><a class="nav__link" href="#c-nav">FAQ</a></nav>
+							<div class="nav__actions"><nav class="locale" aria-label="Language"><a class="locale__opt" href="/" hreflang="en" aria-current="true">EN</a><a class="locale__opt" href="/ko/" hreflang="ko" lang="ko">KO</a></nav><a class="btn btn--primary btn--sm" href="/#waitlist">Join waitlist</a></div>
+						</div>
+					</div>
+					<p class="sg-stage-caption t-label text-3">Scrolled: the rule is earned</p>
+					<div class="nav sg-nav-demo" data-stuck>
+						<div class="nav__inner sg-nav-demo__inner">
+							<a class="brand" href="/"><span class="brand__mark sg-mark" data-dino-mark aria-hidden="true"></span><span class="brand__word">dinobot</span></a>
+							<nav class="nav__links" aria-label="Demo, scrolled"><a class="nav__link" href="#c-nav" aria-current="true">Strengths</a><a class="nav__link" href="#c-nav">How it works</a><a class="nav__link" href="#c-nav">FAQ</a></nav>
+							<div class="nav__actions"><nav class="locale" aria-label="Language, scrolled"><a class="locale__opt" href="/" hreflang="en" aria-current="true">EN</a><a class="locale__opt" href="/ko/" hreflang="ko" lang="ko">KO</a></nav><a class="btn btn--primary btn--sm" href="/#waitlist">Join waitlist</a></div>
+						</div>
+					</div>
+					<p class="sg-stage-caption t-label text-3">Float variant over dot paper</p>
+					<div class="nav nav--float sg-nav-demo sg-nav-demo--float dot-paper">
+						<div class="nav__inner sg-nav-demo__inner">
+							<a class="brand" href="/"><span class="brand__mark sg-mark" data-dino-mark aria-hidden="true"></span><span class="brand__word">dinobot</span></a>
+							<nav class="nav__links" aria-label="Demo, float"><a class="nav__link" href="#c-nav">Strengths</a><a class="nav__link" href="#c-nav">How it works</a><a class="nav__link" href="#c-nav">FAQ</a></nav>
+							<div class="nav__actions"><a class="btn btn--primary btn--sm" href="/#waitlist">Join waitlist</a></div>
+						</div>
+					</div>
+				</div>
+			</div>
+
+			<!-- Pill and eyebrow -->
+			<div class="sg-specimen" id="c-pills">
+				<div class="sg-specimen__head"><h3 class="sg-h3">Pill and eyebrow</h3><p class="sg-classes">.eyebrow · .pill · --tint · --sticker · .pill-word</p></div>
+				<div class="sg-specimen__stage">
+					<div class="sg-stack">
+						<div class="sg-row sg-row--wrap">
+							<p class="eyebrow" data-signal="mint"><span class="eyebrow__num">01</span> DAG</p>
+							<p class="eyebrow" data-signal="teal"><span class="eyebrow__num">02</span> Memory</p>
+							<p class="eyebrow" data-signal="cyan"><span class="eyebrow__num">03</span> Assignment</p>
+							<p class="eyebrow" data-signal="blue"><span class="eyebrow__num">04</span> Self-improving</p>
+							<p class="eyebrow" data-signal="indigo">Asks</p>
+						</div>
+						<div class="sg-row sg-row--wrap">
+							<span class="pill pill--tint" data-signal="mint"><span class="pill__dot"></span>Waitlist open</span>
+							<a class="pill" href="#c-waitlist" data-signal="mint"><span class="pill__dot"></span>Waitlist open<span class="pill__sep"></span><span class="text-2">Join</span><svg class="icon icon--nudge" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8h10M9 4l4 4-4 4"/></svg></a>
+							<a class="pill" href="#c-waitlist" data-signal="mint" data-force="hover"><span class="pill__dot"></span>Hover<svg class="icon icon--nudge" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8h10M9 4l4 4-4 4"/></svg></a>
+							<span class="pill pill--tint pill--sticker" data-signal="cyan"><span class="pill__dot"></span>Sticker, -3°</span>
+						</div>
+						<p class="t-h2">Hand work to <span class="pill-word" data-signal="cyan">helpers</span> in parallel.</p>
+					</div>
+				</div>
+			</div>
+
+			<!-- Card and bento -->
+			<div class="sg-specimen" id="c-cards">
+				<div class="sg-specimen__head"><h3 class="sg-h3">Card and bento tile</h3><p class="sg-classes">.card · --interactive · --sunken · --float · .bento · .tile</p></div>
+				<div class="sg-specimen__stage">
+					<div class="sg-grid sg-grid--4">
+						<article class="card"><p class="t-label text-3">Default</p><h4 class="card__title">Done means proven</h4><p class="card__body">Work counts as finished after its checks pass.</p></article>
+						<a class="card card--interactive" href="#c-cards" data-force="hover"><p class="t-label text-3">Hover</p><h4 class="card__title">Asks for real decisions</h4><p class="card__body">A person decides only what belongs to people.</p><svg class="icon card__corner" viewBox="0 0 16 16" aria-hidden="true"><path d="M5 11l6-6M6 5h5v5"/></svg></a>
+						<article class="card card--sunken"><p class="t-label text-3">Sunken</p><h4 class="card__title">On the band</h4><p class="card__body">Grouped content on <code>--bg-band</code>, no ring.</p></article>
+						<article class="card card--float"><p class="t-label text-3">Float</p><h4 class="card__title">Floating panel</h4><p class="card__body">Popovers and the hero form card.</p></article>
+					</div>
+					<div class="bento sg-bento">
+						<article class="card tile tile--wide" data-signal="mint"><div class="tile__visual" data-glyph-tile="check"></div><div><p class="eyebrow">Verification</p><h4 class="card__title">Done means proven</h4><p class="card__body">Every requirement gets a check before the run reports verified.</p></div></article>
+						<article class="card tile tile--wide" data-signal="indigo"><div class="tile__visual" data-glyph-tile="ask"></div><div><p class="eyebrow">Asks</p><h4 class="card__title">Real decisions go to people</h4><p class="card__body">Approve or deny, right in the thread.</p></div></article>
+						<a class="card card--interactive tile" href="#c-cards" data-signal="teal"><div class="tile__visual" data-glyph-tile="plug"></div><div><p class="eyebrow">Tools</p><h4 class="card__title">Plugins</h4><p class="card__body">Web search on by default.</p></div><svg class="icon card__corner" viewBox="0 0 16 16" aria-hidden="true"><path d="M5 11l6-6M6 5h5v5"/></svg></a>
+						<article class="card tile" data-signal="cyan"><div class="tile__visual" data-glyph-tile="chat"></div><div><p class="eyebrow">Channels</p><h4 class="card__title">Where you chat</h4><p class="card__body">Slack, Discord, Telegram.</p></div></article>
+						<article class="card tile" data-signal="blue"><div class="tile__visual" data-glyph-tile="learn"></div><div><p class="eyebrow">Goals</p><h4 class="card__title">Measurable goals</h4><p class="card__body">Criteria you can check.</p></div></article>
+					</div>
+				</div>
+			</div>
+
+			<!-- Kbd and tag -->
+			<div class="sg-specimen" id="c-kbd">
+				<div class="sg-specimen__head"><h3 class="sg-h3">Kbd and tag</h3><p class="sg-classes">.kbd · .tag · --signal · --solid · --outline · [data-status]</p></div>
+				<div class="sg-specimen__stage">
+					<div class="sg-stack">
+						<p class="t-small text-2">Press <kbd class="kbd">Space</kbd> or <kbd class="kbd">↑</kbd> on the runner to jump. <kbd class="kbd">Esc</kbd> closes, <kbd class="kbd">Tab</kbd> moves focus.</p>
+						<div class="sg-row sg-row--wrap">
+							<span class="tag">Neutral</span>
+							<span class="tag tag--signal" data-signal="mint">New</span>
+							<span class="tag tag--signal" data-signal="teal">Memory</span>
+							<span class="tag tag--signal" data-signal="cyan">Helper</span>
+							<span class="tag tag--signal" data-signal="blue">Learned</span>
+							<span class="tag tag--signal" data-signal="indigo">Ask</span>
+							<span class="tag tag--solid" data-signal="mint">Verified</span>
+							<span class="tag tag--outline">Opt-in</span>
+						</div>
+						<div class="sg-row sg-row--wrap">
+							<span class="tag tag--outline" data-status="queued"><span class="tag__dot"></span>Queued</span>
+							<span class="tag tag--outline" data-status="running"><span class="tag__dot"></span>Running</span>
+							<span class="tag tag--outline" data-status="done"><span class="tag__dot"></span>Done</span>
+							<span class="tag tag--outline" data-status="failed"><span class="tag__dot"></span>Failed</span>
+						</div>
+					</div>
+				</div>
+			</div>
+
+			<!-- Marquee -->
+			<div class="sg-specimen" id="c-marquee">
+				<div class="sg-specimen__head"><h3 class="sg-h3">Marquee</h3><p class="sg-classes">.marquee · [data-paused] · pauses on hover and focus</p></div>
+				<div class="sg-specimen__stage">
+					<div class="marquee" data-sg-marquee>
+						<div class="marquee__viewport">
+							<div class="marquee__track">
+								<ul class="marquee__list" data-marquee-list>
+									<li class="marquee__item"><span data-glyph="chat"></span>Slack</li>
+									<li class="marquee__item"><span data-glyph="chat"></span>Discord</li>
+									<li class="marquee__item"><span data-glyph="chat"></span>Telegram</li>
+									<li class="marquee__item"><span data-glyph="terminal"></span>Terminal app</li>
+									<li class="marquee__item"><span data-glyph="api"></span>HTTP API</li>
+									<li class="marquee__item"><span data-glyph="search"></span>Web search</li>
+									<li class="marquee__item"><span data-glyph="branch"></span>GitHub</li>
+									<li class="marquee__item"><span data-glyph="plug"></span>MCP servers</li>
+									<li class="marquee__item"><span data-glyph="cursor"></span>Computer use</li>
+								</ul>
+							</div>
+						</div>
+						<button class="btn btn--secondary btn--icon btn--sm marquee__toggle" type="button" aria-pressed="false" aria-label="Pause the list" data-sg-marquee-toggle><svg class="icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M6 4v8M10 4v8"/></svg></button>
+					</div>
+				</div>
+			</div>
+
+			<!-- Accordion -->
+			<div class="sg-specimen" id="c-accordion">
+				<div class="sg-specimen__head"><h3 class="sg-h3">Accordion</h3><p class="sg-classes">details.acc · summary.acc__summary · .acc__panel (opacity + transform)</p></div>
+				<div class="sg-specimen__stage">
+					<div class="accordion sg-accordion">
+						<details class="acc" name="sg-faq" open>
+							<summary class="acc__summary">Do I need to be an engineer to use dinobot?<span class="acc__icon" aria-hidden="true"></span></summary>
+							<div class="acc__panel"><p>No for asking: you write in the chat you already use. Setting it up still takes a terminal and a config file today.</p></div>
+						</details>
+						<details class="acc" name="sg-faq">
+							<summary class="acc__summary" data-force="focus">What happens to my email?<span class="acc__icon" aria-hidden="true"></span></summary>
+							<div class="acc__panel"><p>It is stored on Cloudflare for the waitlist and used only for early access and updates.</p></div>
+						</details>
+						<details class="acc" name="sg-faq">
+							<summary class="acc__summary">Where does it work?<span class="acc__icon" aria-hidden="true"></span></summary>
+							<div class="acc__panel"><p>Slack, Discord, Telegram, its terminal app and a local HTTP API.</p></div>
+						</details>
+					</div>
+				</div>
+			</div>
+
+			<!-- Tooltip -->
+			<div class="sg-specimen" id="c-tooltip">
+				<div class="sg-specimen__head"><h3 class="sg-h3">Tooltip</h3><p class="sg-classes">.tip · .tip__bubble[role=tooltip] · [data-align=start|end] near edges · dot tail</p></div>
+				<div class="sg-specimen__stage sg-tooltip-stage">
+					<span class="tip" data-align="start"><button class="btn btn--secondary btn--icon" type="button" aria-describedby="tip-1" aria-label="Replay the demo"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8a5 5 0 1 0 1.5-3.5M3 3v2.5h2.5"/></svg></button><span class="tip__bubble" role="tooltip" id="tip-1">Hover or focus me</span></span>
+					<span class="tip" data-force="open"><button class="btn btn--secondary btn--icon" type="button" aria-describedby="tip-2" aria-label="Pause"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M6 4v8M10 4v8"/></svg></button><span class="tip__bubble" role="tooltip" id="tip-2">Pause the demo</span></span>
+					<span class="tip" data-force="open" data-align="start"><span class="tag tag--outline" data-status="running" tabindex="0"><span class="tag__dot"></span>Running</span><span class="tip__bubble" role="tooltip">2 helper agents · 0:14</span></span>
+				</div>
+			</div>
+
+			<!-- Section header -->
+			<div class="sg-specimen" id="c-section-head">
+				<div class="sg-specimen__head"><h3 class="sg-h3">Section header</h3><p class="sg-classes">.section-head · --center · .eyebrow · .t-h2 · .muted · .t-lede</p></div>
+				<div class="sg-specimen__stage sg-stack sg-stack--loose">
+					<header class="section-head" data-signal="cyan">
+						<p class="eyebrow"><span class="eyebrow__num">03</span> Assignment</p>
+						<p class="t-h2">Big jobs, split. <span class="muted">Helpers work in parallel.</span></p>
+						<p class="t-lede section-head__lede">dinobot hands independent parts of a request to helper agents and brings the results back to your thread.</p>
+					</header>
+					<hr>
+					<header class="section-head section-head--center" data-signal="mint">
+						<p class="eyebrow">How it works</p>
+						<p class="t-h2">Three steps. <span class="muted">No new app.</span></p>
+						<p class="t-lede section-head__lede">Connect your chat, ask in plain words, get results in the thread.</p>
+					</header>
+				</div>
+			</div>
+
+			<!-- Locale toggle -->
+			<div class="sg-specimen" id="c-locale">
+				<div class="sg-specimen__head"><h3 class="sg-h3">Locale toggle</h3><p class="sg-classes">.locale · .locale__opt[aria-current] · sets the lang cookie, then navigates</p></div>
+				<div class="sg-specimen__stage">
+					<div class="sg-row sg-row--wrap sg-row--gap-lg">
+						<figure class="sg-fig"><nav class="locale" aria-label="Language, English current"><a class="locale__opt" href="/" hreflang="en" aria-current="true">EN</a><a class="locale__opt" href="/ko/" hreflang="ko" lang="ko">KO</a></nav><figcaption class="t-label text-3">EN current</figcaption></figure>
+						<figure class="sg-fig"><nav class="locale" aria-label="Language, Korean current"><a class="locale__opt" href="/" hreflang="en">EN</a><a class="locale__opt" href="/ko/" hreflang="ko" lang="ko" aria-current="true">KO</a></nav><figcaption class="t-label text-3">KO current</figcaption></figure>
+						<figure class="sg-fig"><nav class="locale" aria-label="Language, hover"><a class="locale__opt" href="/" hreflang="en" aria-current="true">EN</a><a class="locale__opt" href="/ko/" hreflang="ko" lang="ko" data-force="hover">KO</a></nav><figcaption class="t-label text-3">Hover</figcaption></figure>
+					</div>
+				</div>
+			</div>
+
+			<!-- Dividers -->
+			<div class="sg-specimen" id="c-dividers">
+				<div class="sg-specimen__head"><h3 class="sg-h3">Dividers</h3><p class="sg-classes">.divider · .divider__dots · .stripes · .signature</p></div>
+				<div class="sg-specimen__stage sg-specimen__stage--plain sg-stack sg-stack--loose">
+					<div class="divider divider--plain" role="separator"></div>
+					<div class="divider" role="separator"><span class="divider__dots"><i></i><i></i><i></i><i></i><i></i></span></div>
+					<div class="divider" role="separator"><span class="t-label">Strengths</span></div>
+					<div class="sg-row"><span class="signature stripes" aria-hidden="true"></span><span class="t-caption">Signature, 100 × 6</span></div>
+				</div>
+			</div>
+
+			<!-- Toast -->
+			<div class="sg-specimen" id="c-toast">
+				<div class="sg-specimen__head"><h3 class="sg-h3">Toast</h3><p class="sg-classes">.toast-region[aria-live] · .toast · --success · --error · sits above the runner</p></div>
+				<div class="sg-specimen__stage sg-stack">
+					<div class="toast toast--success toast--static"><span class="toast__text">You're on the list. #0042</span></div>
+					<div class="toast toast--error toast--static"><span class="toast__text">We couldn't save that. It's safe to retry.</span><button class="btn btn--sm toast__action" type="button">Retry</button></div>
+					<div class="toast toast--static"><span class="toast__text">Copied the invite link.</span></div>
+					<div class="sg-row sg-row--wrap">
+						<button class="btn btn--secondary btn--sm" type="button" data-sg-toast="success">Show success toast</button>
+						<button class="btn btn--secondary btn--sm" type="button" data-sg-toast="error">Show error toast</button>
+					</div>
+				</div>
+			</div>
+
+			<!-- Footer note (the real footer closes the page) -->
+			<div class="sg-specimen" id="c-footer">
+				<div class="sg-specimen__head"><h3 class="sg-h3">Footer</h3><p class="sg-classes">.footer · .footer__links · .footer__legal · the real one closes this page</p></div>
+				<div class="sg-specimen__stage">
+					<p class="t-small text-2">Wordmark, the Privacy link, the locale toggle and the copyright line, separated by hairlines. The page reserves <code>--runner-h</code> of bottom padding so the runner never covers it.</p>
+				</div>
+			</div>
+		</section>
+	</main>
+</div>
+
+<footer class="footer sg-footer">
+	<div class="footer__inner container container--wide">
+		<div class="footer__brand">
+			<a class="brand" href="/"><span class="brand__mark sg-mark" data-dino-mark aria-hidden="true"></span><span class="brand__word">dinobot</span></a>
+			<span class="signature stripes" aria-hidden="true"></span>
+		</div>
+		<div class="footer__links">
+			<a href="/privacy/">Privacy</a>
+			<a href="/design/" aria-current="page">Design system</a>
+			<nav class="locale" aria-label="Language"><a class="locale__opt" href="/" hreflang="en" aria-current="true">EN</a><a class="locale__opt" href="/ko/" hreflang="ko" lang="ko">KO</a></nav>
+		</div>
+		<p class="footer__legal"><span>© 2026 dinobot</span><span>Signal Paper v1.0 · noindex</span></p>
+	</div>
+</footer>
+
+<div class="toast-region" aria-live="polite" data-sg-toasts></div>
+</body>
+</html>

@@ -1,0 +1,398 @@
+/*
+ * Signal Paper: design tokens for the dinobot landing site.
+ * Rationale and reference citations (R01-R35, docs/references.md) live in docs/design-system.md; the living
+ * style guide is /design/ (src/pages/design.html). Contrast pairs are checked by
+ * `bun src/client/styleguide/contrast-report.ts` (every text pair >= 4.5:1, large text and UI >= 3:1).
+ *
+ * Layer order for the whole site: tokens < base < components < sections (page) < utilities.
+ * Unlayered rules beat every layer, so page CSS may stay unlayered.
+ */
+@layer tokens, base, components, sections, utilities;
+
+@layer tokens {
+	:root {
+		color-scheme: light;
+
+		/* ---------------------------------------------------------------- 1. Color: paper -> ink
+		 * One hue family (OKLCH h 170, chroma <= 0.0065) so every gray shares the mint-to-indigo brand's
+		 * cool cast, the daylight sibling of the TUI's #191919 / #ECF0EE (R01, R10, R12).
+		 * Steps: 1-2 page bands, 3-4 interactive fills, 5-6 hairlines, 7 disabled, 8 UI boundary (>= 3:1),
+		 * 9-12 text. Ratios against --n-1 paper. */
+		--n-1: #f9fbfa; /* paper, page background                           1.00 */
+		--n-2: #f3f6f5; /* band: alternating sections, wells                1.05 */
+		--n-3: #ecefee; /* hover fill                                       1.11 */
+		--n-4: #e3e7e5; /* pressed / selected fill                          1.20 */
+		--n-5: #d7dcda; /* hairline                                         1.33 */
+		--n-6: #c7ccca; /* strong hairline, grid dots                       1.56 */
+		--n-7: #a9aeac; /* disabled text and icons (exempt from 1.4.3)      2.16 */
+		--n-8: #838785; /* control boundary, large muted text               3.50 */
+		--n-9: #676b6a; /* text-3: captions, placeholders                   5.20 */
+		--n-10: #505352; /* text-2: secondary text                          7.48 */
+		--n-11: #303231; /* text on tints, strong secondary                12.43 */
+		--n-12: #141515; /* ink                                            17.60 */
+		--white: #ffffff;
+
+		/* ---------------------------------------------------------------- 2. Color: the five signals
+		 * Brand stops of the desktop icon (ADR 0027), used as FLAT solids only (R10 stripes, R13 one accent each).
+		 * solid: dots, fills behind ink, stripes, mascot. Never text (mint is 2.0:1 on paper).
+		 * deep:  AA text and icons on paper, white and its own tint (>= 4.8:1).
+		 * tint:  fill behind deep or ink text (pills, success panels).   soft: larger fills, selection. */
+		--mint: #19ca9d;
+		--mint-deep: #007650;
+		--mint-tint: #e7f8f1;
+		--mint-soft: #bcecd9;
+		--teal: #2db4b2;
+		--teal-deep: #007372;
+		--teal-tint: #e6f5f4;
+		--teal-soft: #bbe3e1;
+		--cyan: #3da5c2;
+		--cyan-deep: #00718c;
+		--cyan-tint: #e6f2f7;
+		--cyan-soft: #bbdde8;
+		--blue: #538eda;
+		--blue-deep: #2f68b0;
+		--blue-tint: #e7effb;
+		--blue-soft: #bdd4f3;
+		--indigo: #5d7cde;
+		--indigo-deep: #4661bd;
+		--indigo-tint: #e7edfc;
+		--indigo-soft: #becef5;
+		/* The mascot's cheek (TUI `red` #FF8F87) doubles as the error dot; its deep variant carries error text. */
+		--red: #ff8f87;
+		--red-deep: #b5362f;
+		--red-tint: #ffebe9;
+		--red-soft: #ffcec8;
+		/* Dinosaur themes (ADR 0100, src/brand/species.ts accent.light): each species' accent family. A theme
+		 * (:root[data-dino], below) points --accent and --selection at its family; the T-rex is the mint above.
+		 * Status colors (success mint, danger red, running amber, waiting indigo) never follow the theme.
+		 * test/brand/tokens.test.ts keeps these equal to species.ts. */
+		--dino-rex: var(--mint);
+		--dino-rex-deep: var(--mint-deep);
+		--dino-rex-tint: var(--mint-tint);
+		--dino-rex-soft: var(--mint-soft);
+		--dino-ptero: #c45ab3;
+		--dino-ptero-deep: #a63894;
+		--dino-ptero-tint: #f9eff7;
+		--dino-ptero-soft: #edcee8;
+		--dino-brachio: #8cc24c;
+		--dino-brachio-deep: #4d7026;
+		--dino-brachio-tint: #f4f9ed;
+		--dino-brachio-soft: #ddedc9;
+		--dino-tricera: #de6f3a;
+		--dino-tricera-deep: #a83800;
+		--dino-tricera-tint: #fcf1eb;
+		--dino-tricera-soft: #f5d5c4;
+
+		/* ---------------------------------------------------------------- 3. Color: semantic roles */
+		--bg: var(--n-1);
+		--bg-band: var(--n-2);
+		--surface: var(--white);
+		--surface-sunken: var(--n-2);
+		--surface-hover: var(--n-3);
+		--surface-pressed: var(--n-4);
+		--surface-inverse: var(--n-12);
+		--line: var(--n-5);
+		--line-strong: var(--n-6);
+		--line-ui: var(--n-8);
+		--line-inverse: #3a3d3c;
+		--text-1: var(--n-12);
+		--text-2: var(--n-10);
+		--text-3: var(--n-9);
+		--text-muted-large: var(--n-8); /* >= 3:1, only for text >= 24px (two-tone headline continuations) */
+		--text-disabled: var(--n-7);
+		--text-inverse: var(--n-1);
+		--text-inverse-2: var(--n-6);
+		/* The current signal; [data-signal] below rescopes it (one signal per screen). */
+		--accent: var(--mint);
+		--accent-deep: var(--mint-deep);
+		--accent-tint: var(--mint-tint);
+		--accent-soft: var(--mint-soft);
+		--success: var(--mint);
+		--success-deep: var(--mint-deep);
+		--success-tint: var(--mint-tint);
+		--danger: var(--red);
+		--danger-deep: var(--red-deep);
+		--danger-tint: var(--red-tint);
+		--focus: var(--blue-deep);
+		--selection: var(--mint-soft);
+		--dot-ink: var(--n-6);
+
+		/* ---------------------------------------------------------------- 4. Typography
+		 * Geist (precise grotesk) + Geist Mono (the system voice) + Doto (round-dot numerals) + dinobot KR
+		 * (Pretendard subset for Hangul). Faces are declared in base.css; R01, R07, R12, R15, R27. */
+		--font-sans: "Geist", "Geist Fallback", "dinobot KR", ui-sans-serif, system-ui, -apple-system, "Segoe UI", "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
+		--font-mono: "Geist Mono", "Geist Mono Fallback", "dinobot KR", ui-monospace, "Cascadia Mono", "SFMono-Regular", Menlo, Consolas, monospace;
+		--font-dot: "Doto", "Geist Mono", ui-monospace, monospace;
+
+		/* Fluid sizes interpolate between a 390px and a 1440px viewport (rem-based, so user zoom still works). */
+		--fs-display-xl: clamp(3.25rem, 1.671rem + 6.476vw, 7.5rem); /* 52 -> 120 */
+		--fs-display: clamp(2.75rem, 1.729rem + 4.19vw, 5.5rem); /* 44 -> 88  */
+		--fs-h2: clamp(2rem, 1.443rem + 2.286vw, 3.5rem); /* 32 -> 56  */
+		--fs-h3: clamp(1.5rem, 1.314rem + 0.762vw, 2rem); /* 24 -> 32  */
+		--fs-h4: clamp(1.1875rem, 1.118rem + 0.286vw, 1.375rem); /* 19 -> 22  */
+		--fs-lede: clamp(1.125rem, 1.055rem + 0.286vw, 1.3125rem); /* 18 -> 21  */
+		--fs-body-lg: 1.0625rem; /* 17 */
+		--fs-body: 1rem; /* 16 */
+		--fs-small: 0.875rem; /* 14 */
+		--fs-caption: 0.8125rem; /* 13 */
+		--fs-label: 0.75rem; /* 12: mono eyebrows */
+		--fs-micro: 0.6875rem; /* 11: annotations */
+
+		--lh-display-xl: 0.96;
+		--lh-display: 1;
+		--lh-h2: 1.04;
+		--lh-h3: 1.15;
+		--lh-h4: 1.3;
+		--lh-lede: 1.45;
+		--lh-body: 1.6;
+		--lh-small: 1.5;
+		--lh-label: 1.34;
+
+		--tr-display-xl: -0.05em;
+		--tr-display: -0.045em;
+		--tr-h2: -0.035em;
+		--tr-h3: -0.022em;
+		--tr-h4: -0.012em;
+		--tr-lede: -0.008em;
+		--tr-body: -0.004em;
+		--tr-label: 0.08em;
+		--tr-dot: 0.06em;
+
+		--fw-regular: 400;
+		--fw-medium: 500;
+		--fw-semibold: 600;
+		--fw-display: 560;
+
+		/* ---------------------------------------------------------------- 5. Space (4px base) */
+		--space-0: 0;
+		--space-1: 4px;
+		--space-2: 8px;
+		--space-3: 12px;
+		--space-4: 16px;
+		--space-5: 20px;
+		--space-6: 24px;
+		--space-7: 32px;
+		--space-8: 40px;
+		--space-9: 48px;
+		--space-10: 64px;
+		--space-11: 80px;
+		--space-12: 96px;
+		--space-13: 128px;
+		--space-14: 160px;
+		--space-section: clamp(5rem, 3.5rem + 6.15vw, 9rem); /* 80 -> 144 between sections */
+		--space-stack: clamp(2rem, 1.5rem + 2vw, 3.5rem); /* heading block -> content */
+
+		/* ---------------------------------------------------------------- 6. Shape: radii and borders (R01, R02, R09) */
+		--radius-1: 4px; /* tags, kbd, code */
+		--radius-2: 8px; /* small controls, DAG nodes, tooltips */
+		--radius-3: 12px; /* toasts, menus, chat bubbles */
+		--radius-4: 16px; /* cards, bento tiles */
+		--radius-5: 24px; /* hero form card, scene panels */
+		--radius-6: 32px; /* large media frames */
+		--radius-pill: 999px; /* CTAs, inputs, pills, toggles */
+		--border-1: 1px;
+		--border-2: 1.5px;
+		--focus-width: 2px;
+		--focus-offset: 2px;
+
+		/* ---------------------------------------------------------------- 7. Elevation: flat first (R03, R07, R10)
+		 * 0 flat on the page, 1 a hairline ring (cards, inputs: inset, never shifts layout), 2 floating
+		 * (sticky nav pill, popovers, toasts). Nothing else casts a shadow. */
+		--ring-1: inset 0 0 0 1px var(--line);
+		--ring-2: inset 0 0 0 1px var(--line-strong);
+		--ring-ui: inset 0 0 0 1px var(--line-ui);
+		--shadow-float: 0 1px 2px rgb(20 21 21 / 0.04), 0 8px 24px -6px rgb(20 21 21 / 0.1);
+		--shadow-pop: 0 2px 4px rgb(20 21 21 / 0.06), 0 16px 40px -8px rgb(20 21 21 / 0.18);
+
+		/* ---------------------------------------------------------------- 8. Z-index */
+		--z-base: 0;
+		--z-raised: 1;
+		--z-sticky: 100; /* sticky chapter panels */
+		--z-nav: 200;
+		--z-runner: 300; /* the fixed bottom runner bar */
+		--z-overlay: 400;
+		--z-toast: 500;
+		--z-tooltip: 600;
+		--z-skip: 700;
+
+		/* ---------------------------------------------------------------- 9. Layout
+		 * Breakpoints (media queries cannot read custom properties; use these literal values):
+		 *   sm 480px   md 768px   lg 1024px   xl 1280px. */
+		--container: 1200px;
+		--container-wide: 1344px;
+		--container-text: 680px;
+		--container-narrow: 560px;
+		--gutter: clamp(1.25rem, 0.65rem + 2.5vw, 2.5rem); /* 20 -> 40 page side padding */
+		--grid-gap: clamp(1rem, 0.75rem + 1vw, 1.5rem); /* 16 -> 24 */
+		--grid-cols: 12;
+		--nav-h: 64px;
+		--runner-h: 64px; /* 52px below 640px, see the media query below */
+		--control-sm: 36px;
+		--control-md: 44px;
+		--control-lg: 52px;
+		--measure: 62ch;
+
+		/* ---------------------------------------------------------------- 10. Motion (transform and opacity only, BRIEF 8)
+		 * Raw scale, then semantic aliases. Reduced motion zeroes the aliases; `.motion-ok` (user-started demos)
+		 * restores them. */
+		--duration-120: 120ms;
+		--duration-200: 200ms;
+		--duration-320: 320ms;
+		--duration-560: 560ms;
+		--duration-900: 900ms;
+		--dur-micro: var(--duration-120); /* hover overlays, press feedback */
+		--dur-state: var(--duration-200); /* toggles, tooltips, checkbox, tabs */
+		--dur-enter: var(--duration-320); /* panels, toasts, accordion content */
+		--dur-scene: var(--duration-560); /* scene swaps, scroll reveals */
+		--dur-character: var(--duration-900); /* mascot moments, dot assembly */
+		--stagger: 50ms;
+		--motion-distance: 1; /* multiplies entrance offsets */
+
+		--ease-standard: cubic-bezier(0.4, 0, 0.2, 1); /* state changes (R01, R07, R08) */
+		--ease-out: cubic-bezier(0.16, 1, 0.3, 1); /* entrances, expo-like (R10, R03) */
+		--ease-in: cubic-bezier(0.5, 0, 0.75, 0); /* exits */
+		--ease-in-out: cubic-bezier(0.65, 0, 0.35, 1); /* travel across the screen */
+		/* Damped springs sampled into linear(); pair each with its duration. */
+		--spring-snappy: linear(0, 0.0251, 0.0891, 0.1779, 0.2799, 0.3866, 0.4915, 0.5902, 0.6798, 0.7586, 0.8261, 0.8823, 0.9278, 0.9636, 0.9908, 1.0105, 1.024, 1.0325, 1.037, 1.0384, 1.0376, 1.0352, 1.0319, 1.028, 1.0239, 1.0199, 1.0161, 1.0126, 1.0095, 1.0069, 1.0047, 1.0029, 1); /* zeta 0.72, 3.8% overshoot */
+		--spring-snappy-dur: 420ms;
+		--spring-bouncy: linear(0, 0.0364, 0.1307, 0.2621, 0.4123, 0.5662, 0.7123, 0.8424, 0.9512, 1.0367, 1.0985, 1.1382, 1.1585, 1.1628, 1.1547, 1.1379, 1.1157, 1.0909, 1.0659, 1.0425, 1.0219, 1.0049, 0.9917, 0.9824, 0.9766, 0.9738, 0.9736, 0.9752, 0.9782, 0.9819, 0.986, 0.99, 0.9938, 0.997, 0.9997, 1.0017, 1.0031, 1.0039, 1.0043, 1.0043, 1.004, 1.0034, 1.0028, 1.0022, 1); /* zeta 0.5, 16% overshoot: characters only */
+		--spring-bouncy-dur: 760ms;
+		--spring-gentle: linear(0, 0.0359, 0.1211, 0.2302, 0.3463, 0.459, 0.5623, 0.653, 0.7302, 0.7942, 0.8461, 0.8874, 0.9195, 0.9441, 0.9624, 0.9759, 0.9856, 0.9923, 0.9969, 0.9998, 1.0015, 1.0025, 1.0029, 1.003, 1.0028, 1.0025, 1.0022, 1.0018, 1); /* zeta 0.88, 0.3% overshoot */
+		--spring-gentle-dur: 640ms;
+
+		/* ---------------------------------------------------------------- 11. Dot texture (R12, R10, R03)
+		 * Sparse and faint: a 24px pitch, 1.2px-radius dots in --dot-ink (n-6). `.dot-paper` (base.css) paints it. */
+		--dot-pitch: 24px;
+		--dot-radius: 1.2px;
+		--dot-pitch-dense: 12px;
+		--dot-radius-dense: 1px;
+	}
+
+	@media (max-width: 639.98px) {
+		:root {
+			--runner-h: 52px;
+			--nav-h: 56px;
+		}
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		:root {
+			--dur-micro: 0ms;
+			--dur-state: 0ms;
+			--dur-enter: 0ms;
+			--dur-scene: 0ms;
+			--dur-character: 0ms;
+			--stagger: 0ms;
+			--motion-distance: 0;
+		}
+		/* A user-started demo (Play button) may move: BRIEF 8 keeps meaningful animation behind a Play button. */
+		.motion-ok {
+			--dur-micro: var(--duration-120);
+			--dur-state: var(--duration-200);
+			--dur-enter: var(--duration-320);
+			--dur-scene: var(--duration-560);
+			--dur-character: var(--duration-900);
+			--stagger: 50ms;
+			--motion-distance: 1;
+		}
+	}
+
+	@supports not (transition-timing-function: linear(0, 1)) {
+		:root {
+			--spring-snappy: var(--ease-out);
+			--spring-bouncy: var(--ease-out);
+			--spring-gentle: var(--ease-out);
+		}
+	}
+
+	/* Korean: square glyphs need air. Looser tracking and leading, word-level line breaking (base.css).
+	 * Applies to the /ko/ pages and to any element marked lang="ko" (KO specimens on /design/). */
+	[lang|="ko"] {
+		--tr-display-xl: -0.025em;
+		--tr-display: -0.022em;
+		--tr-h2: -0.018em;
+		--tr-h3: -0.012em;
+		--tr-h4: -0.006em;
+		--tr-lede: -0.004em;
+		--tr-body: -0.002em;
+		--lh-display-xl: 1.12;
+		--lh-display: 1.16;
+		--lh-h2: 1.2;
+		--lh-h3: 1.3;
+		--lh-h4: 1.4;
+		--lh-lede: 1.6;
+		--lh-body: 1.75;
+		--lh-small: 1.65;
+	}
+
+	/* Dinosaur themes (ADR 0100): <html data-dino> set by src/client/app/dino.ts. Only the accent family and the
+	 * selection follow the theme; [data-signal] chapters below still rescope --accent, and --success stays mint.
+	 * The T-rex (rex, the default) keeps the :root values. */
+	:root[data-dino="ptero"] {
+		--accent: var(--dino-ptero);
+		--accent-deep: var(--dino-ptero-deep);
+		--accent-tint: var(--dino-ptero-tint);
+		--accent-soft: var(--dino-ptero-soft);
+		--selection: var(--dino-ptero-soft);
+	}
+	:root[data-dino="brachio"] {
+		--accent: var(--dino-brachio);
+		--accent-deep: var(--dino-brachio-deep);
+		--accent-tint: var(--dino-brachio-tint);
+		--accent-soft: var(--dino-brachio-soft);
+		--selection: var(--dino-brachio-soft);
+	}
+	:root[data-dino="tricera"] {
+		--accent: var(--dino-tricera);
+		--accent-deep: var(--dino-tricera-deep);
+		--accent-tint: var(--dino-tricera-tint);
+		--accent-soft: var(--dino-tricera-soft);
+		--selection: var(--dino-tricera-soft);
+	}
+
+	/* One signal per screen: a section, chapter or component opts into one stop. */
+	/* [data-signal="theme"] has no rule on purpose: brand moments (the hero pill and eyebrow, the final CTA eyebrow)
+	 * inherit the dinosaur theme's accent from :root, mint for the T-rex. */
+	[data-signal="mint"] {
+		--accent: var(--mint);
+		--accent-deep: var(--mint-deep);
+		--accent-tint: var(--mint-tint);
+		--accent-soft: var(--mint-soft);
+	}
+	[data-signal="teal"] {
+		--accent: var(--teal);
+		--accent-deep: var(--teal-deep);
+		--accent-tint: var(--teal-tint);
+		--accent-soft: var(--teal-soft);
+	}
+	[data-signal="cyan"] {
+		--accent: var(--cyan);
+		--accent-deep: var(--cyan-deep);
+		--accent-tint: var(--cyan-tint);
+		--accent-soft: var(--cyan-soft);
+	}
+	[data-signal="blue"] {
+		--accent: var(--blue);
+		--accent-deep: var(--blue-deep);
+		--accent-tint: var(--blue-tint);
+		--accent-soft: var(--blue-soft);
+	}
+	[data-signal="indigo"] {
+		--accent: var(--indigo);
+		--accent-deep: var(--indigo-deep);
+		--accent-tint: var(--indigo-tint);
+		--accent-soft: var(--indigo-soft);
+	}
+	[data-signal="red"] {
+		--accent: var(--red);
+		--accent-deep: var(--red-deep);
+		--accent-tint: var(--red-tint);
+		--accent-soft: var(--red-soft);
+	}
+	[data-signal="ink"] {
+		--accent: var(--n-12);
+		--accent-deep: var(--n-12);
+		--accent-tint: var(--n-3);
+		--accent-soft: var(--n-5);
+	}
+}

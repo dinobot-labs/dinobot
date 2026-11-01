@@ -1,1 +1,64 @@
-<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex"><title>{{notFound.title}}</title><link rel="icon" href="/favicon.svg"><script type="module" src="/src/client/main.ts"></script></head><body><a class="skip-link" href="#main">{{a11y.skip}}</a><main id="main" class="container lost"><a class="brand" href="/"><img src="/brand/mark.svg" width="32" height="26" alt="">dinobot</a><p class="eyebrow">404</p><h1>{{notFound.h1}}</h1><p>{{notFound.body}}</p><a class="button primary" href="/">{{notFound.home}}</a></main>{{> footer}}</body></html>
+<!doctype html>
+<html lang="{{$.lang}}">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{notFound.title}}</title>
+<meta name="description" content="{{notFound.description}}">
+<meta name="robots" content="noindex">
+<meta name="theme-color" content="#f9fbfa">
+<meta name="color-scheme" content="light">
+<link rel="icon" href="/favicon.ico" sizes="32x32">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<link rel="preload" href="/fonts/geist-latin.woff2" as="font" type="font/woff2" crossorigin>
+<meta property="og:image" content="{{$.site}}{{meta.ogImage}}">
+<script type="module" src="/src/client/main.ts"></script>
+</head>
+<body class="page page--404">
+<a class="skip-link" href="#main">{{a11y.skip}}</a>
+
+<header class="nav" data-nav>
+	<div class="nav__inner container container--wide">
+		<a class="brand" href="/" aria-label="{{a11y.home}}">
+			<img class="brand__mark" src="/brand/mark.svg" alt="" width="27" height="22">
+			<span class="brand__word">dinobot</span>
+		</a>
+		<div class="nav__actions">
+			<nav class="locale" aria-label="{{a11y.language}}">
+				<a class="locale__opt" href="/" hreflang="en" lang="en" data-locale-toggle="en" aria-current="true">EN</a>
+				<a class="locale__opt" href="/ko/" hreflang="ko" lang="ko" data-locale-toggle="ko">KO</a>
+			</nav>
+			<a class="btn btn--primary btn--sm" href="/#download" data-cta="nav">{{nav.cta}}</a>
+		</div>
+	</div>
+</header>
+
+<main id="main" tabindex="-1" class="lost">
+	<div class="lost__inner container">
+		<div class="lost__mascot" data-mascot-host="lost" data-mascot-state="failed" data-mascot-label="{{notFound.mascot}}">
+			<img class="lost__fallback" src="/brand/mascot/failed.svg" alt="{{notFound.mascot}}" width="300" height="180" data-mascot-fallback>
+		</div>
+		<p class="eyebrow lost__code" data-signal="mint"><span class="t-dot">{{notFound.eyebrow}}</span></p>
+		<h1 class="t-display lost__title">{{notFound.h1}}</h1>
+		<p class="t-lede lost__body">{{notFound.body}}</p>
+		<p class="lost__actions"><a class="btn btn--primary btn--lg" href="/">{{notFound.home}}<svg class="icon icon--nudge" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8h10M9 4l4 4-4 4"/></svg></a></p>
+	</div>
+</main>
+
+<footer class="footer">
+	<div class="footer__inner container container--wide">
+		<div class="footer__brand">
+			<a class="brand" href="/" aria-label="{{a11y.home}}"><img class="brand__mark" src="/brand/mark.svg" alt="" width="27" height="22"><span class="brand__word">dinobot</span></a>
+			<span class="signature stripes" aria-hidden="true"></span>
+		</div>
+		<nav class="footer__links" aria-label="{{a11y.footerNav}}">
+			<a href="{{footer.privacyHref}}">{{footer.privacy}}</a>
+		</nav>
+		<p class="footer__legal"><span>{{footer.legal}}</span></p>
+	</div>
+</footer>
+
+<div class="runner-host" data-runner></div>
+</body>
+</html>

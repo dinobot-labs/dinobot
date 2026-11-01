@@ -1,5 +1,7 @@
 # Public landing transfer
 
+> Historical transfer receipt below. The subsequent source restoration reinstates the exact `9b91b4a` dinosaur/download UI and active waitlist API; see `security.md` for current routing, preserved limits and the waitlist-form revision mismatch. Product-page/security-retirement ownership statements below describe the earlier transfer, not the restored runtime.
+
 ## Boundary
 
 Transferred from historical commit `9b91b4a48cfe9f4099e59634323037ef461f6286` (landing tree `cd455c78875420a1e6afe7da7452ec9fdb95799b`). The parent selected `services/landing`, superseding the audit’s suggested `website` destination. No repository merge or history import was performed.

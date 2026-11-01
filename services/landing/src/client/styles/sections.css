@@ -1,0 +1,1276 @@
+/*
+ * Page sections for the landing, privacy and 404 pages (page node). Built only from the Signal Paper tokens and
+ * components (tokens.css, components.css). Motion is transform/opacity only (BRIEF 8); every looping or
+ * scroll-driven effect has a reduced-motion state at the end of its block.
+ * One signal per screen: chapters take [data-signal] (DAG mint, Memory teal, Assignment cyan, Self-improving blue),
+ * asks are indigo, errors red; [data-signal="none"] makes a block neutral ink.
+ */
+@layer sections {
+	/* ================================================================ Page frame */
+	html {
+		scroll-padding-top: calc(var(--nav-h) + var(--space-4));
+	}
+	body {
+		/* The fixed runner bar (BRIEF 7) never covers the footer or a CTA. */
+		padding-bottom: var(--runner-h);
+		background: var(--bg);
+		overflow-x: clip;
+	}
+	main:focus {
+		outline: none;
+	}
+	.nav-sentinel {
+		position: absolute;
+		top: 0;
+		height: 1px;
+		width: 1px;
+	}
+	[data-signal="none"] {
+		--accent: var(--text-1);
+		--accent-deep: var(--text-1);
+		--accent-tint: var(--bg-band);
+		--accent-soft: var(--n-4);
+	}
+	.br-wide {
+		display: none;
+	}
+	@media (min-width: 1024px) {
+		.br-wide {
+			display: inline;
+		}
+	}
+	/* Glyph placeholders and glyphs share one size, so mounting them never moves text. */
+	.glyph-slot {
+		display: inline-block;
+		flex: none;
+		width: 16px;
+		height: 16px;
+	}
+	.nav .brand__mark,
+	.footer .brand__mark {
+		width: 27px;
+		height: 22px;
+	}
+
+	/* ================================================================ 2. Hero */
+	.hero {
+		padding-block: clamp(var(--space-8), 5vw, var(--space-12)) var(--space-section);
+	}
+	.hero__inner {
+		display: grid;
+		grid-template-columns: minmax(0, 1fr);
+		gap: var(--space-10);
+		align-items: center;
+	}
+	@media (min-width: 1024px) {
+		.hero__inner {
+			grid-template-columns: minmax(0, 1fr) minmax(0, 1.04fr);
+			gap: clamp(var(--space-10), 5vw, var(--space-13));
+		}
+	}
+	.hero__copy {
+		display: grid;
+		justify-items: start;
+		min-width: 0;
+	}
+	.hero__eyebrow {
+		max-width: 100%;
+		margin-bottom: var(--space-7);
+	}
+	@media (max-width: 479.98px) {
+		.hero__eyebrow-note {
+			display: none;
+		}
+	}
+	.hero__title {
+		margin: 0;
+		max-width: 12ch;
+	}
+	[lang="ko"] .hero__title {
+		max-width: none;
+		font-size: clamp(2.5rem, 1.55rem + 3.9vw, 4.75rem);
+	}
+	.hero__sub {
+		margin-top: var(--space-6);
+		max-width: 34em;
+		color: var(--text-2);
+	}
+	[lang="ko"] .hero__sub {
+		max-width: 31em;
+	}
+	.hero__actions {
+		display: flex;
+		flex-wrap: wrap;
+		gap: var(--space-3);
+		margin-top: var(--space-8);
+	}
+	.hero__actions .btn .icon {
+		width: 16px;
+		height: 16px;
+	}
+	.hero__meta {
+		margin: var(--space-4) 0 0;
+		max-width: 34em;
+		font-size: var(--fs-small);
+		line-height: var(--lh-small);
+		color: var(--text-3);
+	}
+
+	/* The cycling headline word: every word sits in one cell, so the pill keeps the widest word's width. */
+	.hero__pill {
+		clip-path: inset(0 round var(--radius-pill));
+	}
+	/* A clipped vertical slot (BRIEF 12b.2): every word shares one grid cell, so the pill is as wide as the widest word
+	 * of the locale and never changes size. The outgoing word slides up and out while the incoming one slides up and in,
+	 * on the same curve and distance, so two words are never drawn over each other. Transform and opacity only. */
+	.swap {
+		display: inline-grid;
+		overflow: hidden;
+		padding-block: 0.08em;
+		margin-block: -0.08em;
+	}
+	.swap__word {
+		grid-area: 1 / 1;
+		justify-self: start;
+		white-space: nowrap;
+		transition:
+			opacity 420ms var(--ease-in-out),
+			transform 620ms var(--ease-in-out);
+	}
+	.swap__word:not([data-on]) {
+		opacity: 0;
+		transform: translateY(110%);
+	}
+	.swap__word[data-off] {
+		transform: translateY(-110%);
+	}
+
+	/* Hero stage: a framed sheet of dot paper; the T-rex peeks over the chat card (BRIEF 12a, Notion R04). */
+	.hero__visual {
+		min-width: 0;
+	}
+	.hero__stage {
+		--mascot-w: 44%;
+		--mascot-top: 52px;
+		position: relative;
+		isolation: isolate;
+		padding: calc(var(--mascot-top) + var(--mascot-w) * 0.6 * 0.6) clamp(var(--space-4), 3vw, var(--space-8)) clamp(var(--space-4), 3vw, var(--space-8));
+		border-radius: var(--radius-6);
+		background-color: var(--bg-band);
+		background-image: radial-gradient(circle at center, var(--dot-ink) 0 var(--dot-radius), transparent calc(var(--dot-radius) + 0.6px));
+		background-size: var(--dot-pitch) var(--dot-pitch);
+		background-position: calc(var(--dot-pitch) / -2) calc(var(--dot-pitch) / -2);
+		box-shadow: var(--ring-1);
+	}
+	.hero__mascot {
+		position: absolute;
+		z-index: 0;
+		top: var(--mascot-top);
+		right: 9%;
+		width: var(--mascot-w);
+		aspect-ratio: 30 / 18;
+	}
+
+	/* The pterosaur's head sits lower in its grid (rows 3-10) than the T-rex's (0-7): lift it two rows so its beak
+	 * clears the chat card that overlaps the bottom of the mascot. */
+	:root[data-dino="ptero"] .hero__mascot {
+		translate: 0 -12%;
+	}
+
+	/* Dinosaur theme switch (ADR 0100): a small segmented radiogroup in the stage's free top-left corner, opposite
+	 * the mascot. The checked option takes the theme's own tint, so the choice previews the accent it sets. */
+	.dino-switch {
+		position: absolute;
+		z-index: 2;
+		top: var(--space-4);
+		left: var(--space-4);
+		display: inline-flex;
+		gap: 2px;
+		padding: 3px;
+		border-radius: var(--radius-pill);
+		background: var(--surface);
+		box-shadow: var(--ring-1);
+	}
+	.dino-switch[hidden] {
+		display: none;
+	}
+	.dino-switch__option {
+		display: inline-flex;
+		align-items: center;
+		gap: 6px;
+		height: 30px;
+		padding: 0 10px 0 7px;
+		border: 0;
+		border-radius: var(--radius-pill);
+		background: transparent;
+		color: var(--text-2);
+		font-family: var(--font-mono);
+		font-size: var(--fs-micro);
+		font-weight: var(--fw-medium);
+		letter-spacing: 0.04em;
+		text-transform: uppercase;
+		line-height: 1;
+		cursor: pointer;
+		transition: background-color var(--dur-micro) var(--ease-out), color var(--dur-micro) var(--ease-out);
+	}
+	.dino-switch__option:hover {
+		background: var(--surface-hover);
+		color: var(--text-1);
+	}
+	.dino-switch__option[aria-checked="true"] {
+		background: var(--accent-tint);
+		color: var(--n-11);
+		box-shadow: inset 0 0 0 1px var(--accent-soft);
+	}
+	.dino-switch__mark {
+		display: block;
+		width: 20px;
+		height: auto;
+	}
+	:lang(ko) .dino-switch__option {
+		letter-spacing: 0;
+		text-transform: none;
+	}
+
+	/* ---------------------------------------------------------------- Chat card */
+	.chat {
+		position: relative;
+		z-index: 1;
+		margin: 0;
+		border-radius: var(--radius-5);
+		background: var(--surface);
+		box-shadow: var(--ring-1), var(--shadow-float);
+		font-size: var(--fs-small);
+		line-height: var(--lh-small);
+	}
+	.chat__head {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+		height: 48px;
+		padding: 0 var(--space-5);
+		border-bottom: 1px solid var(--line);
+		font-weight: var(--fw-semibold);
+	}
+	.chat__hash {
+		color: var(--text-3);
+		font-weight: var(--fw-regular);
+	}
+	.chat__members {
+		margin-left: auto;
+		font-family: var(--font-mono);
+		font-size: var(--fs-micro);
+		font-weight: var(--fw-regular);
+		letter-spacing: 0.04em;
+		color: var(--text-3);
+	}
+	.chat__body {
+		display: grid;
+		gap: var(--space-5);
+		padding: var(--space-5);
+	}
+	.chat__msg {
+		display: grid;
+		grid-template-columns: 32px minmax(0, 1fr);
+		gap: var(--space-3);
+		align-items: start;
+	}
+	.chat__avatar {
+		display: grid;
+		place-items: center;
+		width: 32px;
+		height: 32px;
+		border-radius: var(--radius-2);
+		font-weight: var(--fw-semibold);
+	}
+	.chat__avatar--user {
+		background: var(--n-4);
+		color: var(--text-1);
+	}
+	.chat__avatar--bot {
+		background: var(--surface);
+		box-shadow: var(--ring-1);
+	}
+	.chat__avatar--bot img {
+		width: 20px;
+		height: auto;
+	}
+	.chat__content {
+		position: relative;
+		display: grid;
+		gap: var(--space-2);
+		min-width: 0;
+	}
+	.chat__meta {
+		display: flex;
+		align-items: baseline;
+		gap: var(--space-2);
+		color: var(--text-3);
+		font-size: var(--fs-caption);
+	}
+	.chat__meta b {
+		color: var(--text-1);
+		font-size: var(--fs-small);
+		font-weight: var(--fw-semibold);
+	}
+	.chat__app {
+		padding: 0 5px;
+		border-radius: var(--radius-1);
+		background: var(--n-3);
+		font-size: var(--fs-micro);
+		font-weight: var(--fw-medium);
+		color: var(--text-2);
+	}
+	.chat__text {
+		color: var(--text-1);
+	}
+	.chat__mention {
+		padding: 0 3px;
+		border-radius: var(--radius-1);
+		background: var(--blue-tint);
+		color: var(--blue-deep);
+		font-weight: var(--fw-medium);
+	}
+	.chat__typing {
+		position: absolute;
+		top: 8px;
+		left: 0;
+		display: inline-flex;
+		padding: 10px 12px;
+		border-radius: var(--radius-3);
+		background: var(--bg-band);
+	}
+	.plan {
+		display: grid;
+		gap: 2px;
+		margin: var(--space-1) 0 0;
+		padding: var(--space-2);
+		border-radius: var(--radius-3);
+		background: var(--bg-band);
+		list-style: none;
+	}
+	.plan__step {
+		display: grid;
+		grid-template-columns: 6.6em minmax(0, 1fr) auto;
+		align-items: center;
+		gap: var(--space-3);
+		min-height: 34px;
+		padding: 0 var(--space-2);
+	}
+	[lang="ko"] .plan__step {
+		grid-template-columns: 5.8em minmax(0, 1fr) auto;
+	}
+	/* Hangul in the mono labels: wide uppercase tracking reads as gaps between syllables. */
+	[lang="ko"] .pill,
+	[lang="ko"] .eyebrow,
+	[lang="ko"] .t-label,
+	[lang="ko"] .plan__who,
+	[lang="ko"] .marquee__tag,
+	[lang="ko"] .chat__members {
+		letter-spacing: 0;
+	}
+	.plan__tag {
+		justify-self: start;
+		background: var(--surface);
+	}
+	.plan__tag[data-waiting] .tag__dot {
+		background: var(--indigo);
+	}
+	.plan__label {
+		overflow: hidden;
+		white-space: nowrap;
+		text-overflow: ellipsis;
+		color: var(--text-1);
+	}
+	.plan__who {
+		font-family: var(--font-mono);
+		font-size: var(--fs-micro);
+		letter-spacing: 0.02em;
+		color: var(--text-3);
+	}
+	.chat__slot {
+		display: grid;
+		margin-top: var(--space-2);
+	}
+	.chat__slot > * {
+		grid-area: 1 / 1;
+	}
+	.chat__ask {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		justify-content: space-between;
+		gap: var(--space-3);
+		padding: var(--space-3) var(--space-3) var(--space-3) var(--space-4);
+		border-radius: var(--radius-3);
+		background: var(--accent-tint);
+	}
+	.chat__ask-q {
+		flex: 1 1 14em;
+		color: var(--n-11);
+		font-weight: var(--fw-medium);
+	}
+	.chat__buttons {
+		display: flex;
+		gap: var(--space-2);
+	}
+	.chat__buttons .btn {
+		pointer-events: none;
+		transition: transform var(--dur-micro) var(--ease-standard);
+	}
+	.chat__approve.is-pressed {
+		transform: scale(0.94);
+	}
+	.chat__done {
+		align-self: center;
+		padding-left: var(--space-1);
+	}
+	/* The story (app/hero.ts): hidden until its beat, then a short rise. Without JS everything simply shows. */
+	.chat[data-play] [data-at] {
+		opacity: 0;
+		transform: translateY(calc(6px * var(--motion-distance)));
+		transition:
+			opacity var(--dur-enter) var(--ease-out),
+			transform var(--dur-enter) var(--ease-out);
+	}
+	.chat[data-play] [data-at].is-on {
+		opacity: 1;
+		transform: none;
+	}
+	/* Ghost-first (BRIEF 12b.1): beats that have not happened yet show as a faint ghost of the final card, so the card
+	 * never has a blank field; nested ghosts do not multiply. Transient parts (typing, the ask once answered, the done
+	 * line that replaces it) are not ghosted. */
+	.chat[data-play] [data-at]:not(.is-on) {
+		opacity: 1;
+		transform: none;
+		transition: none;
+		filter: opacity(0.16); /* static ghost; hero.ts fades activation with opacity */
+	}
+	.chat[data-play] [data-at]:not(.is-on) [data-at]:not(.is-on) {
+		filter: none;
+	}
+	.chat[data-play] .chat__body .chat__typing:not(.is-on),
+	.chat[data-play] .chat__body .chat__done:not(.is-on),
+	.chat[data-play] .chat__body [data-at].is-past {
+		opacity: 0;
+	}
+	/* While dinobot types, the typing bubble takes the reply's place (as in a real chat app) instead of sitting on top of
+	 * the reply's ghost, so no text is ever drawn over other text. */
+	.chat[data-play][data-beat="1"] .chat__reply {
+		opacity: 0;
+	}
+	.chat[data-play] .plan__step:nth-child(2) {
+		transition-delay: 60ms;
+	}
+	.chat[data-play] .plan__step:nth-child(3) {
+		transition-delay: 120ms;
+	}
+	.chat[data-play] .plan__step:nth-child(4) {
+		transition-delay: 180ms;
+	}
+	.chat[data-play] .plan__step:nth-child(5) {
+		transition-delay: 240ms;
+	}
+	@media (max-width: 479.98px) {
+		.hero__stage {
+			--mascot-w: 52%;
+			--mascot-top: 40px;
+		}
+		/* Narrow stages: marks only (names stay in the accessible labels), clear of the larger mascot. */
+		.dino-switch {
+			top: var(--space-3);
+			left: var(--space-3);
+		}
+		.dino-switch__option {
+			padding: 0 7px;
+		}
+		.dino-switch__name {
+			display: none;
+		}
+		.chat__body {
+			padding: var(--space-4);
+		}
+		.plan__who {
+			display: none;
+		}
+		.plan__step {
+			grid-template-columns: 6.6em minmax(0, 1fr);
+		}
+	}
+
+	/* ================================================================ 3. Works where you chat */
+	.channels {
+		border-block: 1px solid var(--line);
+		background: var(--surface);
+	}
+	.channels__inner {
+		display: grid;
+		grid-template-columns: minmax(0, 1fr);
+		gap: var(--space-4);
+		padding-block: var(--space-6);
+	}
+	@media (min-width: 768px) {
+		.channels__inner {
+			grid-template-columns: auto minmax(0, 1fr);
+			align-items: center;
+			gap: var(--space-8);
+		}
+	}
+	.channels .marquee {
+		min-width: 0;
+	}
+	.channels__label {
+		margin: 0;
+		color: var(--text-3);
+		white-space: nowrap;
+	}
+	.marquee__item .glyph-slot {
+		color: var(--text-1);
+	}
+	.marquee__sep {
+		gap: 0;
+	}
+	.marquee__tag {
+		margin-left: 2px;
+		padding: 1px 7px;
+		border-radius: var(--radius-pill);
+		box-shadow: var(--ring-1);
+		font-family: var(--font-mono);
+		font-size: var(--fs-micro);
+		font-weight: var(--fw-regular);
+		letter-spacing: 0.04em;
+		color: var(--text-3);
+	}
+
+	/* ================================================================ 4. Philosophy: words light up with scroll */
+	.philosophy {
+		padding-block: var(--space-section);
+	}
+	.philosophy__inner {
+		display: grid;
+		justify-items: center;
+		gap: var(--space-7);
+		text-align: center;
+	}
+	.philosophy__text {
+		max-width: 21em;
+		margin: 0;
+		font-size: clamp(2rem, 1.25rem + 3.1vw, 4rem);
+		font-weight: var(--fw-display);
+		line-height: 1.12;
+		letter-spacing: -0.035em;
+		color: var(--text-1);
+		text-wrap: balance;
+	}
+	[lang="ko"] .philosophy__text {
+		max-width: 19em;
+		font-size: clamp(1.75rem, 1.1rem + 2.6vw, 3.4rem);
+		line-height: 1.32;
+		letter-spacing: -0.02em;
+	}
+	/* Unlit words sit under a paper veil that lifts word by word (opacity of a pseudo-element on the compositor). The
+	 * text itself stays full ink, so it keeps its real contrast for assistive tech and contrast tools. */
+	.philosophy__text .word {
+		position: relative;
+		display: inline-block;
+	}
+	.philosophy__text .word::after {
+		content: "";
+		position: absolute;
+		inset: -0.04em -0.03em;
+		background: var(--bg);
+		opacity: 0.84;
+		pointer-events: none;
+	}
+	@supports (animation-timeline: view()) {
+		.philosophy__text[data-words="timeline"] {
+			view-timeline: --philosophy block;
+		}
+		.philosophy__text[data-words="timeline"] .word::after {
+			animation: word-veil linear both;
+			animation-timeline: --philosophy;
+			animation-range: cover calc(18% + var(--i) / var(--n) * 34%) cover calc(24% + var(--i) / var(--n) * 34%);
+		}
+	}
+	.philosophy__text[data-words="io"] .word::after {
+		transition: opacity var(--dur-scene) var(--ease-out) calc(var(--i) * 45ms);
+	}
+	.philosophy__text[data-words="io"].is-lit .word::after {
+		opacity: 0;
+	}
+	@keyframes word-veil {
+		from {
+			opacity: 0.84;
+		}
+		to {
+			opacity: 0;
+		}
+	}
+	@media (prefers-reduced-motion: reduce) {
+		.philosophy__text .word::after,
+		.philosophy__text[data-words] .word::after {
+			display: none;
+			animation: none;
+			transition: none;
+		}
+	}
+
+	/* ================================================================ 5. Strengths chapters */
+	.strengths {
+		padding-block: 0 var(--space-section);
+	}
+	.strengths__head {
+		margin-bottom: clamp(var(--space-10), 7vw, var(--space-13));
+	}
+	.chapters {
+		display: grid;
+		gap: clamp(var(--space-12), 9vw, var(--space-14));
+	}
+	.chapter {
+		display: grid;
+		gap: var(--space-8);
+	}
+	.chapter__copy {
+		display: grid;
+		align-content: start;
+		justify-items: start;
+		gap: var(--space-5);
+	}
+	.chapter__title {
+		margin: 0;
+	}
+	.chapter__body {
+		max-width: 34em;
+		color: var(--text-2);
+	}
+	.chapter__steps {
+		display: grid;
+		gap: var(--space-5);
+		margin: var(--space-4) 0 0;
+		padding: 0;
+		list-style: none;
+		counter-reset: none;
+	}
+	.chapter__step {
+		position: relative;
+		display: grid;
+		grid-template-columns: 28px minmax(0, 1fr);
+		gap: var(--space-4);
+		align-items: start;
+		color: var(--text-2);
+		font-size: var(--fs-body);
+	}
+	/* The rail that joins the step dots. */
+	.chapter__step:not(:last-child)::after {
+		content: "";
+		position: absolute;
+		left: 13.5px;
+		top: 32px;
+		bottom: calc(-1 * var(--space-5) + 4px);
+		width: 1px;
+		background: var(--accent-soft);
+	}
+	.chapter__step-num {
+		display: grid;
+		place-items: center;
+		width: 28px;
+		height: 28px;
+		border-radius: 50%;
+		background: var(--accent-tint);
+		color: var(--accent-deep);
+		font-family: var(--font-mono);
+		font-size: var(--fs-label);
+		font-weight: var(--fw-semibold);
+	}
+	.chapter__step > span:last-child {
+		padding-top: 2px;
+	}
+	.scene {
+		position: relative;
+		overflow: hidden;
+		border-radius: var(--radius-6);
+		background: var(--surface);
+		box-shadow: var(--ring-1);
+		contain: layout paint;
+	}
+	/* Host sizes match the showcase stages (src/client/showcase/index.ts): chapters 4:3, demo 3:2 or 1:2. */
+	.scene--chapter {
+		aspect-ratio: 4 / 3;
+	}
+	@media (min-width: 1024px) {
+		.chapter {
+			grid-template-columns: repeat(12, minmax(0, 1fr));
+			gap: var(--grid-gap);
+			align-items: start;
+		}
+		.chapter__copy {
+			grid-column: 1 / span 5;
+			grid-row: 1;
+			padding-block: var(--space-8) var(--space-12);
+		}
+		.chapter__visual {
+			grid-column: 7 / -1;
+			grid-row: 1;
+			position: sticky;
+			top: calc(var(--nav-h) + var(--space-7));
+		}
+		.chapter:nth-child(even) .chapter__copy {
+			grid-column: 8 / -1;
+		}
+		.chapter:nth-child(even) .chapter__visual {
+			grid-column: 1 / span 6;
+		}
+	}
+
+	/* ================================================================ 6. Watch it work */
+	.demo {
+		padding-block: var(--space-section);
+		background: var(--bg-band);
+		border-block: 1px solid var(--line);
+	}
+	.demo .section-head {
+		margin-bottom: var(--space-stack);
+	}
+	.scene--demo {
+		aspect-ratio: 1 / 2; /* matches the 360x720 narrow stage (showcase/demo.ts) */
+		box-shadow: var(--ring-1), var(--shadow-float);
+	}
+	@media (min-width: 640px) {
+		/* Wide stage: the chat window is the card and the request chips + step bar sit under it on the band, so the host
+		 * draws no surface of its own (otherwise the controls read as a second, unpadded card around the window). */
+		.scene--demo {
+			aspect-ratio: 3 / 2; /* matches the 750x500 wide stage */
+			background: transparent;
+			box-shadow: none;
+			border-radius: 0;
+		}
+	}
+	@media (min-width: 1280px) {
+		.scene--demo {
+			width: min(100%, 1120px);
+			margin-inline: auto;
+		}
+	}
+
+	/* ================================================================ 7. More strengths (bento) */
+	.more {
+		padding-block: var(--space-section);
+	}
+	.more .section-head {
+		margin-bottom: var(--space-stack);
+	}
+	.tile__visual {
+		justify-items: start;
+		place-items: center start;
+		min-height: 0;
+		padding: var(--space-4);
+		background: transparent;
+	}
+	.tile__visual .glyph-slot {
+		width: 44px;
+		height: 44px;
+		color: var(--accent-deep);
+	}
+	/* Glyph on top, copy right under it: titles line up across a row whatever the body length. */
+	.tile {
+		min-height: 0;
+		justify-content: flex-start;
+		gap: var(--space-6);
+	}
+	.tile__visual {
+		padding: 0;
+	}
+	.tile__copy {
+		display: grid;
+		gap: var(--space-2);
+	}
+	.tile__copy .eyebrow {
+		margin-bottom: var(--space-1);
+	}
+	.tile[data-signal="mint"],
+	.tile[data-signal="indigo"] {
+		background: var(--accent-tint);
+		box-shadow: none;
+	}
+	.tile[data-signal="mint"] .card__body,
+	.tile[data-signal="indigo"] .card__body {
+		color: var(--n-11);
+	}
+	.tile[data-signal="none"] .eyebrow::before {
+		background: var(--n-8);
+	}
+
+	/* ================================================================ 8. How it works */
+	.how {
+		padding-block: var(--space-section);
+		border-top: 1px solid var(--line);
+	}
+	.how .section-head {
+		margin-bottom: var(--space-stack);
+	}
+	.how__steps {
+		display: grid;
+		gap: var(--grid-gap);
+		margin: 0;
+		padding: 0;
+		list-style: none;
+	}
+	@media (min-width: 768px) {
+		.how__steps {
+			grid-template-columns: repeat(3, minmax(0, 1fr));
+		}
+	}
+	.how__step {
+		gap: var(--space-3);
+	}
+	.how__top {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		margin-bottom: var(--space-6);
+	}
+	.how__num {
+		font-size: 2.5rem;
+		line-height: 1;
+		color: var(--text-1);
+	}
+	.how__glyph {
+		display: grid;
+		place-items: center;
+		width: 56px;
+		height: 56px;
+		border-radius: var(--radius-3);
+		background: var(--bg-band);
+	}
+	.how__glyph .glyph-slot {
+		width: 28px;
+		height: 28px;
+		color: var(--text-1);
+	}
+	.how__title {
+		margin: 0;
+	}
+	/* Glyph dots assemble once on entry (app/motion.ts adds .is-in). */
+	[data-assemble] .glyph circle {
+		transform-box: fill-box;
+		transform-origin: center;
+		transition:
+			opacity var(--dur-state) var(--ease-out),
+			transform var(--dur-scene) var(--spring-bouncy, var(--ease-out));
+	}
+	[data-assemble]:not(.is-in) .glyph circle {
+		opacity: 0;
+		transform: scale(0.2);
+	}
+	[data-assemble] .glyph circle:nth-child(5n + 2) {
+		transition-delay: 50ms;
+	}
+	[data-assemble] .glyph circle:nth-child(5n + 3) {
+		transition-delay: 100ms;
+	}
+	[data-assemble] .glyph circle:nth-child(5n + 4) {
+		transition-delay: 150ms;
+	}
+	[data-assemble] .glyph circle:nth-child(5n) {
+		transition-delay: 200ms;
+	}
+	.how__step:nth-child(2) .glyph circle {
+		transition-delay: 120ms;
+	}
+	@media (prefers-reduced-motion: reduce) {
+		[data-assemble] .glyph circle,
+		[data-assemble]:not(.is-in) .glyph circle {
+			opacity: 1;
+			transform: none;
+			transition: none;
+		}
+	}
+
+	/* ================================================================ 9. FAQ */
+	.faq {
+		padding-block: var(--space-section);
+		border-top: 1px solid var(--line);
+	}
+	.faq__inner {
+		display: grid;
+		gap: var(--space-stack);
+	}
+	@media (min-width: 1024px) {
+		.faq__inner {
+			grid-template-columns: minmax(0, 4fr) minmax(0, 7fr);
+			gap: var(--space-12);
+			align-items: start;
+		}
+		.faq__head {
+			position: sticky;
+			top: calc(var(--nav-h) + var(--space-7));
+		}
+	}
+	.faq__list .acc__panel p {
+		max-width: 62ch;
+	}
+
+	/* ================================================================ 9b. Download
+	 * Three cards (macOS, Windows, CLI). app/download.ts marks the visitor's card with [data-recommended]; the ring and
+	 * the badge change instantly (colors never animate). Commands sit in a sunken mono well with a copy button. */
+	.download {
+		padding-block: var(--space-section);
+		border-top: 1px solid var(--line);
+		scroll-margin-top: var(--nav-h);
+	}
+	.download .section-head {
+		margin-bottom: var(--space-stack);
+	}
+	.download__grid {
+		display: grid;
+		gap: var(--grid-gap);
+	}
+	@media (min-width: 1024px) {
+		.download__grid {
+			grid-template-columns: repeat(3, minmax(0, 1fr));
+		}
+	}
+	.download__card {
+		gap: var(--space-2);
+		min-width: 0;
+		scroll-margin-top: calc(var(--nav-h) + var(--space-5));
+	}
+	.download__card[data-recommended] {
+		box-shadow: inset 0 0 0 1.5px var(--text-1);
+	}
+	.download__top {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		margin-bottom: var(--space-4);
+	}
+	.download__glyph {
+		display: grid;
+		place-items: center;
+		width: 56px;
+		height: 56px;
+		border-radius: var(--radius-3);
+		background: var(--bg-band);
+	}
+	.download__glyph .glyph-slot {
+		width: 28px;
+		height: 28px;
+		color: var(--text-1);
+	}
+	.download__badge[hidden] {
+		display: none;
+	}
+	.download__name {
+		margin: 0;
+	}
+	.download__req {
+		margin: 0 0 var(--space-4);
+		font-size: var(--fs-small);
+		line-height: var(--lh-small);
+		color: var(--text-2);
+	}
+	.download__how {
+		margin: var(--space-3) 0 0;
+		color: var(--text-3);
+	}
+	.download__cmd {
+		display: flex;
+		align-items: center;
+		gap: var(--space-2);
+		padding: var(--space-2) var(--space-2) var(--space-2) var(--space-4);
+		border-radius: var(--radius-3);
+		background: var(--surface-inverse);
+		color: var(--text-inverse);
+	}
+	.download__code {
+		flex: 1;
+		min-width: 0;
+		overflow-wrap: anywhere;
+		font-family: var(--font-mono);
+		font-size: 0.8125rem;
+		line-height: 1.5;
+		padding-block: var(--space-1);
+		user-select: all;
+	}
+	.download__copy {
+		flex: none;
+	}
+	.download__copy .icon {
+		width: 14px;
+		height: 14px;
+	}
+	.download__detail {
+		margin: var(--space-1) 0 0;
+		font-size: var(--fs-small);
+		line-height: var(--lh-small);
+		color: var(--text-2);
+	}
+	.download__files {
+		display: flex;
+		flex-wrap: wrap;
+		gap: var(--space-1) var(--space-2);
+		margin-left: calc(-1 * var(--space-3));
+	}
+	.download__file .icon {
+		width: 14px;
+		height: 14px;
+	}
+	.download__note {
+		margin: auto 0 0;
+		padding-top: var(--space-4);
+		border-top: 1px solid var(--line);
+		font-size: var(--fs-caption);
+		line-height: var(--lh-small);
+		color: var(--text-3);
+	}
+	.download__foot {
+		margin: var(--space-7) 0 0;
+		text-align: center;
+		font-size: var(--fs-small);
+		color: var(--text-3);
+	}
+	.download__foot a {
+		color: inherit;
+		text-decoration: underline;
+		text-underline-offset: 2px;
+	}
+
+	/* ================================================================ 10. Final CTA */
+	.final {
+		padding-block: 0 var(--space-section);
+	}
+	.final__inner {
+		display: grid;
+		justify-items: center;
+		gap: var(--space-5);
+		padding: clamp(var(--space-9), 6vw, var(--space-12)) clamp(var(--space-5), 5vw, var(--space-12));
+		border-radius: var(--radius-6);
+		background: var(--bg-band);
+		box-shadow: var(--ring-1);
+		text-align: center;
+	}
+	.final__mascot {
+		width: min(240px, 60%);
+		aspect-ratio: 30 / 18;
+		margin-top: var(--space-6);
+		margin-bottom: var(--space-2);
+	}
+	.final__title {
+		max-width: 14em;
+		margin: 0;
+		font-size: var(--fs-h2);
+		line-height: var(--lh-h2);
+		letter-spacing: var(--tr-h2);
+	}
+	@media (min-width: 768px) {
+		.final__title {
+			font-size: clamp(2.5rem, 1.7rem + 2.2vw, 3.75rem);
+			line-height: 1.04;
+			letter-spacing: -0.04em;
+		}
+	}
+	/* Centered two-tone titles: the muted continuation gets its own line. */
+	.section-head--center .t-h2 .muted {
+		display: block;
+	}
+	[lang="ko"] .final__title {
+		max-width: 16em;
+		line-height: 1.24;
+		letter-spacing: -0.02em;
+	}
+	.final__title .muted {
+		display: block;
+	}
+	.final__cta {
+		margin-top: var(--space-5);
+	}
+	.final__cta .icon {
+		width: 16px;
+		height: 16px;
+	}
+
+	/* ---------------------------------------------------------------- Waitlist additions */
+	/* Compact success panel: it shares the form body's grid cell, so it must not be taller than the body. */
+	.waitlist__done {
+		position: relative;
+		gap: var(--space-1);
+		padding: var(--space-4) var(--space-6);
+	}
+	.waitlist__done .waitlist__position {
+		font-size: clamp(2rem, 1.7rem + 1.2vw, 2.75rem);
+	}
+	.waitlist__position[hidden] {
+		display: none;
+	}
+	.waitlist .check a {
+		color: inherit;
+		text-decoration: underline;
+		text-underline-offset: 2px;
+	}
+	.confetti {
+		position: absolute;
+		left: 34px;
+		top: 34px;
+		width: 0;
+		height: 0;
+		pointer-events: none;
+	}
+	.confetti__dot {
+		position: absolute;
+		left: -4px;
+		top: -4px;
+		width: 8px;
+		height: 8px;
+		border-radius: 50%;
+		opacity: 0;
+		animation: confetti 1s var(--ease-out) var(--d, 0ms) both;
+	}
+	.confetti__dot--mint {
+		background: var(--mint);
+	}
+	.confetti__dot--teal {
+		background: var(--teal);
+	}
+	.confetti__dot--cyan {
+		background: var(--cyan);
+	}
+	.confetti__dot--blue {
+		background: var(--blue);
+	}
+	.confetti__dot--indigo {
+		background: var(--indigo);
+	}
+	@keyframes confetti {
+		0% {
+			opacity: 1;
+			transform: translate(0, 0) scale(var(--s, 1));
+		}
+		70% {
+			opacity: 1;
+		}
+		100% {
+			opacity: 0;
+			transform: translate(var(--x), var(--y)) scale(calc(var(--s, 1) * 0.6));
+		}
+	}
+
+	/* ================================================================ 11. Footer additions */
+	.footer__tagline {
+		color: var(--text-3);
+		font-size: var(--fs-small);
+	}
+
+	/* ================================================================ Privacy notice */
+	.legal {
+		padding-block: clamp(var(--space-9), 6vw, var(--space-13)) var(--space-section);
+	}
+	.legal__head {
+		display: grid;
+		justify-items: start;
+		gap: var(--space-5);
+		padding-bottom: var(--space-9);
+		border-bottom: 1px solid var(--line);
+	}
+	.legal__title {
+		margin: 0;
+	}
+	.legal__lede {
+		color: var(--text-2);
+	}
+	.legal__list {
+		display: grid;
+		margin: 0;
+		padding: 0;
+		list-style: none;
+	}
+	/* The number hangs in the left gutter, so the heading and its paragraph share one left edge. */
+	.legal__item {
+		position: relative;
+		display: grid;
+		gap: var(--space-3);
+		padding: var(--space-7) 0 var(--space-7) var(--space-8);
+		border-bottom: 1px solid var(--line);
+	}
+	.legal__h {
+		margin: 0;
+	}
+	.legal__num {
+		position: absolute;
+		left: 0;
+		margin-top: 0.45em;
+		font-family: var(--font-mono);
+		font-size: var(--fs-label);
+		font-weight: var(--fw-medium);
+		color: var(--text-3);
+	}
+	.legal__p {
+		color: var(--text-2);
+	}
+	.legal__p a {
+		color: var(--text-1);
+	}
+	.legal__p code {
+		font-family: var(--font-mono);
+		font-size: 0.92em;
+		padding: 0 4px;
+		border-radius: var(--radius-1);
+		background: var(--n-3);
+	}
+	.legal__back {
+		margin-top: var(--space-9);
+	}
+
+	/* ================================================================ 404 */
+	.lost {
+		padding-block: clamp(var(--space-9), 6vw, var(--space-13)) var(--space-section);
+	}
+	.lost__inner {
+		display: grid;
+		justify-items: center;
+		gap: var(--space-5);
+		text-align: center;
+	}
+	.lost__mascot {
+		width: min(300px, 70%);
+		aspect-ratio: 30 / 18;
+		margin-bottom: var(--space-4);
+	}
+	.lost__fallback {
+		width: 100%;
+		height: auto;
+	}
+	.lost__code .t-dot {
+		font-size: var(--fs-h4);
+	}
+	.lost__title {
+		margin: 0;
+		max-width: 14ch;
+	}
+	[lang="ko"] .lost__title {
+		max-width: none;
+	}
+	.lost__body {
+		max-width: 34em;
+		color: var(--text-2);
+	}
+	.lost__actions {
+		margin-top: var(--space-4);
+	}
+
+	/* ================================================================ Performance: idle loader dots
+	 * Loader dots (components.css, infinite) sit in hidden places all over the page: the two waitlist buttons, the hero
+	 * typing bubble, every scene status row and the demo. Hidden or not, an infinite animation inside an invisible
+	 * (opacity 0) ancestor is not composited, so ~14 of them recalculated style on the main thread every frame
+	 * (4x CPU throttle: average 68 -> 98 fps without them), and each kept a compositor layer (42 of ~180 layers).
+	 * Dots now animate only where a loader is actually shown; elsewhere they have no animation (and no layer) at all. */
+	.loader i {
+		animation-name: none;
+	}
+	.btn[aria-busy="true"] .loader i,
+	.chat:not([data-play]) .chat__typing .loader i,
+	.chat__typing.is-on .loader i,
+	[data-s="run"] > .sc-st .sc-st__run i,
+	.dm-typing:not([data-s="off"]) .loader i {
+		animation-name: loader-dot;
+	}
+}

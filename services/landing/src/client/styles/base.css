@@ -1,0 +1,414 @@
+/*
+ * Signal Paper base: font faces, reset, document typography, links, focus, selection, Korean line breaking,
+ * the dot texture and the reduced-motion policy. Tokens: tokens.css. Rationale: docs/design-system.md.
+ */
+
+/* ---------------------------------------------------------------- Font faces (self-hosted, OFL; docs/licenses.md)
+ * Preload the two faces every page uses (Geist, Geist Mono) in <head>:
+ *   <link rel="preload" href="/fonts/geist-latin.woff2" as="font" type="font/woff2" crossorigin>
+ * Each Latin face is the Google Fonts "latin" slice; the unicode-range keeps Hangul off them so the browser
+ * asks the Korean face, which is only downloaded on pages that contain Hangul. */
+@font-face {
+	font-family: "Geist";
+	src: url("/fonts/geist-latin.woff2") format("woff2");
+	font-weight: 100 900;
+	font-style: normal;
+	font-display: swap;
+	unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+	font-family: "Geist Mono";
+	src: url("/fonts/geist-mono-latin.woff2") format("woff2");
+	font-weight: 100 900;
+	font-style: normal;
+	font-display: swap;
+	unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+/* Doto: a round-dot matrix face for short numerals and labels (scores, #positions, step numbers). ROND 100 = round dots. */
+@font-face {
+	font-family: "Doto";
+	src: url("/fonts/doto-latin.woff2") format("woff2");
+	font-weight: 100 900;
+	font-style: normal;
+	font-display: swap;
+	unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+/* dinobot KR: Pretendard Variable subset to the Hangul used under src/ at build time (vite/fonts.ts). Keep the
+ * unicode-range in sync with KOREAN_RANGES there. */
+@font-face {
+	font-family: "dinobot KR";
+	src: url("/fonts/dinobot-kr.woff2") format("woff2");
+	font-weight: 45 920;
+	font-style: normal;
+	font-display: swap;
+	unicode-range: U+1100-11FF, U+3000-303F, U+3130-318F, U+A960-A97F, U+AC00-D7A3, U+D7B0-D7FF, U+FF00-FFEF;
+}
+/* Metric-matched fallbacks keep layout still while Geist swaps in (CLS < 0.02). Measured in Edge against Arial
+ * and Courier New with a 160-character sample at weight 400. */
+@font-face {
+	font-family: "Geist Fallback";
+	src: local("Arial"), local("ArialMT");
+	size-adjust: 102.3%;
+	ascent-override: 98.3%;
+	descent-override: 28.8%;
+	line-gap-override: 0%;
+}
+@font-face {
+	font-family: "Geist Mono Fallback";
+	src: local("Courier New"), local("CourierNewPSMT");
+	size-adjust: 100%;
+	ascent-override: 100.5%;
+	descent-override: 29.5%;
+	line-gap-override: 0%;
+}
+
+@layer base {
+	/* ---------------------------------------------------------------- Reset */
+	*,
+	*::before,
+	*::after {
+		box-sizing: border-box;
+	}
+	* {
+		margin: 0;
+	}
+	html {
+		-webkit-text-size-adjust: 100%;
+		text-size-adjust: 100%;
+		tab-size: 4;
+		hanging-punctuation: first last;
+	}
+	body {
+		min-height: 100vh;
+		min-height: 100dvh;
+	}
+	img,
+	picture,
+	svg,
+	video,
+	canvas {
+		display: block;
+		max-width: 100%;
+	}
+	input,
+	button,
+	textarea,
+	select {
+		font: inherit;
+		color: inherit;
+		letter-spacing: inherit;
+	}
+	button {
+		cursor: pointer;
+		background: none;
+		border: 0;
+		padding: 0;
+	}
+	button:disabled {
+		cursor: not-allowed;
+	}
+	ul[role="list"],
+	ol[role="list"] {
+		list-style: none;
+		padding: 0;
+	}
+	table {
+		border-collapse: collapse;
+	}
+	[hidden] {
+		display: none !important;
+	}
+	:target,
+	[id] {
+		scroll-margin-top: calc(var(--nav-h) + var(--space-6));
+	}
+
+	/* ---------------------------------------------------------------- Document typography */
+	html {
+		font-family: var(--font-sans);
+		font-size: 100%;
+		line-height: var(--lh-body);
+		letter-spacing: var(--tr-body);
+		color: var(--text-1);
+		background: var(--bg);
+		font-synthesis: none;
+		font-optical-sizing: auto;
+		font-kerning: normal;
+		text-rendering: optimizeLegibility;
+		-webkit-font-smoothing: antialiased;
+		-moz-osx-font-smoothing: grayscale;
+	}
+	body {
+		font-size: var(--fs-body);
+	}
+	h1,
+	h2,
+	h3,
+	h4,
+	h5,
+	h6 {
+		font-weight: var(--fw-semibold);
+		text-wrap: balance;
+		overflow-wrap: break-word;
+	}
+	p,
+	li,
+	dd,
+	figcaption,
+	blockquote {
+		text-wrap: pretty;
+		overflow-wrap: break-word;
+	}
+	small {
+		font-size: var(--fs-small);
+	}
+	code,
+	kbd,
+	samp,
+	pre {
+		font-family: var(--font-mono);
+		font-size: 0.92em;
+	}
+	strong,
+	b {
+		font-weight: var(--fw-semibold);
+	}
+	hr {
+		border: 0;
+		border-top: var(--border-1) solid var(--line);
+	}
+
+	/* Korean: break between words, not inside them; strict punctuation rules. */
+	[lang|="ko"] {
+		word-break: keep-all;
+		line-break: strict;
+	}
+
+	/* Type roles as classes, so markup keeps semantic heading levels (one h1 per page) independent of size. */
+	.t-display-xl,
+	.t-display,
+	.t-h2,
+	.t-h3,
+	.t-h4 {
+		font-family: var(--font-sans);
+		color: var(--text-1);
+		text-wrap: balance;
+	}
+	.t-display-xl {
+		font-size: var(--fs-display-xl);
+		line-height: var(--lh-display-xl);
+		letter-spacing: var(--tr-display-xl);
+		font-weight: var(--fw-display);
+	}
+	.t-display {
+		font-size: var(--fs-display);
+		line-height: var(--lh-display);
+		letter-spacing: var(--tr-display);
+		font-weight: var(--fw-display);
+	}
+	.t-h2 {
+		font-size: var(--fs-h2);
+		line-height: var(--lh-h2);
+		letter-spacing: var(--tr-h2);
+		font-weight: var(--fw-display);
+	}
+	.t-h3 {
+		font-size: var(--fs-h3);
+		line-height: var(--lh-h3);
+		letter-spacing: var(--tr-h3);
+		font-weight: var(--fw-semibold);
+	}
+	.t-h4 {
+		font-size: var(--fs-h4);
+		line-height: var(--lh-h4);
+		letter-spacing: var(--tr-h4);
+		font-weight: var(--fw-semibold);
+	}
+	.t-lede {
+		font-size: var(--fs-lede);
+		line-height: var(--lh-lede);
+		letter-spacing: var(--tr-lede);
+		color: var(--text-2);
+		text-wrap: pretty;
+	}
+	.t-body {
+		font-size: var(--fs-body);
+		line-height: var(--lh-body);
+	}
+	.t-body-lg {
+		font-size: var(--fs-body-lg);
+		line-height: var(--lh-body);
+	}
+	.t-small {
+		font-size: var(--fs-small);
+		line-height: var(--lh-small);
+	}
+	.t-caption {
+		font-size: var(--fs-caption);
+		line-height: var(--lh-small);
+		color: var(--text-3);
+	}
+	/* The system voice: mono, uppercase, tracked (R07, R08, R15). Max ~24 characters. */
+	.t-label {
+		font-family: var(--font-mono);
+		font-size: var(--fs-label);
+		line-height: var(--lh-label);
+		letter-spacing: var(--tr-label);
+		font-weight: var(--fw-medium);
+		text-transform: uppercase;
+	}
+	.t-mono {
+		font-family: var(--font-mono);
+		letter-spacing: 0;
+	}
+	/* Round-dot numerals (Doto, ROND 100) for scores, #positions and step numbers. Use at 16px and up. */
+	.t-dot {
+		font-family: var(--font-dot);
+		font-variation-settings: "ROND" 100;
+		font-weight: 800;
+		letter-spacing: var(--tr-dot);
+		font-variant-numeric: tabular-nums;
+		text-transform: uppercase;
+	}
+	/* Two-tone emphasis (R01, R23, R32): the continuation of a large headline. Only on text >= 24px. */
+	.muted {
+		color: var(--text-muted-large);
+	}
+	.text-2 {
+		color: var(--text-2);
+	}
+	.text-3 {
+		color: var(--text-3);
+	}
+	.tabular {
+		font-variant-numeric: tabular-nums;
+	}
+
+	/* ---------------------------------------------------------------- Links */
+	a {
+		color: inherit;
+		text-decoration-line: underline;
+		text-decoration-thickness: 1px;
+		text-underline-offset: 0.22em;
+		text-decoration-color: var(--line-ui);
+	}
+	a:hover {
+		text-decoration-color: currentColor;
+	}
+	a:not([class]) {
+		color: var(--text-1);
+	}
+
+	/* ---------------------------------------------------------------- Focus: 2px blue-deep ring, 2px offset (BRIEF 11) */
+	:focus-visible {
+		outline: var(--focus-width) solid var(--focus);
+		outline-offset: var(--focus-offset);
+	}
+	:focus:not(:focus-visible) {
+		outline: none;
+	}
+
+	::selection {
+		background: var(--selection);
+		color: var(--text-1);
+	}
+
+	/* ---------------------------------------------------------------- Accessibility helpers */
+	.sr-only {
+		position: absolute;
+		width: 1px;
+		height: 1px;
+		padding: 0;
+		margin: -1px;
+		overflow: hidden;
+		clip-path: inset(50%);
+		white-space: nowrap;
+		border: 0;
+	}
+	.skip-link {
+		position: fixed;
+		top: var(--space-3);
+		left: var(--space-3);
+		z-index: var(--z-skip);
+		padding: var(--space-2) var(--space-4);
+		border-radius: var(--radius-pill);
+		background: var(--surface-inverse);
+		color: var(--text-inverse);
+		font-size: var(--fs-small);
+		font-weight: var(--fw-medium);
+		text-decoration: none;
+		transform: translateY(calc(-100% - var(--space-4)));
+	}
+	.skip-link:focus-visible {
+		transform: none;
+	}
+
+	/* ---------------------------------------------------------------- Layout primitives */
+	.container {
+		width: min(100% - 2 * var(--gutter), var(--container));
+		margin-inline: auto;
+	}
+	.container--wide {
+		width: min(100% - 2 * var(--gutter), var(--container-wide));
+	}
+	.container--text {
+		width: min(100% - 2 * var(--gutter), var(--container-text));
+	}
+
+	/* ---------------------------------------------------------------- The dot (R12, R10, R03)
+	 * A sparse dot grid: each tile stamps one hard-edged dot (the radial-gradient is a stamp with a 0.6px
+	 * antialias edge, not a visible gradient). Static, painted once; never animate it. */
+	.dot-paper {
+		background-color: var(--bg);
+		background-image: radial-gradient(circle at center, var(--dot-ink) 0 var(--dot-radius), transparent calc(var(--dot-radius) + 0.6px));
+		background-size: var(--dot-pitch) var(--dot-pitch);
+		background-position: calc(var(--dot-pitch) / -2) calc(var(--dot-pitch) / -2);
+	}
+	.dot-paper--dense {
+		--dot-pitch: var(--dot-pitch-dense);
+		--dot-radius: var(--dot-radius-dense);
+	}
+	.dot-paper--surface {
+		background-color: var(--surface);
+	}
+	/* The five-stripe signature (R10): flat bars mint -> indigo, hard stops only, separated by a hairline of paper
+	 * (--stripe-gap) so the neighbouring hues read as five solids, never as a blend. Size comes from use. */
+	.stripes {
+		--stripe-gap: 2px;
+		--_dir: 90deg;
+		background-image: linear-gradient(
+			var(--_dir),
+			var(--mint) 0 calc(20% - var(--stripe-gap) / 2),
+			transparent 0 calc(20% + var(--stripe-gap) / 2),
+			var(--teal) 0 calc(40% - var(--stripe-gap) / 2),
+			transparent 0 calc(40% + var(--stripe-gap) / 2),
+			var(--cyan) 0 calc(60% - var(--stripe-gap) / 2),
+			transparent 0 calc(60% + var(--stripe-gap) / 2),
+			var(--blue) 0 calc(80% - var(--stripe-gap) / 2),
+			transparent 0 calc(80% + var(--stripe-gap) / 2),
+			var(--indigo) 0 100%
+		);
+	}
+	.stripes--vertical {
+		--_dir: 180deg;
+	}
+	.stripes--solid {
+		--stripe-gap: 0px;
+	}
+}
+
+/* ---------------------------------------------------------------- Reduced motion (BRIEF 8)
+ * Tokens already zero every duration (tokens.css). This net catches anything else: animations jump to their end
+ * state once, transitions are instant. `.motion-ok` marks user-started demos (a Play button) that may still move. */
+@media (prefers-reduced-motion: reduce) {
+	:not(.motion-ok, .motion-ok *),
+	:not(.motion-ok, .motion-ok *)::before,
+	:not(.motion-ok, .motion-ok *)::after {
+		animation-duration: 1ms !important;
+		animation-delay: 0ms !important;
+		animation-iteration-count: 1 !important;
+		transition-duration: 0ms !important;
+		transition-delay: 0ms !important;
+		scroll-behavior: auto !important;
+	}
+}

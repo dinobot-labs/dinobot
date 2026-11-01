@@ -1,0 +1,1522 @@
+/*
+ * Signal Paper components. Every state change animates transform or opacity only (BRIEF 8): hover fills are
+ * overlay pseudo-elements that fade, presses scale, panels fade and slide. Colors switch instantly.
+ * `[data-force~="hover|active|focus|open"]` pins a state for the /design/ style guide.
+ * Catalogue with every state: /design/ (src/pages/design.html). Rationale: docs/design-system.md.
+ */
+@layer components {
+	/* ================================================================ Icon */
+	.icon {
+		width: 1em;
+		height: 1em;
+		flex: none;
+		fill: none;
+		stroke: currentColor;
+		stroke-width: 1.5;
+		stroke-linecap: round;
+		stroke-linejoin: round;
+	}
+
+	/* ================================================================ Button (R01, R10, R19, R32)
+	 * primary = ink pill (the only filled CTA), secondary = paper + ring, ghost = text. 36 / 44 / 52 px. */
+	.btn {
+		--btn-h: var(--control-md);
+		--btn-px: 20px;
+		--btn-fs: 0.9375rem;
+		--btn-bg: var(--surface);
+		--btn-fg: var(--text-1);
+		--btn-ring: var(--ring-2);
+		--btn-overlay: rgb(20 21 21 / 0.05);
+		position: relative;
+		isolation: isolate;
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		gap: var(--space-2);
+		height: var(--btn-h);
+		padding: 0 var(--btn-px);
+		border-radius: var(--radius-pill);
+		background: var(--btn-bg);
+		color: var(--btn-fg);
+		box-shadow: var(--btn-ring);
+		font-family: var(--font-sans);
+		font-size: var(--btn-fs);
+		font-weight: var(--fw-medium);
+		line-height: 1;
+		letter-spacing: -0.006em;
+		white-space: nowrap;
+		text-decoration: none;
+		cursor: pointer;
+		user-select: none;
+		-webkit-tap-highlight-color: transparent;
+		transition: transform var(--dur-micro) var(--ease-standard);
+	}
+	.btn::before {
+		content: "";
+		position: absolute;
+		inset: 0;
+		z-index: -1;
+		border-radius: inherit;
+		background: var(--btn-overlay);
+		opacity: 0;
+		transition: opacity var(--dur-micro) var(--ease-standard);
+	}
+	@media (hover: hover) {
+		.btn:hover::before {
+			opacity: 1;
+		}
+		.btn:hover .icon--nudge {
+			transform: translateX(2px);
+		}
+	}
+	.btn[data-force~="hover"]::before,
+	.btn:active::before,
+	.btn[data-force~="active"]::before {
+		opacity: 1;
+	}
+	.btn:active,
+	.btn[data-force~="active"] {
+		transform: scale(0.97);
+	}
+	.btn[data-force~="hover"] .icon--nudge {
+		transform: translateX(2px);
+	}
+	.btn[data-force~="focus"] {
+		outline: var(--focus-width) solid var(--focus);
+		outline-offset: var(--focus-offset);
+	}
+	.btn .icon {
+		width: 16px;
+		height: 16px;
+	}
+	.icon--nudge {
+		transition: transform var(--dur-state) var(--ease-out);
+	}
+	.btn--primary {
+		--btn-bg: var(--surface-inverse);
+		--btn-fg: var(--text-inverse);
+		--btn-ring: none;
+		--btn-overlay: rgb(255 255 255 / 0.14);
+	}
+	.btn--secondary {
+		--btn-bg: var(--surface);
+	}
+	.btn--ghost {
+		--btn-bg: transparent;
+		--btn-ring: none;
+		--btn-overlay: var(--surface-hover);
+	}
+	.btn--sm {
+		--btn-h: var(--control-sm);
+		--btn-px: 14px;
+		--btn-fs: var(--fs-small);
+	}
+	.btn--lg {
+		--btn-h: var(--control-lg);
+		--btn-px: 26px;
+		--btn-fs: var(--fs-body);
+	}
+	.btn--block {
+		display: flex;
+		width: 100%;
+	}
+	.btn--icon {
+		width: var(--btn-h);
+		padding: 0;
+	}
+	/* A busy button stays in its variant (it is only disabled to block double submits). */
+	.btn:disabled:not([aria-busy="true"]),
+	.btn[aria-disabled="true"]:not([aria-busy="true"]) {
+		--btn-bg: var(--n-3);
+		--btn-fg: var(--text-disabled);
+		--btn-ring: none;
+		cursor: not-allowed;
+	}
+	.btn:disabled,
+	.btn[aria-disabled="true"] {
+		transform: none;
+	}
+	.btn:disabled::before,
+	.btn[aria-disabled="true"]::before {
+		display: none;
+	}
+	/* Loading: the label keeps its box (no width jump) while three dots take its place. */
+	.btn__label {
+		display: inline-flex;
+		align-items: center;
+		gap: var(--space-2);
+		transition: opacity var(--dur-micro) var(--ease-standard);
+	}
+	.btn__loader {
+		position: absolute;
+		inset: 0;
+		display: grid;
+		place-items: center;
+		opacity: 0;
+		pointer-events: none;
+	}
+	.btn[aria-busy="true"] {
+		cursor: progress;
+	}
+	.btn[aria-busy="true"] .btn__label {
+		opacity: 0;
+	}
+	.btn[aria-busy="true"] .btn__loader {
+		opacity: 1;
+	}
+
+	/* ================================================================ Loader dots (the dot motif as progress) */
+	.loader {
+		display: inline-flex;
+		align-items: center;
+		gap: 5px;
+	}
+	.loader i {
+		width: 6px;
+		height: 6px;
+		border-radius: 50%;
+		background: currentColor;
+		animation: loader-dot 960ms var(--ease-in-out) infinite both;
+	}
+	.loader i:nth-child(2) {
+		animation-delay: 120ms;
+	}
+	.loader i:nth-child(3) {
+		animation-delay: 240ms;
+	}
+	.loader--signal i:nth-child(1) {
+		background: var(--mint);
+	}
+	.loader--signal i:nth-child(2) {
+		background: var(--cyan);
+	}
+	.loader--signal i:nth-child(3) {
+		background: var(--indigo);
+	}
+	@keyframes loader-dot {
+		0%,
+		70%,
+		100% {
+			opacity: 0.3;
+			transform: translateY(0) scale(0.8);
+		}
+		35% {
+			opacity: 1;
+			transform: translateY(-3px) scale(1);
+		}
+	}
+	@media (prefers-reduced-motion: reduce) {
+		.loader i {
+			animation: none;
+			opacity: 1;
+		}
+	}
+
+	/* ================================================================ Form fields (R33, R03, R09) */
+	.field {
+		display: grid;
+		gap: var(--space-2);
+	}
+	.label {
+		font-size: var(--fs-small);
+		font-weight: var(--fw-medium);
+		line-height: var(--lh-small);
+		color: var(--text-1);
+	}
+	.hint {
+		font-size: var(--fs-caption);
+		line-height: var(--lh-small);
+		color: var(--text-3);
+	}
+	.input {
+		--input-ring: var(--ring-ui);
+		display: block;
+		width: 100%;
+		height: var(--control-md);
+		padding: 0 var(--space-4) 0 18px;
+		border: 0;
+		border-radius: var(--radius-pill);
+		background: var(--surface);
+		color: var(--text-1);
+		box-shadow: var(--input-ring);
+		font-size: var(--fs-body);
+		line-height: 1.25;
+		appearance: none;
+	}
+	.input::placeholder {
+		color: var(--text-3);
+		opacity: 1;
+	}
+	.input:hover,
+	.input[data-force~="hover"] {
+		--input-ring: inset 0 0 0 1px var(--n-10);
+	}
+	.input:focus,
+	.input[data-force~="focus"] {
+		--input-ring: inset 0 0 0 1.5px var(--text-1);
+		outline: var(--focus-width) solid var(--focus);
+		outline-offset: var(--focus-offset);
+	}
+	.input[aria-invalid="true"] {
+		--input-ring: inset 0 0 0 1.5px var(--danger-deep);
+	}
+	.input:disabled {
+		--input-ring: inset 0 0 0 1px var(--line);
+		background: var(--n-2);
+		color: var(--text-disabled);
+		cursor: not-allowed;
+	}
+	.input:disabled::placeholder {
+		color: var(--text-disabled);
+	}
+	.input[readonly] {
+		background: var(--n-2);
+	}
+	.input--lg {
+		height: var(--control-lg);
+		font-size: var(--fs-body-lg);
+	}
+
+	/* Input + button in one pill (R07, Mercury). Stacks when the form is narrower than 440px (container query). */
+	.inline-field {
+		--field-ring: var(--ring-ui);
+		position: relative;
+		display: flex;
+		align-items: center;
+		gap: var(--space-1);
+		padding: 4px;
+		border-radius: var(--radius-pill);
+		background: var(--surface);
+		box-shadow: var(--field-ring);
+	}
+	.inline-field:hover,
+	.inline-field[data-force~="hover"] {
+		--field-ring: inset 0 0 0 1px var(--n-10);
+	}
+	.inline-field:focus-within,
+	.inline-field[data-force~="focus"] {
+		--field-ring: inset 0 0 0 1.5px var(--text-1);
+		outline: var(--focus-width) solid var(--focus);
+		outline-offset: var(--focus-offset);
+	}
+	.inline-field:has(.inline-field__input[aria-invalid="true"]) {
+		--field-ring: inset 0 0 0 1.5px var(--danger-deep);
+	}
+	.inline-field:has(.inline-field__input[readonly]) {
+		background: var(--n-2);
+	}
+	.inline-field__input {
+		flex: 1;
+		min-width: 0;
+		height: var(--control-md);
+		padding: 0 var(--space-3) 0 18px;
+		border: 0;
+		border-radius: var(--radius-pill);
+		background: transparent;
+		color: var(--text-1);
+		font-size: var(--fs-body);
+		appearance: none;
+	}
+	.inline-field__input::placeholder {
+		color: var(--text-3);
+		opacity: 1;
+	}
+	.inline-field__input:focus {
+		outline: none;
+	}
+	.inline-field .btn {
+		flex: none;
+	}
+
+	/* ================================================================ Checkbox + consent line */
+	.check {
+		display: flex;
+		align-items: flex-start;
+		gap: var(--space-3);
+		font-size: var(--fs-small);
+		line-height: var(--lh-small);
+		color: var(--text-2);
+		cursor: pointer;
+	}
+	.check a {
+		color: var(--text-1);
+	}
+	.checkbox {
+		position: relative;
+		flex: none;
+		display: grid;
+		place-items: center;
+		width: 20px;
+		height: 20px;
+		margin-top: calc((1lh - 20px) / 2);
+		border-radius: 6px;
+		background: var(--surface);
+		box-shadow: inset 0 0 0 1.5px var(--line-ui);
+		appearance: none;
+		cursor: pointer;
+	}
+	.checkbox::after {
+		content: "";
+		width: 10px;
+		height: 5.5px;
+		border-left: 2px solid var(--text-inverse);
+		border-bottom: 2px solid var(--text-inverse);
+		transform: translateY(-1px) rotate(-45deg) scale(0);
+		transition: transform var(--spring-snappy-dur) var(--spring-snappy);
+	}
+	.checkbox:hover,
+	.checkbox[data-force~="hover"] {
+		box-shadow: inset 0 0 0 1.5px var(--n-10);
+	}
+	.checkbox:checked {
+		background: var(--surface-inverse);
+		box-shadow: none;
+	}
+	.checkbox:checked::after {
+		transform: translateY(-1px) rotate(-45deg) scale(1);
+	}
+	.checkbox[data-force~="focus"] {
+		outline: var(--focus-width) solid var(--focus);
+		outline-offset: var(--focus-offset);
+	}
+	.checkbox[aria-invalid="true"]:not(:checked) {
+		background: var(--danger-tint);
+		box-shadow: inset 0 0 0 1.5px var(--danger-deep);
+	}
+	.checkbox:disabled {
+		background: var(--n-3);
+		box-shadow: inset 0 0 0 1.5px var(--line);
+		cursor: not-allowed;
+	}
+	.checkbox:disabled:checked {
+		background: var(--n-7);
+	}
+	.check:has(.checkbox:disabled) {
+		color: var(--text-disabled);
+		cursor: not-allowed;
+	}
+
+	/* ================================================================ Inline message (aria-live; reserves one line) */
+	.msg {
+		--msg-dot: var(--n-8);
+		display: flex;
+		align-items: flex-start;
+		gap: var(--space-2);
+		min-height: 1lh;
+		font-size: var(--fs-small);
+		line-height: var(--lh-small);
+		color: var(--text-2);
+	}
+	.msg::before {
+		content: "";
+		flex: none;
+		width: 8px;
+		height: 8px;
+		margin-top: calc((1lh - 8px) / 2);
+		border-radius: 50%;
+		background: var(--msg-dot);
+	}
+	.msg:empty::before {
+		display: none;
+	}
+	.msg--success {
+		--msg-dot: var(--success);
+		color: var(--text-1);
+	}
+	.msg--error {
+		--msg-dot: var(--danger);
+		color: var(--danger-deep);
+	}
+	.msg--info {
+		--msg-dot: var(--n-8);
+	}
+	.msg.is-entering {
+		animation: fade-up var(--dur-enter) var(--ease-out) both;
+	}
+
+	/* ================================================================ Waitlist form (BRIEF 9; R33, R03, R23)
+	 * data-state: idle | submitting | success | error. Body and success panel share one grid cell, so the
+	 * success swap never changes the height. */
+	.waitlist {
+		container: waitlist / inline-size;
+		display: grid;
+	}
+	.waitlist > .waitlist__body,
+	.waitlist > .waitlist__done {
+		grid-area: 1 / 1;
+		transition:
+			opacity var(--dur-enter) var(--ease-out),
+			transform var(--dur-enter) var(--ease-out),
+			visibility 0s linear var(--dur-enter);
+	}
+	.waitlist__body {
+		display: grid;
+		gap: var(--space-4);
+		align-content: start;
+	}
+	.waitlist__done {
+		display: grid;
+		align-content: center;
+		justify-items: start;
+		gap: var(--space-2);
+		padding: var(--space-5) var(--space-6);
+		border-radius: var(--radius-5);
+		background: var(--success-tint);
+		opacity: 0;
+		visibility: hidden;
+		transform: translateY(calc(8px * var(--motion-distance)));
+	}
+	.waitlist[data-state="success"] > .waitlist__body {
+		opacity: 0;
+		visibility: hidden;
+		transform: translateY(calc(-8px * var(--motion-distance)));
+	}
+	.waitlist[data-state="success"] > .waitlist__done {
+		opacity: 1;
+		visibility: visible;
+		transform: none;
+		transition-delay: 0s;
+	}
+	.waitlist__position {
+		font-size: clamp(2.5rem, 2rem + 2vw, 3.5rem);
+		font-weight: 900;
+		line-height: 1;
+		color: var(--text-1);
+	}
+	.waitlist__done-title {
+		display: flex;
+		align-items: center;
+		gap: var(--space-2);
+		font-size: var(--fs-body-lg);
+		font-weight: var(--fw-semibold);
+		color: var(--text-1);
+	}
+	.waitlist__done-title::before {
+		content: "";
+		width: 10px;
+		height: 10px;
+		border-radius: 50%;
+		background: var(--success);
+	}
+	.waitlist__done-sub {
+		font-size: var(--fs-small);
+		color: var(--n-11);
+	}
+	/* Message and trust line share one cell: an error replaces the trust line instead of pushing content down. */
+	.waitlist__foot {
+		display: grid;
+	}
+	.waitlist__foot > * {
+		grid-area: 1 / 1;
+		align-self: start;
+	}
+	.waitlist__foot:has(.msg:not(:empty)) .waitlist__trust {
+		opacity: 0;
+		visibility: hidden;
+	}
+	.waitlist__trust {
+		display: flex;
+		flex-wrap: wrap;
+		gap: var(--space-1) var(--space-3);
+		font-size: var(--fs-caption);
+		line-height: var(--lh-small);
+		color: var(--text-3);
+	}
+	.waitlist__trust > * {
+		display: inline-flex;
+		align-items: center;
+		gap: var(--space-2);
+	}
+	.waitlist__trust > *::before {
+		content: "";
+		flex: none;
+		width: 4px;
+		height: 4px;
+		border-radius: 50%;
+		background: var(--success);
+	}
+	/* Honeypot `website` (BRIEF 9): off-screen, tabindex=-1, autocomplete=off, aria-hidden on its wrapper. */
+	.hp {
+		position: absolute;
+		left: -10000px;
+		top: auto;
+		width: 1px;
+		height: 1px;
+		overflow: hidden;
+	}
+	@container waitlist (max-width: 440px) {
+		.inline-field {
+			flex-direction: column;
+			align-items: stretch;
+			gap: var(--space-3);
+			padding: 0;
+			background: transparent;
+			box-shadow: none;
+		}
+		.inline-field:focus-within {
+			outline: none;
+		}
+		.inline-field__input {
+			flex: none;
+			height: var(--control-lg);
+			border-radius: var(--radius-pill);
+			background: var(--surface);
+			box-shadow: var(--ring-ui);
+		}
+		.inline-field__input:focus {
+			box-shadow: inset 0 0 0 1.5px var(--text-1);
+			outline: var(--focus-width) solid var(--focus);
+			outline-offset: var(--focus-offset);
+		}
+		.inline-field__input[aria-invalid="true"] {
+			box-shadow: inset 0 0 0 1.5px var(--danger-deep);
+		}
+		/* Readonly (submitting): stacked, the wrapper stays transparent (same specificity as the wide rule above,
+		 * later in source, so it wins) and the n-2 fill moves onto the input pill itself. */
+		.inline-field:has(.inline-field__input[readonly]) {
+			background: transparent;
+		}
+		.inline-field__input[readonly] {
+			background: var(--n-2);
+		}
+		.inline-field .btn {
+			--btn-h: var(--control-lg);
+			width: 100%;
+		}
+	}
+
+	/* ================================================================ Nav (R01 earned hairline, R06 float, R08) */
+	.nav {
+		position: sticky;
+		top: 0;
+		z-index: var(--z-nav);
+		background: var(--bg);
+	}
+	.nav::after {
+		content: "";
+		position: absolute;
+		inset: auto 0 0;
+		height: 1px;
+		background: var(--line);
+		opacity: 0;
+		transition: opacity var(--dur-state) var(--ease-standard);
+	}
+	.nav[data-stuck]::after {
+		opacity: 1;
+	}
+	.nav__inner {
+		display: flex;
+		align-items: center;
+		gap: var(--space-6);
+		height: var(--nav-h);
+	}
+	.nav__links {
+		display: flex;
+		align-items: center;
+		gap: var(--space-1);
+		margin-inline: auto;
+	}
+	.nav__link {
+		position: relative;
+		isolation: isolate;
+		padding: 8px 12px;
+		border-radius: var(--radius-pill);
+		font-size: var(--fs-small);
+		font-weight: var(--fw-medium);
+		line-height: 1.25;
+		color: var(--text-2);
+		text-decoration: none;
+	}
+	.nav__link::before {
+		content: "";
+		position: absolute;
+		inset: 0;
+		z-index: -1;
+		border-radius: inherit;
+		background: var(--surface-hover);
+		opacity: 0;
+		transition: opacity var(--dur-micro) var(--ease-standard);
+	}
+	.nav__link:hover,
+	.nav__link[aria-current],
+	.nav__link[data-force~="hover"] {
+		color: var(--text-1);
+	}
+	.nav__link:hover::before,
+	.nav__link[data-force~="hover"]::before {
+		opacity: 1;
+	}
+	.nav__actions {
+		display: flex;
+		align-items: center;
+		gap: var(--space-3);
+		margin-left: auto;
+	}
+	.nav__links + .nav__actions {
+		margin-left: 0;
+	}
+	.nav--float {
+		background: transparent;
+		padding-top: var(--space-3);
+	}
+	.nav--float::after {
+		display: none;
+	}
+	.nav--float .nav__inner {
+		height: 56px;
+		padding: 0 6px 0 var(--space-5);
+		border-radius: var(--radius-pill);
+		background: var(--surface);
+		box-shadow: var(--ring-1), var(--shadow-float);
+	}
+	@media (max-width: 767.98px) {
+		.nav__links {
+			display: none;
+		}
+		.nav__links + .nav__actions {
+			margin-left: auto;
+		}
+	}
+	/* Phones: brand, a compact EN/KO toggle (BRIEF 12b.5) and the CTA. */
+	@media (max-width: 479.98px) {
+		.nav__actions {
+			gap: var(--space-2);
+		}
+		.nav__actions .locale {
+			padding: 2px;
+		}
+		.nav__actions .locale__opt {
+			min-width: 32px;
+			height: 28px;
+			padding: 0 6px;
+			letter-spacing: 0.02em;
+		}
+	}
+
+	/* Brand lockup: dot T-rex mark + lowercase wordmark (ADR 0027). The mark itself comes from the assets node. */
+	.brand {
+		display: inline-flex;
+		align-items: center;
+		gap: 10px;
+		color: var(--text-1);
+		text-decoration: none;
+	}
+	.brand__mark {
+		width: auto;
+		height: 22px;
+	}
+	.brand__word {
+		font-size: 1.1875rem;
+		font-weight: var(--fw-semibold);
+		letter-spacing: -0.035em;
+		line-height: 1;
+	}
+
+	/* ================================================================ Eyebrow, pill, headline pill (R04, R27, R15) */
+	.eyebrow {
+		display: inline-flex;
+		align-items: center;
+		gap: 10px;
+		font-family: var(--font-mono);
+		font-size: var(--fs-label);
+		line-height: var(--lh-label);
+		letter-spacing: var(--tr-label);
+		font-weight: var(--fw-medium);
+		text-transform: uppercase;
+		color: var(--text-2);
+	}
+	.eyebrow::before {
+		content: "";
+		flex: none;
+		width: 6px;
+		height: 6px;
+		border-radius: 50%;
+		background: var(--accent);
+	}
+	.eyebrow--plain::before {
+		display: none;
+	}
+	.eyebrow__num {
+		color: var(--text-1);
+	}
+	.pill {
+		position: relative;
+		isolation: isolate;
+		display: inline-flex;
+		align-items: center;
+		gap: var(--space-2);
+		height: 32px;
+		padding: 0 var(--space-3) 0 10px;
+		border-radius: var(--radius-pill);
+		background: var(--surface);
+		box-shadow: var(--ring-1);
+		font-family: var(--font-mono);
+		font-size: var(--fs-label);
+		font-weight: var(--fw-medium);
+		letter-spacing: 0.06em;
+		text-transform: uppercase;
+		line-height: 1;
+		color: var(--text-1);
+		text-decoration: none;
+		white-space: nowrap;
+	}
+	.pill::before {
+		content: "";
+		position: absolute;
+		inset: 0;
+		z-index: -1;
+		border-radius: inherit;
+		background: var(--surface-hover);
+		opacity: 0;
+		transition: opacity var(--dur-micro) var(--ease-standard);
+	}
+	a.pill:hover::before,
+	.pill[data-force~="hover"]::before {
+		opacity: 1;
+	}
+	a.pill:hover .icon--nudge,
+	.pill[data-force~="hover"] .icon--nudge {
+		transform: translateX(2px);
+	}
+	.pill__dot {
+		flex: none;
+		width: 8px;
+		height: 8px;
+		border-radius: 50%;
+		background: var(--accent);
+	}
+	.pill .icon {
+		width: 14px;
+		height: 14px;
+		color: var(--text-2);
+	}
+	.pill__sep {
+		width: 1px;
+		height: 14px;
+		background: var(--line);
+	}
+	.pill--tint {
+		background: var(--accent-tint);
+		box-shadow: none;
+		color: var(--n-11);
+	}
+	.pill--tint::before {
+		background: var(--accent-soft);
+	}
+	.pill--sticker {
+		transform: rotate(-3deg);
+	}
+	/* A word inside a display headline, set in a tinted pill with a signal dot (R04: "agents [● Ship] together"). */
+	/* inline-block (not inline-flex) so the word keeps the headline's baseline; the dot is an inline box raised to
+	 * the x-height middle. */
+	.pill-word {
+		display: inline-block;
+		padding: 0 0.3em 0.04em 0.2em;
+		margin-inline: 0.02em;
+		border-radius: var(--radius-pill);
+		background: var(--accent-tint);
+		line-height: 1.12;
+		white-space: nowrap;
+	}
+	.pill-word::before {
+		content: "";
+		display: inline-block;
+		vertical-align: 0.1em;
+		width: 0.3em;
+		height: 0.3em;
+		margin-right: 0.22em;
+		border-radius: 50%;
+		background: var(--accent);
+	}
+
+	/* ================================================================ Card and bento tile (R04, R09, R27) */
+	.card {
+		position: relative;
+		isolation: isolate;
+		display: flex;
+		flex-direction: column;
+		gap: var(--space-3);
+		padding: var(--space-6);
+		border-radius: var(--radius-4);
+		background: var(--surface);
+		box-shadow: var(--ring-1);
+		color: var(--text-1);
+		text-decoration: none;
+	}
+	.card::after {
+		content: "";
+		position: absolute;
+		inset: 0;
+		border-radius: inherit;
+		box-shadow: inset 0 0 0 1px var(--n-8);
+		opacity: 0;
+		pointer-events: none;
+		transition: opacity var(--dur-state) var(--ease-standard);
+	}
+	.card--interactive {
+		cursor: pointer;
+	}
+	.card--interactive:hover::after,
+	.card[data-force~="hover"]::after {
+		opacity: 1;
+	}
+	.card--sunken {
+		background: var(--bg-band);
+		box-shadow: none;
+	}
+	.card--float {
+		box-shadow: var(--ring-1), var(--shadow-float);
+	}
+	.card__title {
+		font-size: var(--fs-h4);
+		line-height: var(--lh-h4);
+		letter-spacing: var(--tr-h4);
+		font-weight: var(--fw-semibold);
+	}
+	.card__body {
+		font-size: 0.9375rem;
+		line-height: var(--lh-small);
+		color: var(--text-2);
+	}
+	.card__meta {
+		margin-top: auto;
+		font-family: var(--font-mono);
+		font-size: var(--fs-micro);
+		letter-spacing: 0.06em;
+		text-transform: uppercase;
+		color: var(--text-3);
+	}
+	/* ↗ corner mark on tiles that link somewhere (R09). */
+	.card__corner {
+		position: absolute;
+		top: var(--space-5);
+		right: var(--space-5);
+		width: 18px;
+		height: 18px;
+		color: var(--text-3);
+		transition: transform var(--dur-state) var(--ease-out);
+	}
+	.card--interactive:hover .card__corner,
+	.card[data-force~="hover"] .card__corner {
+		transform: translate(2px, -2px);
+		color: var(--text-1);
+	}
+
+	.bento {
+		display: grid;
+		grid-template-columns: repeat(6, minmax(0, 1fr));
+		gap: var(--grid-gap);
+	}
+	.tile {
+		grid-column: span 2;
+		min-height: 240px;
+		justify-content: space-between;
+	}
+	.tile--wide {
+		grid-column: span 3;
+	}
+	.tile--full {
+		grid-column: 1 / -1;
+	}
+	.tile--tall {
+		grid-row: span 2;
+	}
+	.tile__visual {
+		display: grid;
+		place-items: center;
+		min-height: 96px;
+		border-radius: var(--radius-3);
+		background: var(--bg-band);
+	}
+	@media (max-width: 1023.98px) {
+		.bento {
+			grid-template-columns: repeat(2, minmax(0, 1fr));
+		}
+		.tile,
+		.tile--wide {
+			grid-column: span 1;
+		}
+		.tile--tall {
+			grid-row: auto;
+		}
+	}
+	@media (max-width: 639.98px) {
+		.bento {
+			grid-template-columns: minmax(0, 1fr);
+		}
+		.tile {
+			min-height: 0;
+		}
+	}
+
+	/* ================================================================ Kbd and tag */
+	.kbd {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		min-width: 24px;
+		height: 24px;
+		padding: 0 7px;
+		border-radius: 6px;
+		background: var(--surface);
+		box-shadow:
+			inset 0 0 0 1px var(--line-strong),
+			inset 0 -2px 0 var(--line-strong);
+		font-family: var(--font-mono);
+		font-size: 0.71875rem;
+		font-weight: var(--fw-medium);
+		line-height: 1;
+		color: var(--text-2);
+		white-space: nowrap;
+		vertical-align: 0.1em;
+	}
+	.tag {
+		display: inline-flex;
+		align-items: center;
+		gap: 6px;
+		height: 22px;
+		padding: 0 8px;
+		border-radius: var(--radius-1);
+		background: var(--n-3);
+		color: var(--text-2);
+		font-family: var(--font-mono);
+		font-size: var(--fs-micro);
+		font-weight: var(--fw-medium);
+		letter-spacing: 0.06em;
+		line-height: 1;
+		text-transform: uppercase;
+		white-space: nowrap;
+	}
+	.tag--signal {
+		background: var(--accent-tint);
+		color: var(--accent-deep);
+	}
+	.tag--solid {
+		background: var(--accent);
+		color: var(--text-1);
+	}
+	.tag--outline {
+		background: transparent;
+		box-shadow: inset 0 0 0 1px var(--line-strong);
+	}
+	.tag__dot {
+		flex: none;
+		width: 6px;
+		height: 6px;
+		border-radius: 50%;
+		background: var(--accent);
+	}
+	/* Run status (R28): queued = gray, running = ink ring, done = mint, failed = red. Never color alone: a word follows. */
+	.tag[data-status="queued"] .tag__dot {
+		background: var(--n-7);
+	}
+	.tag[data-status="running"] .tag__dot {
+		background: transparent;
+		box-shadow: inset 0 0 0 1.5px var(--text-1);
+	}
+	.tag[data-status="done"] .tag__dot {
+		background: var(--success);
+	}
+	.tag[data-status="failed"] .tag__dot {
+		background: var(--danger);
+	}
+
+	/* ================================================================ Marquee (R04 row, Copilot pause; BRIEF 5.3)
+	 * Two copies of the list in one track; the track slides -50% on the compositor. Pauses on hover, focus and
+	 * the toggle; reduced motion shows one static, wrapped list. */
+	.marquee {
+		--marquee-gap: var(--space-10);
+		--marquee-duration: 48s;
+		display: flex;
+		align-items: center;
+		gap: var(--space-4);
+	}
+	.marquee__viewport {
+		flex: 1;
+		min-width: 0;
+		overflow: hidden;
+	}
+	.marquee__track {
+		display: flex;
+		width: max-content;
+		gap: var(--marquee-gap);
+		padding-right: var(--marquee-gap);
+		animation: marquee var(--marquee-duration) linear infinite;
+	}
+	.marquee__list {
+		display: flex;
+		align-items: center;
+		gap: var(--marquee-gap);
+		padding: 0;
+		list-style: none;
+	}
+	.marquee:hover .marquee__track,
+	.marquee:focus-within .marquee__track,
+	.marquee[data-paused] .marquee__track {
+		animation-play-state: paused;
+	}
+	.marquee__item {
+		display: inline-flex;
+		align-items: center;
+		gap: 10px;
+		font-size: var(--fs-body-lg);
+		font-weight: var(--fw-medium);
+		letter-spacing: -0.01em;
+		color: var(--text-2);
+		white-space: nowrap;
+	}
+	.marquee__item .glyph {
+		color: var(--text-1);
+	}
+	@keyframes marquee {
+		to {
+			transform: translateX(-50%);
+		}
+	}
+	@media (prefers-reduced-motion: reduce) {
+		.marquee__track {
+			width: auto;
+			padding: 0;
+			animation: none;
+		}
+		.marquee__list {
+			flex-wrap: wrap;
+			justify-content: center;
+			gap: var(--space-4) var(--space-8);
+		}
+		.marquee__list[aria-hidden="true"],
+		.marquee__toggle {
+			display: none;
+		}
+	}
+
+	/* ================================================================ Accordion (FAQ; opacity + transform only, R03) */
+	.accordion {
+		border-top: 1px solid var(--line);
+	}
+	.acc {
+		border-bottom: 1px solid var(--line);
+	}
+	.acc__summary {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: var(--space-6);
+		padding: var(--space-5) 0;
+		font-size: var(--fs-body-lg);
+		font-weight: var(--fw-medium);
+		line-height: 1.4;
+		letter-spacing: -0.01em;
+		color: var(--text-1);
+		cursor: pointer;
+		list-style: none;
+	}
+	.acc__summary::-webkit-details-marker {
+		display: none;
+	}
+	.acc__summary:focus-visible,
+	.acc__summary[data-force~="focus"] {
+		outline: var(--focus-width) solid var(--focus);
+		outline-offset: var(--focus-offset);
+		border-radius: var(--radius-1);
+	}
+	.acc__icon {
+		position: relative;
+		isolation: isolate;
+		flex: none;
+		width: 28px;
+		height: 28px;
+		border-radius: 50%;
+		box-shadow: var(--ring-2);
+	}
+	.acc__icon::before,
+	.acc__icon::after {
+		content: "";
+		position: absolute;
+		top: 50%;
+		left: 50%;
+		width: 10px;
+		height: 1.5px;
+		margin: -0.75px 0 0 -5px;
+		border-radius: 1px;
+		background: var(--text-1);
+		transition: transform var(--dur-state) var(--ease-standard);
+	}
+	.acc__icon::after {
+		transform: rotate(90deg);
+	}
+	.acc[open] .acc__icon::after {
+		transform: rotate(0deg);
+	}
+	.acc[open] .acc__icon::before {
+		transform: rotate(180deg);
+	}
+	.acc__panel {
+		max-width: var(--measure);
+		padding: 0 var(--space-10) var(--space-6) 0;
+		font-size: var(--fs-body);
+		line-height: var(--lh-body);
+		color: var(--text-2);
+	}
+	.acc[open] > .acc__panel {
+		animation: fade-down var(--dur-enter) var(--ease-out) both;
+	}
+
+	/* ================================================================ Tooltip (dot tail) */
+	.tip {
+		position: relative;
+		display: inline-flex;
+	}
+	.tip__bubble {
+		position: absolute;
+		bottom: calc(100% + 12px);
+		left: 50%;
+		z-index: var(--z-tooltip);
+		width: max-content;
+		max-width: 240px;
+		padding: 6px 10px;
+		border-radius: var(--radius-2);
+		background: var(--surface-inverse);
+		color: var(--text-inverse);
+		font-size: var(--fs-caption);
+		font-weight: var(--fw-medium);
+		line-height: 1.35;
+		letter-spacing: 0;
+		text-align: center;
+		pointer-events: none;
+		opacity: 0;
+		transform: translate(-50%, calc(4px * var(--motion-distance)));
+		transition:
+			opacity var(--dur-state) var(--ease-standard),
+			transform var(--dur-state) var(--ease-out);
+	}
+	.tip__bubble::after {
+		content: "";
+		position: absolute;
+		top: calc(100% + 3px);
+		left: 50%;
+		width: 5px;
+		height: 5px;
+		margin-left: -2.5px;
+		border-radius: 50%;
+		background: var(--surface-inverse);
+	}
+	.tip:hover .tip__bubble,
+	.tip:focus-within .tip__bubble,
+	.tip[data-force~="open"] .tip__bubble {
+		opacity: 1;
+		transform: translate(-50%, 0);
+		transition-delay: 150ms;
+	}
+	.tip[data-force~="open"] .tip__bubble {
+		transition-delay: 0ms;
+	}
+	/* Edge alignment: near a container edge, anchor the bubble to the trigger's start or end
+	   instead of centering it, so it never overflows. The dot tail stays over the trigger. */
+	.tip[data-align="start"] .tip__bubble {
+		left: 0;
+		transform: translate(0, calc(4px * var(--motion-distance)));
+		text-align: start;
+	}
+	.tip[data-align="end"] .tip__bubble {
+		left: auto;
+		right: 0;
+		transform: translate(0, calc(4px * var(--motion-distance)));
+		text-align: end;
+	}
+	.tip[data-align="start"] .tip__bubble::after {
+		left: 16px;
+	}
+	.tip[data-align="end"] .tip__bubble::after {
+		left: auto;
+		right: 16px;
+		margin-left: 0;
+		margin-right: -2.5px;
+	}
+	.tip[data-align]:hover .tip__bubble,
+	.tip[data-align]:focus-within .tip__bubble,
+	.tip[data-align][data-force~="open"] .tip__bubble {
+		transform: translate(0, 0);
+	}
+
+	/* ================================================================ Section header (R01, R05, R32 two-tone) */
+	.section-head {
+		display: grid;
+		gap: var(--space-5);
+		max-width: 780px;
+	}
+	.section-head--center {
+		margin-inline: auto;
+		justify-items: center;
+		text-align: center;
+	}
+	.section-head__lede {
+		max-width: 58ch;
+	}
+
+	/* ================================================================ Locale toggle (segmented) */
+	.locale {
+		display: inline-flex;
+		gap: 2px;
+		padding: 3px;
+		border-radius: var(--radius-pill);
+		background: var(--bg-band);
+		box-shadow: var(--ring-1);
+	}
+	.locale__opt {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		min-width: 38px;
+		height: 28px;
+		padding: 0 10px;
+		border-radius: var(--radius-pill);
+		font-family: var(--font-mono);
+		font-size: var(--fs-label);
+		font-weight: var(--fw-medium);
+		letter-spacing: 0.06em;
+		line-height: 1;
+		color: var(--text-3);
+		text-decoration: none;
+	}
+	.locale__opt:hover,
+	.locale__opt[data-force~="hover"] {
+		color: var(--text-1);
+	}
+	.locale__opt[aria-current="true"],
+	.locale__opt[aria-current="page"] {
+		background: var(--surface);
+		color: var(--text-1);
+		box-shadow: var(--ring-2);
+	}
+
+	/* ================================================================ Dot divider and signature */
+	.divider {
+		display: flex;
+		align-items: center;
+		gap: var(--space-4);
+		color: var(--text-3);
+	}
+	.divider::before,
+	.divider::after {
+		content: "";
+		flex: 1;
+		height: 4px;
+		/* Dotted rule: one 8x4 SVG tile (a 2px-diameter dot centred on the 4px row) used as a mask over the token
+		 * colour. An image tile rasterizes once and repeats identically on an integer 8px pitch, so every dot is the
+		 * same at DPR 1 and 2 (a radial-gradient re-rasterized per dot at subpixel offsets produced a moire). */
+		background-color: var(--n-7);
+		-webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='4'%3E%3Ccircle cx='4' cy='2' r='1'/%3E%3C/svg%3E") 0 0 / 8px 4px repeat-x;
+		mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='4'%3E%3Ccircle cx='4' cy='2' r='1'/%3E%3C/svg%3E") 0 0 / 8px 4px repeat-x;
+	}
+	.divider--plain::after {
+		display: none;
+	}
+	.divider__dots {
+		display: inline-flex;
+		gap: 8px;
+	}
+	.divider__dots i {
+		width: 6px;
+		height: 6px;
+		border-radius: 50%;
+	}
+	.divider__dots i:nth-child(1) {
+		background: var(--mint);
+	}
+	.divider__dots i:nth-child(2) {
+		background: var(--teal);
+	}
+	.divider__dots i:nth-child(3) {
+		background: var(--cyan);
+	}
+	.divider__dots i:nth-child(4) {
+		background: var(--blue);
+	}
+	.divider__dots i:nth-child(5) {
+		background: var(--indigo);
+	}
+	.signature {
+		display: block;
+		width: 100px;
+		height: 6px;
+		border-radius: 1px;
+	}
+
+	/* ================================================================ Footer */
+	.footer {
+		padding: var(--space-10) 0 var(--space-8);
+		border-top: 1px solid var(--line);
+		background: var(--bg);
+	}
+	.footer__inner {
+		display: grid;
+		grid-template-columns: minmax(0, 1fr) auto;
+		align-items: end;
+		gap: var(--space-8) var(--space-6);
+	}
+	.footer__brand {
+		display: grid;
+		gap: var(--space-4);
+		justify-items: start;
+	}
+	.footer__links {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: var(--space-2) var(--space-6);
+		font-size: var(--fs-small);
+		color: var(--text-2);
+	}
+	.footer__links a {
+		color: var(--text-2);
+		text-decoration: none;
+	}
+	.footer__links a:hover {
+		color: var(--text-1);
+		text-decoration: underline;
+	}
+	.footer__legal {
+		grid-column: 1 / -1;
+		display: flex;
+		flex-wrap: wrap;
+		justify-content: space-between;
+		gap: var(--space-3);
+		padding-top: var(--space-6);
+		border-top: 1px solid var(--line);
+		font-family: var(--font-mono);
+		font-size: var(--fs-label);
+		letter-spacing: 0.04em;
+		color: var(--text-3);
+	}
+	@media (max-width: 639.98px) {
+		.footer__inner {
+			grid-template-columns: minmax(0, 1fr);
+			align-items: start;
+		}
+	}
+
+	/* ================================================================ Toast (above the runner bar) */
+	.toast-region {
+		position: fixed;
+		left: 50%;
+		bottom: calc(var(--runner-h) + var(--space-5));
+		z-index: var(--z-toast);
+		display: grid;
+		justify-items: center;
+		gap: var(--space-2);
+		width: min(100% - 2 * var(--gutter), 440px);
+		transform: translateX(-50%);
+		pointer-events: none;
+	}
+	.toast {
+		--toast-dot: var(--n-7);
+		pointer-events: auto;
+		display: flex;
+		align-items: center;
+		gap: var(--space-3);
+		min-height: 48px;
+		padding: 8px 8px 8px var(--space-4);
+		border-radius: var(--radius-3);
+		background: var(--surface-inverse);
+		color: var(--text-inverse);
+		box-shadow: var(--shadow-pop);
+		font-size: var(--fs-small);
+		line-height: 1.4;
+		animation: toast-in var(--spring-snappy-dur) var(--spring-snappy) both;
+	}
+	.toast::before {
+		content: "";
+		flex: none;
+		width: 8px;
+		height: 8px;
+		border-radius: 50%;
+		background: var(--toast-dot);
+	}
+	.toast--success {
+		--toast-dot: var(--mint);
+	}
+	.toast--error {
+		--toast-dot: var(--red);
+	}
+	.toast--static {
+		animation: none;
+	}
+	.toast__text {
+		padding-right: var(--space-2);
+	}
+	.toast__action {
+		margin-left: auto;
+		--btn-bg: transparent;
+		--btn-fg: var(--text-inverse);
+		--btn-ring: inset 0 0 0 1px var(--line-inverse);
+		--btn-overlay: rgb(255 255 255 / 0.1);
+	}
+	.toast[data-leaving] {
+		animation: toast-out var(--dur-state) var(--ease-in) both;
+	}
+	@keyframes toast-in {
+		from {
+			opacity: 0;
+			transform: translateY(calc(16px * var(--motion-distance))) scale(0.96);
+		}
+	}
+	@keyframes toast-out {
+		to {
+			opacity: 0;
+			transform: translateY(calc(8px * var(--motion-distance))) scale(0.98);
+		}
+	}
+
+	/* ================================================================ Dot glyphs (icons drawn on the mascot's grid)
+	 * <span class="glyph" data-glyph="chat"> with 5x5 dots from src/client/styleguide/glyphs.ts or inline SVG. */
+	.glyph {
+		display: inline-block;
+		width: 15px;
+		height: 15px;
+		flex: none;
+		color: currentColor;
+	}
+	.glyph circle {
+		fill: currentColor;
+	}
+
+	/* ================================================================ Motion utilities */
+	@keyframes fade-in {
+		from {
+			opacity: 0;
+		}
+	}
+	@keyframes fade-up {
+		from {
+			opacity: 0;
+			transform: translateY(calc(8px * var(--motion-distance)));
+		}
+	}
+	@keyframes fade-down {
+		from {
+			opacity: 0;
+			transform: translateY(calc(-6px * var(--motion-distance)));
+		}
+	}
+	@keyframes pop-in {
+		from {
+			opacity: 0;
+			transform: scale(0.6);
+		}
+	}
+	/* Scroll reveal on the compositor (R04: 32 view() rules at 200 fps). Without scroll timelines the content
+	 * simply shows; the page may add an IntersectionObserver fallback. */
+	@supports (animation-timeline: view()) {
+		.reveal {
+			animation: fade-up linear both;
+			animation-timeline: view();
+			animation-range: entry 0% entry 55%;
+		}
+	}
+	@media (prefers-reduced-motion: reduce) {
+		.reveal {
+			animation: none;
+		}
+	}
+}
