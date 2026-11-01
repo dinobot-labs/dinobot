@@ -159,9 +159,19 @@ async function publish(request: Request, env: Env): Promise<Response> {
 	if (!promoted) fail(409, "latest_conflict");
 	return json({ ok: true, release, latestVersion: version, promoted: true });
 }
-async function route(request: Request, env: Env): Promise<Response> {
+export type BootstrapAssets = Record<"/install.sh" | "/install.ps1" | "/install.mjs", string>;
+async function route(request: Request, env: Env, assets?: BootstrapAssets): Promise<Response> {
 	const url = new URL(request.url);
 	const path = url.pathname;
+	if (path === "/install.sh" || path === "/install.ps1" || path === "/install.mjs") {
+		if (url.protocol !== "https:") fail(400, "https_required");
+		if (request.method !== "GET" && request.method !== "HEAD") return json({ error: "method_not_allowed" }, 405, { Allow: "GET, HEAD" });
+		if (!assets?.[path]) fail(503, "bootstrap_unavailable");
+		return new Response(request.method === "HEAD" ? null : assets[path], { headers: {
+			"Content-Type": path === "/install.mjs" ? "application/javascript; charset=utf-8" : "text/plain; charset=utf-8",
+			"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff",
+		} });
+	}
 	if (path === "/core/publish") {
 		if (url.protocol !== "https:") fail(400, "https_required");
 		if (request.method !== "POST") return json({ error: "method_not_allowed" }, 405, { Allow: "POST" });
@@ -186,12 +196,13 @@ async function route(request: Request, env: Env): Promise<Response> {
 	headers["Content-Length"] = String(object.size);
 	return new Response(request.method === "HEAD" ? null : object.body, { headers });
 }
-export default {
+export function createReleaseWorker(assets?: BootstrapAssets) { return {
 	async fetch(request: Request, env: Env): Promise<Response> {
 		let response: Response;
-		try { response = await route(request, env); }
+		try { response = await route(request, env, assets); }
 		catch (error) { response = error instanceof HttpError ? json({ error: error.code }, error.status) : json({ error: "storage_unavailable" }, 503); }
 		// HEAD has no body, including errors and redirects.
 		return request.method === "HEAD" ? new Response(null, response) : response;
 	},
-};
+}; }
+export default createReleaseWorker();

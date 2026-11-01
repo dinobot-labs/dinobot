@@ -7,7 +7,7 @@ A separate Worker named **releases**, served at https://releases.dinobot.workers
 - `BUCKET`: existing R2 bucket `dinobot-desktop-releases`. Every key accessed by this Worker starts with `core/`.
 - `CORE_PUBLISH_TOKEN`: secret bearer token, set through the Cloudflare API or secret tooling. Never place it in source, shell history, output or request logs.
 
-The default export is a module Worker with `fetch(request, env)`. It uses Web APIs only, no SDK, Node compatibility or rate-limit binding. Bundle `script/cloudflare/worker.ts` with Bun.build target `browser`, format `esm`. Deploy and credentials are managed separately. There is no health route; before first publication, `GET /core/latest.json` returns 404 with `{"error":"not_found"}`.
+The default export is a module Worker with `fetch(request, env)`. It uses Web APIs only, no SDK, Node compatibility or rate-limit binding. The deployment tool bundles `script/cloudflare/deploy-entry.ts` for the browser and `src/managed-install.ts` for Bun, both as ESM. It uploads the Worker plus three `text/plain` module assets (`install.sh.txt`, `install.ps1.txt`, `install.mjs.txt`) in the same multipart deployment. Bootstrap files do not use R2. Deploy and credentials are managed separately. There is no health route; before first publication, `GET /core/latest.json` returns 404 with `{"error":"not_found"}`.
 
 ## Public requests
 
@@ -15,6 +15,9 @@ GET and HEAD support:
 
 | Path | Result | Cache-Control |
 | --- | --- | --- |
+| /install.sh | POSIX bootstrap script | no-store |
+| /install.ps1 | PowerShell bootstrap script | no-store |
+| /install.mjs | Bundled Bun managed installer | no-store |
 | /core/latest.json | Release metadata | no-store |
 | /core/dinobot.tgz | 302 to the current immutable tarball | no-store |
 | /core/releases/VERSION/dinobot-VERSION.tgz | Exact published bytes | public, max-age=31536000, immutable |
@@ -37,6 +40,21 @@ Metadata has this shape:
   "publishedAt": "2026-01-01T00:00:00.000Z"
 }
 ```
+
+## Managed installation
+
+Install Bun first from https://bun.sh. Bootstrap scripts require Bun on PATH and stop before creating temporary files when it is missing. The POSIX bootstrap also requires curl.
+
+Download the appropriate script over HTTPS without following redirects, inspect it, then execute it:
+
+- POSIX: https://releases.dinobot.workers.dev/install.sh (`sh install.sh`)
+- Windows: https://releases.dinobot.workers.dev/install.ps1 (`.\install.ps1` in PowerShell)
+
+PowerShell must permit the downloaded script under your existing policy. No ExecutionPolicy bypass or elevation is performed. Both scripts fetch only https://releases.dinobot.workers.dev/install.mjs, reject redirects/non-200 responses, run `bun <temporary-install.mjs> --install`, report installer failures and remove their temporary directory. POSIX preserves the native exit status. PowerShell throws an error containing the original Bun exit status (a `-File` invocation returns 1), rather than calling `exit` and terminating an interactive caller. Success returns to that caller. They never call sudo or restart the daemon.
+
+The managed installer owns installation under `~/.local/share/dinobot` on POSIX or `%LOCALAPPDATA%/dinobot` on Windows, with `DINOBOT_INSTALL_DIR` as an override. It creates immutable version slots and launcher/shims; launch-time update checks do not restart an already running daemon. Bootstrap scripts themselves only stage the temporary installer.
+
+`buildReleaseModules()` performs an offline build without uploading. Deployment still uses `bun script/cloudflare/deploy.ts` with the existing secret environment settings below. A failed build stops before any Cloudflare request; errors printed by the CLI do not include raw API bodies or credentials.
 
 ## Private publication
 
@@ -83,9 +101,10 @@ Errors are `{"error":"CODE"}`; all publication responses and errors use `Cache-C
 Run sequentially:
 
 ```sh
+bun test test/install-bootstrap.test.ts
 bun test test/cloudflare-worker.test.ts
 ```
 
 The in-memory R2 seam returns object snapshots, derives ETags from contents and atomically checks conditional writes at commit time. Tests cover auth-before-body, checksum and size boundaries, immutable conflicts, partial writes, exact numeric ordering, bootstrap/upgrade/downgrade, deterministic CAS races, readback corruption, cache headers and route/method handling. They do not certify deployed Cloudflare bindings, Cloudflare memory limits, public TLS/DNS or live R2 behavior; deployment must exercise those separately.
 
-Deployment: set CLOUDFLARE_ACCOUNT_ID, CLOUDFLARE_API_TOKEN, CLOUDFLARE_RELEASE_BUCKET and CORE_PUBLISH_TOKEN through a secret source, then run `bun script/cloudflare/deploy.ts`. Publication requires HTTPS; plaintext requests are rejected before reading the body.
+Deployment: set CLOUDFLARE_ACCOUNT_ID, CLOUDFLARE_API_TOKEN and CLOUDFLARE_RELEASE_BUCKET through a secret source, then run `bun script/cloudflare/deploy.ts`. First deployment also requires CORE_PUBLISH_TOKEN. For an existing Worker, omit CORE_PUBLISH_TOKEN to preserve its secret binding: deployment first checks that the existing secret name/type and R2 bucket match, then uses Cloudflare `keep_bindings: ["secret_text"]`. It never reads or prints the secret value. Publication requires HTTPS; plaintext requests are rejected before reading the body.
