@@ -21,6 +21,11 @@ export async function deployReleaseWorker(env: NodeJS.ProcessEnv = process.env, 
  const publishToken = env.CORE_PUBLISH_TOKEN;
  const bucket = env.CLOUDFLARE_RELEASE_BUCKET;
  if (!account || !/^[a-f0-9]{32}$/.test(account) || !apiToken || (publishToken !== undefined && publishToken.length < 32) || !bucket || !/^[a-z0-9][a-z0-9-]+$/.test(bucket)) throw new Error('Missing or invalid deployment settings');
+ // Namespace must be reserved uniquely within the account; never guess one that
+ // could share another Worker's counters. Omitting it preserves legacy behavior.
+ const rateNamespace = env.CLOUDFLARE_RELEASE_RATE_NAMESPACE;
+ if (rateNamespace !== undefined && !/^[1-9][0-9]{0,18}$/.test(rateNamespace)) throw new Error('Invalid release rate namespace');
+ const rateBindings = rateNamespace === undefined ? [] : [{type:'ratelimit',name:'RELEASE_READ_LIMITER',namespace_id:rateNamespace,simple:{limit:120,period:60}}];
  const modules = await (dependencies.build ?? buildReleaseModules)();
  const api = 'https://api.cloudflare.com/client/v4/accounts/' + account + '/workers/scripts/releases';
  const request = async (url: string, init: RequestInit) => {
@@ -37,7 +42,7 @@ export async function deployReleaseWorker(env: NodeJS.ProcessEnv = process.env, 
    || !current.bindings.some(b => b.name === 'BUCKET' && b.type === 'r2_bucket' && b.bucket_name === bucket)) throw new Error('Existing release Worker bindings do not match');
  }
  const form = new FormData();
- form.set('metadata', new Blob([JSON.stringify({main_module:'worker.js',compatibility_date:'2026-10-31',...(publishToken === undefined ? {keep_bindings:['secret_text']} : {}),bindings:[{type:'r2_bucket',name:'BUCKET',bucket_name:bucket},...(publishToken === undefined ? [] : [{type:'secret_text',name:'CORE_PUBLISH_TOKEN',text:publishToken}])]})],{type:'application/json'}));
+ form.set('metadata', new Blob([JSON.stringify({main_module:'worker.js',compatibility_date:'2026-10-31',...(publishToken === undefined ? {keep_bindings:['secret_text']} : {}),bindings:[{type:'r2_bucket',name:'BUCKET',bucket_name:bucket},...rateBindings,...(publishToken === undefined ? [] : [{type:'secret_text',name:'CORE_PUBLISH_TOKEN',text:publishToken}])]})],{type:'application/json'}));
  for (const [name, module] of Object.entries(modules)) form.set(name, new Blob([module.content], {type:module.type}), name);
  const result = await request(api,{method:'PUT',body:form});
  console.log(JSON.stringify({worker:'releases',uploaded:true,id:result?.id ?? null}));

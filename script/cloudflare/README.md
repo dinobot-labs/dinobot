@@ -7,7 +7,7 @@ A separate Worker named **releases**, served at https://releases.dinobot.workers
 - `BUCKET`: existing R2 bucket `dinobot-desktop-releases`. Every key accessed by this Worker starts with `core/`.
 - `CORE_PUBLISH_TOKEN`: secret bearer token, set through the Cloudflare API or secret tooling. Never place it in source, shell history, output or request logs.
 
-The default export is a module Worker with `fetch(request, env)`. It uses Web APIs only, no SDK, Node compatibility or rate-limit binding. The deployment tool bundles `script/cloudflare/deploy-entry.ts` for the browser and `src/managed-install.ts` for Bun, both as ESM. It uploads the Worker plus three `text/plain` module assets (`install.sh.txt`, `install.ps1.txt`, `install.mjs.txt`) in the same multipart deployment. Bootstrap files do not use R2. Deploy and credentials are managed separately. There is no health route; before first publication, `GET /core/latest.json` returns 404 with `{"error":"not_found"}`.
+The default export is a module Worker with `fetch(request, env)`. It uses Web APIs only, no SDK or Node compatibility. The optional third fetch argument supplies waitUntil for Cache API writes. The deployment tool bundles `script/cloudflare/deploy-entry.ts` for the browser and `src/managed-install.ts` for Bun, both as ESM. It uploads the Worker plus three `text/plain` module assets (`install.sh.txt`, `install.ps1.txt`, `install.mjs.txt`) in the same multipart deployment. Bootstrap files do not use R2. Deploy and credentials are managed separately. There is no health route; before first publication, `GET /core/latest.json` returns 404 with `{"error":"not_found"}`.
 
 ## Public requests
 
@@ -40,6 +40,18 @@ Metadata has this shape:
   "publishedAt": "2026-01-01T00:00:00.000Z"
 }
 ```
+
+## Cost controls
+
+Validated public GET responses use the Worker Cache API when available, keyed by origin and pathname only (no query or request headers). HEAD can reuse a cached GET, but a HEAD miss never writes an empty GET entry. Immutable artifacts retain their bytes, ETag and one-year immutable policy. If-None-Match supports weak comparison and returns a bodyless 304; Range and If-Range are deliberately ignored and return the complete 200 representation, not partial bytes.
+
+Latest metadata and the latest redirect have a **30-second edge TTL**, including after publication. Their client-facing policy remains no-store, so downstream caches cannot extend that window. Publication still performs its original direct R2 reads, SHA-512 verification and conditional writes; it neither reads nor writes the public cache. Bootstrap remains no-store and does not use R2 or the cache. Authorization/Cookie requests bypass caching. Errors and missing keys are never cached; cache failures fall back to R2.
+
+To enable the optional RELEASE_READ_LIMITER binding, supply CLOUDFLARE_RELEASE_RATE_NAMESPACE when deploying. This must be a positive integer namespace reserved uniquely within the Cloudflare account, not one shared with another Worker. The deploy tool configures 120 cache-miss reads per 60 seconds per CF-Connecting-IP, across all valid public release paths; blocked requests get 429/no-store/Retry-After: 60 before R2. Warm cache hits and publication do not consume the allowance. Without this binding, arbitrary valid nonexistent keys still reach R2. Keep this deployment setting on subsequent deploys; omitting it does not configure a limiter.
+
+IP limits are a compromise for anonymous downloads: shared NATs share an allowance, while rotating IPs evade it. Cloudflare rate limits are approximate and per location, not a global or hard spending cap. Cache writes are asynchronous with waitUntil; concurrent cold requests may each read R2, and cache eviction/unsupported local runtimes also cause misses. Every request still invokes the Worker. No CPU limit was lowered: publication hashes up to 32 MiB, and local tests cannot establish a safe Cloudflare CPU ceiling. No paid products, global settings or logging settings are changed.
+
+Reference: https://developers.cloudflare.com/workers/runtime-apis/bindings/rate-limit/
 
 ## Managed installation
 
@@ -103,6 +115,7 @@ Run sequentially:
 ```sh
 bun test test/install-bootstrap.test.ts
 bun test test/cloudflare-worker.test.ts
+bun test tests/cloudflare-cost.test.ts tests/cloudflare-cost-deploy.test.ts
 ```
 
 The in-memory R2 seam returns object snapshots, derives ETags from contents and atomically checks conditional writes at commit time. Tests cover auth-before-body, checksum and size boundaries, immutable conflicts, partial writes, exact numeric ordering, bootstrap/upgrade/downgrade, deterministic CAS races, readback corruption, cache headers and route/method handling. They do not certify deployed Cloudflare bindings, Cloudflare memory limits, public TLS/DNS or live R2 behavior; deployment must exercise those separately.

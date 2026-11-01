@@ -21,7 +21,20 @@ export interface Bucket {
 		customMetadata?: Record<string, string>;
 	}): Promise<{ etag: string } | null>;
 }
-export interface Env { BUCKET: Bucket; CORE_PUBLISH_TOKEN: string }
+export interface Env {
+ BUCKET: Bucket;
+ CORE_PUBLISH_TOKEN: string;
+ RELEASE_READ_LIMITER?: { limit(options: { key: string }): Promise<{ success: boolean }> };
+}
+export interface ReleaseCache {
+ match(key: Request): Promise<Response | undefined>;
+ put(key: Request, response: Response): Promise<void>;
+}
+export interface ReleaseContext { waitUntil(promise: Promise<unknown>): void }
+const LATEST_TTL = 30;
+function edgeCache(): ReleaseCache | undefined {
+ return (globalThis as typeof globalThis & { caches?: { default?: ReleaseCache } }).caches?.default;
+}
 export interface Release {
 	name: "dinobot";
 	version: string;
@@ -160,7 +173,7 @@ async function publish(request: Request, env: Env): Promise<Response> {
 	return json({ ok: true, release, latestVersion: version, promoted: true });
 }
 export type BootstrapAssets = Record<"/install.sh" | "/install.ps1" | "/install.mjs", string>;
-async function route(request: Request, env: Env, assets?: BootstrapAssets): Promise<Response> {
+async function route(request: Request, env: Env, assets?: BootstrapAssets, cache?: ReleaseCache, ctx?: ReleaseContext): Promise<Response> {
 	const url = new URL(request.url);
 	const path = url.pathname;
 	if (path === "/install.sh" || path === "/install.ps1" || path === "/install.mjs") {
@@ -181,8 +194,38 @@ async function route(request: Request, env: Env, assets?: BootstrapAssets): Prom
 	const latest = path === "/core/latest.json"; const redirect = path === "/core/dinobot.tgz";
 	if (!latest && !redirect && (!match || !stable(match[1]) || (match[3] !== undefined && match[3] !== match[1]))) fail(404, "not_found");
 	if (request.method !== "GET" && request.method !== "HEAD") return json({ error: "method_not_allowed" }, 405, { Allow: "GET, HEAD" });
-	const key = latest || redirect ? LATEST : path.slice(1);
-	const object = await env.BUCKET.get(key);
+ // Only validated public paths reach the cache. Queries and request headers
+ // cannot split keys or turn a partial response into a full hit.
+ const publicCache = !request.headers.has("authorization") && !request.headers.has("cookie") ? cache : undefined;
+ const cacheKey = new Request(url.origin + path);
+ const mutable = latest || redirect;
+ if (publicCache) {
+  const hit = await publicCache.match(cacheKey).catch(() => undefined);
+  if (hit) {
+   if (!mutable) return hit;
+   const headers = new Headers(hit.headers);
+   headers.set("Cache-Control", "no-store");
+   return new Response(hit.body, { status: hit.status, headers });
+  }
+ }
+ // Per-client across ALL valid keys; varying versions cannot reset the limit.
+ // Cloudflare overwrites CF-Connecting-IP; never trust forwarded-IP headers.
+ if (env.RELEASE_READ_LIMITER && !(await env.RELEASE_READ_LIMITER.limit({ key: request.headers.get("CF-Connecting-IP") ?? "unknown" })).success) {
+  return json({ error: "rate_limited" }, 429, { "Retry-After": "60" });
+ }
+ const response = await readPublic(request, env, path, latest, redirect, match);
+ // No negative caching. HEAD misses cannot populate GET with an empty body.
+ if (publicCache && request.method === "GET" && (response.status === 200 || response.status === 302)) {
+  const stored = new Response(response.clone().body, response);
+  if (mutable) stored.headers.set("Cache-Control", "public, max-age=" + LATEST_TTL);
+  const pending = publicCache.put(cacheKey, stored).catch(() => {});
+  if (ctx) ctx.waitUntil(pending); else await pending;
+ }
+ return response;
+}
+async function readPublic(request: Request, env: Env, path: string, latest: boolean, redirect: boolean, match: RegExpExecArray | null): Promise<Response> {
+ const key = latest || redirect ? LATEST : path.slice(1);
+ const object = await env.BUCKET.get(key);
 	if (!object) fail(404, "not_found");
 	const headers: Record<string, string> = { "Cache-Control": latest || redirect ? "no-store" : IMMUTABLE, ETag: `"${object.etag}"`, "X-Content-Type-Options": "nosniff" };
 	if (latest || redirect || match?.[2] === "manifest.json") {
@@ -196,11 +239,22 @@ async function route(request: Request, env: Env, assets?: BootstrapAssets): Prom
 	headers["Content-Length"] = String(object.size);
 	return new Response(request.method === "HEAD" ? null : object.body, { headers });
 }
-export function createReleaseWorker(assets?: BootstrapAssets) { return {
-	async fetch(request: Request, env: Env): Promise<Response> {
+export function createReleaseWorker(assets?: BootstrapAssets, cache?: ReleaseCache) { return {
+ async fetch(request: Request, env: Env, ctx?: ReleaseContext): Promise<Response> {
 		let response: Response;
-		try { response = await route(request, env, assets); }
+		try { response = await route(request, env, assets, cache ?? edgeCache(), ctx); }
 		catch (error) { response = error instanceof HttpError ? json({ error: error.code }, error.status) : json({ error: "storage_unavailable" }, 503); }
+  // Range is deliberately ignored: a full 200, never a partial cache entry.
+  // Weak If-None-Match comparison is valid for GET/HEAD.
+  if ((request.method === "GET" || request.method === "HEAD") && response.status === 200) {
+   const etag = response.headers.get("etag");
+   const condition = request.headers.get("if-none-match");
+   if (etag && condition?.split(",").some(value => value.trim() === "*" || value.trim().replace(/^W\//, "") === etag)) {
+    const headers = new Headers(response.headers);
+    headers.delete("content-length");
+    response = new Response(null, { status: 304, headers });
+   }
+  }
 		// HEAD has no body, including errors and redirects.
 		return request.method === "HEAD" ? new Response(null, response) : response;
 	},
