@@ -30,10 +30,10 @@ describe("public CI contract", () => {
 		expect(JSON.stringify(ci)).not.toMatch(/secrets\.|npm publish|id-token|self-hosted/);
 	});
 
-	test("stable aggregate requires full tests, audited package and performance", () => {
+	test("stable aggregate requires full tests, audited package, performance and landing", () => {
 		expect(ci.jobs.gate.name).toBe("CI");
 		expect(ci.jobs.gate.if).toBe("always()");
-		expect(ci.jobs.gate.needs).toEqual(["test", "package", "performance"]);
+		expect(ci.jobs.gate.needs).toEqual(["test", "package", "performance", "landing"]);
 		const cmd = ci.jobs.test.steps.map((s: any) => s.run ?? "").join("\n");
 		expect(cmd).toContain("bun run typecheck");
 		expect(cmd).toContain("runSkillSandbox");
