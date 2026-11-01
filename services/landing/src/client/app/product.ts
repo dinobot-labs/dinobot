@@ -1,4 +1,4 @@
-/** One owner for preview, OS and clipboard state. No installer is executed. */
+/** One owner for OS and clipboard state. Native screenshot failures are disclosed. No installer is executed. */
 export type OS = 'windows' | 'macos' | 'linux';
 export const commands: Record<OS,string> = {
  windows:'irm https://releases.dinobot.workers.dev/install.ps1 | iex',
@@ -29,23 +29,14 @@ export function createInstaller(initial:OS, render:(os:OS,state:CopyState)=>void
  };
 }
 export function mountProduct():void {
- const image=document.querySelector<HTMLImageElement>('[data-product-image]');
- const original=document.querySelector<HTMLAnchorElement>('[data-full-image]');
- const previewStatus=document.querySelector<HTMLElement>('[data-preview-status]');
- if(image && original && previewStatus){
-  let generation=0;
-  const buttons=[...document.querySelectorAll<HTMLButtonElement>('[data-preview-choice]')];
-  document.querySelector<HTMLElement>('[data-preview-controls]')!.hidden=false;
-  for(const button of buttons)button.addEventListener('click',async()=>{
-   const request=++generation;
-   const black=button.dataset.previewChoice==='black';
-   const src=black?'/product/04-black.png':'/product/03-tool.png';
-   const candidate=new Image();candidate.src=src;
-   try{await candidate.decode();if(request!==generation)return;
-    image.src=src;image.alt=(black?image.dataset.altBlack:image.dataset.altBlue)??'';original.href=src;
-    for(const b of buttons)b.setAttribute('aria-pressed',String(b===button));previewStatus.textContent='';
-   }catch{if(request===generation)previewStatus.textContent=previewStatus.dataset.error??'';}
-  });
+ // Native screenshots only; image failure never implies a successful demo.
+ for(const image of document.querySelectorAll<HTMLImageElement>('[data-product-image]')){
+  const status=image.closest('[data-product-figure]')?.querySelector<HTMLElement>('[data-preview-status]');
+  if(!status)continue;
+  const showError=()=>{status.textContent=status.dataset.error??'';};
+  image.addEventListener('error',showError);
+  image.addEventListener('load',()=>{status.textContent='';});
+  if(image.complete && image.naturalWidth===0)showError();
  }
  const enhanced=document.querySelector<HTMLElement>('[data-install-enhanced]');
  const fallback=document.querySelector<HTMLElement>('[data-install-fallback]');
