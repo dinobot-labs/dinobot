@@ -134,6 +134,33 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
 
+  landing:
+    name: Public landing
+    if: ${{ !inputs.package_only }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      DEEPWORK_TYPECHECK_JOBS: 2
+    defaults:
+      run:
+        working-directory: services/landing
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          ref: ${{ inputs.source_sha || github.sha }}
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: 1.4.2
+          no-cache: true
+      - name: Guard clean publication source before generated files
+        run: bun ../../script/public-artifact-guard.ts
+      - run: bun install --frozen-lockfile
+      - run: bun run test
+      - run: bun test ../../test/landing-public-guard.test.ts
+      - run: bun run typecheck
+      - run: bun run build
+
   performance:
     name: Performance budgets
     if: ${{ !inputs.package_only }}
@@ -209,7 +236,7 @@ jobs:
   gate:
     name: CI
     if: always()
-    needs: [test, package, performance]
+    needs: [test, package, performance, landing]
     runs-on: ubuntu-24.04
     timeout-minutes: 1
     steps:
@@ -218,8 +245,9 @@ jobs:
           TEST_RESULT: ${{ needs.test.result }}
           PACKAGE_RESULT: ${{ needs.package.result }}
           PERFORMANCE_RESULT: ${{ needs.performance.result }}
+          LANDING_RESULT: ${{ needs.landing.result }}
           PACKAGE_ONLY: ${{ inputs.package_only && 'true' || 'false' }}
         run: |
           test "$PACKAGE_RESULT" = success
           if [ "$PACKAGE_ONLY" = true ]; then exit 0; fi
-          test "$TEST_RESULT" = success && test "$PERFORMANCE_RESULT" = success
+          test "$TEST_RESULT" = success && test "$PERFORMANCE_RESULT" = success && test "$LANDING_RESULT" = success

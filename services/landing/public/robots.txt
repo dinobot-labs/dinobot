@@ -1,0 +1,5 @@
+User-agent: *
+Allow: /
+Disallow: /design/
+
+Sitemap: https://www.dinobot.workers.dev/sitemap.xml

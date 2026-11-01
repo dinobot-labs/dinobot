@@ -11,7 +11,8 @@ export async function discoverTests(root: string): Promise<string[]> {
     for (const entry of await readdir(directory, { withFileTypes: true })) {
       const name = prefix + entry.name;
       if (entry.isDirectory()) {
-        if (!entry.name.startsWith(".") && entry.name !== "node_modules") {
+        // The landing job owns all tests in its isolated DOM/Worker package.
+        if (!entry.name.startsWith(".") && entry.name !== "node_modules" && name !== "services/landing") {
           await visit(join(directory, entry.name), name + "/");
         }
       } else if (entry.isFile() && testName.test(entry.name) && entry.name !== "tui-perf.test.ts") {
