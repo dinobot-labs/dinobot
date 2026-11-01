@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="{{$.lang}}">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{privacy.title}}</title>
+<meta name="description" content="{{privacy.description}}">
+<meta name="theme-color" content="#f9fbfa">
+<meta name="color-scheme" content="light">
+<link rel="canonical" href="{{$.url}}">
+<link rel="alternate" hreflang="en" href="{{$.site}}{{$.alt.en}}">
+<link rel="alternate" hreflang="ko" href="{{$.site}}{{$.alt.ko}}">
+<link rel="alternate" hreflang="x-default" href="{{$.site}}{{$.alt.en}}">
+<link rel="icon" href="/favicon.ico" sizes="32x32">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<link rel="preload" href="/fonts/geist-latin.woff2" as="font" type="font/woff2" crossorigin>
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="dinobot">
+<meta property="og:url" content="{{$.url}}">
+<meta property="og:title" content="{{privacy.title}}">
+<meta property="og:description" content="{{privacy.description}}">
+<meta property="og:image" content="{{$.site}}{{meta.ogImage}}">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="{{meta.ogImageAlt}}">
+<meta property="og:locale" content="{{meta.ogLocale}}">
+<meta property="og:locale:alternate" content="{{meta.ogLocaleAlt}}">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="{{privacy.title}}">
+<meta name="twitter:description" content="{{privacy.description}}">
+<meta name="twitter:image" content="{{$.site}}{{meta.ogImage}}">
+<script type="module" src="/src/client/main.ts"></script>
+</head>
+<body class="page page--privacy">
+<a class="skip-link" href="#main">{{a11y.skip}}</a>
+
+{{> header}}
+
+<main id="main" tabindex="-1" class="legal">
+	<article class="legal__inner container container--text">
+		<header class="legal__head">
+			<p class="eyebrow" data-signal="mint">{{privacy.eyebrow}}</p>
+			<h1 class="t-h2 legal__title">{{privacy.h1}}</h1>
+			<p class="t-lede legal__lede">{{privacy.lede}}</p>
+			<p class="legal__date t-label"><span class="text-3">{{privacy.effectiveLabel}}</span> <time datetime="{{privacy.effective}}">{{privacy.effective}}</time></p>
+		</header>
+		<ol class="legal__list" role="list">
+			{{#each privacy.sections}}<li class="legal__item">
+				<h2 class="t-h4 legal__h"><span class="legal__num">{{@number}}</span>{{.title}}</h2>
+				<p class="legal__p">{{{.html}}}</p>
+			</li>{{/each}}
+		</ol>
+		<p class="legal__back"><a class="btn btn--secondary" href="{{nav.home}}"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M13 8H3M7 4L3 8l4 4"/></svg>{{privacy.back}}</a></p>
+	</article>
+</main>
+
+{{> footer}}
+
+
+</body>
+</html>
