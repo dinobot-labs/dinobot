@@ -34,14 +34,25 @@ https://github.com/user-attachments/assets/6b7d112e-d469-4512-b97b-96999dcf8936
 
 ## 安装与运行
 
-需要 **Bun 1.4.2 或更高版本**和你自己的模型提供商凭据。从 Cloudflare 安装正式 CLI/TUI 软件包：
+需要 **[Bun 1.4.2 或更高版本](https://bun.sh/docs/installation)**和你自己的模型提供商凭据。以下脚本从 Cloudflare 安装 CLI/TUI，不使用 sudo，也不修改现有全局软件包。没有 Bun 时会显示安装说明并退出。Desktop 单独安装。
 
-```bash
-bun add -g dinobot@https://releases.dinobot.workers.dev/core/dinobot.tgz
-dinobot
+**macOS / Linux**
+
+```sh
+curl -fsS https://releases.dinobot.workers.dev/install.sh | sh
 ```
 
-之后运行 `dinobot update` 更新；使用 `dinobot update --no-restart` 可保持守护进程运行。旧 npm 发行版用户需要执行一次上述 URL 安装以切换更新来源。发布 Dinobot 不再需要 npm 账号，但第三方依赖仍从 npm 下载。Desktop 单独安装。
+**Windows PowerShell**
+
+```powershell
+irm https://releases.dinobot.workers.dev/install.ps1 | iex
+```
+
+使用安装程序输出的 launcher 路径，或将其 bin 目录加入 PATH 后运行 `dinobot`。旧的全局命令可能在 PATH 中优先：此时请使用输出的绝对路径。现有全局安装不会被删除。
+
+**自动更新：**管理型 launcher 每次启动时检查 Cloudflare，验证 SHA-512，并在独立版本目录中安装更新的稳定版后再切换选择。`dinobot update` 可立即检查而不启动界面。下载或安装失败时保留旧版本，不自动降级。第三方依赖由 Bun 从包注册表下载。
+
+新的 CLI/TUI 进程使用已选版本。**更新程序不会重启正在运行的守护进程，即使它处于空闲状态。**正在执行的请求、排队任务和子代理继续使用旧文件。守护进程自然退出后，通过管理型 launcher 下次启动才使用新版本。仅关闭 TUI 不会停止守护进程。这不是后台定时更新或热替换；源码 checkout 和旧的全局安装不会自动获得此功能。
 
 若要从源码运行，还需要 Git：
 

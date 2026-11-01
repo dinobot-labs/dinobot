@@ -2,12 +2,9 @@
 
 Official CLI/TUI packages are hosted on Cloudflare R2 through the dedicated `releases` Worker. Desktop downloads use a separate service and are unchanged.
 
-```sh
-bun add -g dinobot@https://releases.dinobot.workers.dev/core/dinobot.tgz
-dinobot update
-```
+First installation uses the managed bootstrap scripts documented in the [README](../../README.md#install-and-run): `/install.sh` for macOS/Linux and `/install.ps1` for Windows. Bun is required; the scripts do not install Bun or elevate privileges. The launcher checks Cloudflare on each launch and installs verified packages into immutable per-version slots. Running daemons are never restarted by managed updates. See [Managed Updates](Managed-Updates.md) for paths and activation timing.
 
-The short installation URL redirects to the latest immutable version. Older npm builds need the URL install once: their embedded updater still queries npm. Keep the explicit `dinobot@` name: Bun 1.4.3 can retain an old URL dependency when given only a different tarball URL. The named URL was verified to migrate 0.8.4 to 0.8.5. Bun and npm remain supported installation managers; third-party dependencies still come from npm. No npm publishing account is required.
+The `/core/dinobot.tgz` route remains a compatibility redirect to the latest immutable package, not the recommended managed installer. Existing global installations retain their old updater until the user selects the new managed launcher. Third-party dependencies still come from their package registry; no npm publishing account is required.
 
 Version 0.8.5 bootstrapped this channel through the audited local publisher from source `4f6576eed7f6599e5f22d1c5f59bb0060bfd3b96`. It is already immutable. Do not republish it from a different build: Windows Bun 1.4.3 and hosted Linux Bun 1.4.2 produced different archive hashes. Subsequent versions should be published by the GitHub release workflow below, using its single checked artifact.
 
@@ -29,6 +26,6 @@ Publication stores only `core/` keys in R2. The immutable tarball and version ma
 - Immutable package: `https://releases.dinobot.workers.dev/core/releases/<version>/dinobot-<version>.tgz`
 - Version metadata: `https://releases.dinobot.workers.dev/core/releases/<version>/manifest.json`
 
-After publication, download the public bytes and compare their checksum; test a URL installation in an isolated global prefix. `dinobot update` validates the fixed-origin metadata, verifies the downloaded package digest before installing, preserves the owning manager, and checks the installed version. It never downgrades. Its default daemon restart can interrupt active work; update when idle or use `--no-restart` to leave the daemon untouched.
+After publication, download the public bytes and compare their checksum; execute the public bootstrap in an OS temporary directory with an isolated `DINOBOT_INSTALL_DIR`, then verify the installed launcher and version. Managed `dinobot update` validates fixed-origin metadata and SHA-512, stages a separate package, verifies its identity and executable, then atomically selects it. It never downgrades or restarts a daemon. Old global installations still use the legacy updater (including its restart behavior); they do not automatically gain managed safety.
 
 A merge is not a published release. Link issue fixes to exact commits and label them unreleased until the corresponding artifacts are available. Never include sessions, reports or credentials in release inputs.

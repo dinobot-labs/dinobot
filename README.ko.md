@@ -34,14 +34,25 @@ https://github.com/user-attachments/assets/6b7d112e-d469-4512-b97b-96999dcf8936
 
 ## 설치와 실행
 
-**Bun 1.4.2 이상**과 본인의 모델 제공자 자격 증명이 필요합니다. Cloudflare에서 정식 CLI/TUI 패키지를 설치하세요.
+**[Bun 1.4.2 이상](https://bun.sh/docs/installation)**과 본인의 모델 제공자 자격 증명이 필요합니다. 아래 스크립트는 sudo나 기존 전역 패키지 변경 없이 Cloudflare에서 CLI/TUI를 설치합니다. Bun이 없으면 설치 안내 후 종료합니다. Desktop 설치는 별도입니다.
 
-```bash
-bun add -g dinobot@https://releases.dinobot.workers.dev/core/dinobot.tgz
-dinobot
+**macOS / Linux**
+
+```sh
+curl -fsS https://releases.dinobot.workers.dev/install.sh | sh
 ```
 
-이후에는 `dinobot update`로 업데이트합니다. 데몬을 계속 실행하려면 `dinobot update --no-restart`를 사용하세요. 예전 npm 배포본 사용자는 위 URL 설치를 한 번 실행해야 새 업데이트 경로로 전환됩니다. Dinobot 발행에 npm 계정은 필요 없지만 외부 라이브러리는 npm에서 내려받습니다. Desktop 설치는 별도입니다.
+**Windows PowerShell**
+
+```powershell
+irm https://releases.dinobot.workers.dev/install.ps1 | iex
+```
+
+설치 결과에 표시되는 launcher 경로로 실행하거나 해당 bin 디렉터리를 PATH에 추가한 뒤 `dinobot`을 실행하세요. 기존 전역 `dinobot`이 PATH에서 우선하면 새 관리형 설치가 아닌 옛 명령이 실행됩니다. 이때는 안내된 절대 경로를 사용하세요. 기존 전역 설치는 삭제하지 않습니다.
+
+**자동 업데이트:** 관리형 launcher를 실행할 때마다 Cloudflare를 확인하고, SHA-512 검증을 통과한 최신 안정 버전을 별도 디렉터리에 설치한 뒤 선택합니다. `dinobot update`는 UI 실행 없이 즉시 확인합니다. 다운로드·설치 실패 시 기존 버전을 유지하며 자동 다운그레이드는 하지 않습니다. 외부 의존성은 Bun이 패키지 레지스트리에서 내려받습니다.
+
+새 CLI/TUI 프로세스는 선택된 버전으로 실행됩니다. **이미 실행 중인 데몬은 유휴 상태여도 재시작하지 않습니다.** 진행 중 요청·대기 작업·하위 에이전트는 기존 파일로 계속 동작합니다. 데몬이 자연스럽게 종료된 뒤 관리형 launcher로 다음 기동할 때 새 버전을 사용합니다. TUI를 닫는 것만으로 데몬이 종료되지는 않습니다. 상시 백그라운드 타이머나 실행 중 교체 방식은 아니며 소스 checkout·기존 전역 설치에는 자동 적용되지 않습니다.
 
 소스에서 실행하려면 Git도 필요합니다.
 

@@ -34,14 +34,25 @@ See [dinobot.example.yaml](dinobot.example.yaml) for configuration examples. Ena
 
 ## Install and run
 
-You need **Bun 1.4.2 or newer** and your own model-provider credentials. Install the official CLI/TUI package from Cloudflare:
+You need **[Bun 1.4.2 or newer](https://bun.sh/docs/installation)** and your own model-provider credentials. These scripts install the CLI/TUI from Cloudflare without sudo or changing a global package installation. If Bun is missing, they stop and show how to install it. Desktop installation is separate.
 
-```bash
-bun add -g dinobot@https://releases.dinobot.workers.dev/core/dinobot.tgz
-dinobot
+**macOS / Linux**
+
+```sh
+curl -fsS https://releases.dinobot.workers.dev/install.sh | sh
 ```
 
-Update with `dinobot update` (or `dinobot update --no-restart` to leave the daemon running). Users of older npm releases must run the URL install once to switch update channels. Dinobot publication no longer needs npm credentials; third-party dependencies still download from npm. Desktop installation is separate.
+**Windows PowerShell**
+
+```powershell
+irm https://releases.dinobot.workers.dev/install.ps1 | iex
+```
+
+Use the launcher path printed by the installer, or add its bin directory to PATH, then run `dinobot`. An older global `dinobot` can still take precedence on PATH: use the printed path to select the managed installation. No existing global installation is removed.
+
+**Updates:** the managed launcher checks Cloudflare on each launch, verifies SHA-512, and installs a newer stable release into a separate version directory before selecting it. `dinobot update` checks immediately without starting the UI. A failed download or installation leaves the previous version usable; versions are never downgraded automatically. Third-party dependencies are downloaded by Bun from their package registry.
+
+New CLI/TUI processes use the selected version. **An already running daemon is never restarted by this updater**, even when idle: active requests, queued work and subagents continue on the old files. The daemon uses the selected version on its next natural startup through the managed launcher. Closing the TUI alone does not stop the daemon. This is launch-time updating, not a background timer or live hot-swap; source checkouts and old global installations do not gain it automatically.
 
 To run from source, you also need Git:
 
