@@ -1,250 +1,467 @@
-/** Product copy; historical privacy semantics preserved. */
+/**
+ * English copy for the generated pages (default locale). vite/pages.ts renders src/pages/*.html with this
+ * dictionary: {{meta.title}} is escaped, {{{key}}} is raw (keys ending in Html hold trusted markup).
+ * src/content/ko.ts has exactly the same shape (type Content); test/content checks key parity.
+ *
+ * Every product claim comes from docs/product-facts.md (section numbers in the comments). Tone: crisp, neutral,
+ * no exclamation marks, no emoji, nothing the facts sheet does not support (BRIEF 2).
+ */
+import { CONSENT_VERSION } from "../worker/waitlist.ts";
+import { jsonLd, link, pillWords, SITE } from "./markup.ts";
+
+const title = "dinobot: AI agents, for everyone";
+const description =
+	"dinobot is the AI teammate that lives in your chat. Ask in plain words. It plans the work, splits it up, remembers what matters, and learns how your team likes to work.";
+
 export const en = {
-  "meta": {
-    "title": "Dinobot — Work on your files with AI.",
-    "description": "Use your AI model to read and edit project files and run commands from Desktop or the terminal. Connect Slack, Discord or Telegram when your team needs a chat entry point.",
-    "ogLocale": "en_US",
-    "ogLocaleAlt": "ko_KR",
-    "ogImage": "/brand/og-en.png",
-    "ogImageAlt": "Dinobot — desktop and terminal agent",
-    "isKo": false
-  },
-  "a11y": {
-    "skip": "Skip to content",
-    "language": "Language",
-    "mainNav": "Main",
-    "home": "Dinobot home",
-    "footerNav": "Footer"
-  },
-  "nav": {
-    "home": "/",
-    "product": "Product",
-    "install": "Install",
-    "faq": "FAQ",
-    "cta": "Install"
-  },
-  "hero": {
-    "eyebrow": "AI for project work",
-    "title": "Work on your files with AI.",
-    "body": "Use your AI model to read and edit project files and run commands from Desktop or the terminal. Connect Slack, Discord or Telegram when your team needs a chat entry point.",
-    "setup": "Your model account is required. Chat channels and optional tools need configuration.",
-    "primary": "Get Dinobot",
-    "secondary": "See a workflow",
-    "open": "Open original image",
-    "caption": "Scripted app demo: local mock model, real file and command execution. JavaScript syntax check only—not a full test suite.",
-    "alt": "Dinobot Desktop in its native light theme: a README request, actual bash execution, and the newly written getting-started guide.",
-    "detailAlt": "Actual bash output showing README contents and the generated GETTING_STARTED.md guide after node --check app.js.",
-    "unavailable": "Image unavailable. Use the original image link.",
-    "imageHint": "Real Desktop · README → getting-started guide",
-    "mobileHint": "Scroll the image to read the complete command, or open the original."
-  },
-  "interfaces": {
-    "title": "Different ways to reach the agent",
-    "desktop": "A dedicated graphical client, downloaded separately. Requires a compatible Dinobot daemon.",
-    "cli": "The terminal interface to the local agent daemon. Closing the TUI does not stop that daemon.",
-    "chat": "Configured chat",
-    "chatBody": "Slack, Discord or Telegram adapters for permitted users and destinations—not a hosted shared workspace.",
-    "privacy": "These are entry points to the agent, not a promise that conversations move automatically between them.",
-    "eyebrow": "Desktop · Terminal · Chat",
-    "daemon": "Local agent daemon",
-    "model": "Selected model provider",
-    "tools": "Files, commands & configured tools",
-    "diagramLabel": "Desktop, TUI and configured chat connect to the local agent daemon, which uses a selected external model provider and available tools."
-  },
-  "install": {
-    "title": "Get Dinobot.",
-    "installer": "Download installer",
-    "zip": "Download ZIP",
-    "unsigned": "Unsigned Windows installer and app.",
-    "checksums": "Checksums",
-    "linux": "Linux: use the CLI/TUI. No Linux Desktop download is listed.",
-    "cliTitle": "Install the CLI / TUI.",
-    "requires": "Requires Bun 1.4.2 or newer, already installed. These commands do not install Bun.",
-    "os": "Command for",
-    "copy": "Copy command",
-    "pending": "Copying…",
-    "copied": "Copied",
-    "success": "Command copied.",
-    "manual": "Copy unavailable. Select and copy the command.",
-    "path": "Use the launcher path printed by the installer, or add its bin directory to PATH yourself. PATH is not changed automatically; an older global install may take precedence.",
-    "details": "Launcher paths and updates",
-    "updates": "By default, Windows uses LOCALAPPDATA/dinobot/bin/dinobot.cmd; macOS and Linux use ~/.local/bin/dinobot. A custom DINOBOT_INSTALL_DIR changes the location. The managed launcher checks for updates each time it starts. A running daemon changes version at its next natural startup through that launcher—not when you only close the TUI. Old global installs are not migrated automatically."
-  },
-  "faq": {
-    "title": "Before you start.",
-    "rows": [
-      {
-        "q": "Do I need a model account?",
-        "a": "Yes. Sign in with your own model-provider credentials and choose a model. The download does not include unlimited model usage."
-      },
-      {
-        "q": "Are Desktop and the CLI the same download?",
-        "a": "No. Desktop is a separate client. The CLI installer installs the core daemon and terminal interface, not Desktop."
-      },
-      {
-        "q": "Which platforms are available?",
-        "a": "Desktop downloads listed here are Windows x64 0.1.5, unsigned, and macOS Apple Silicon/Intel 0.1.4. There is no listed Linux Desktop download. The CLI/TUI supports Windows, macOS and Linux with Bun 1.4.2 or newer."
-      },
-      {
-        "q": "When do managed updates take effect?",
-        "a": "The managed launcher checks when launched. A running daemon uses its current files until its next natural startup through that launcher. Closing only the TUI does not restart it. Old global installs are not automatically migrated or updated by this launcher."
-      },
-      {
-        "q": "Is Dinobot open source?",
-        "a": "The source is available under PolyForm Noncommercial 1.0.0. This is not an OSI-approved open-source license or unrestricted permission for commercial use."
-      },
-      {
-        "q": "Does everything stay on my device?",
-        "a": "No. Dinobot runs locally, but external-model requests go to your chosen provider. Connected channels and tools may also communicate with external services. Review the services you configure."
-      }
-    ]
-  },
-  "footer": {
-    "core": "Core source",
-    "desktop": "Desktop source",
-    "privacy": "Privacy",
-    "privacyHref": "/privacy/",
-    "license": "Source available · PolyForm Noncommercial",
-    "legal": "©2026 Dinobot",
-    "tagline": "Work on your files with AI."
-  },
-  "privacy": {
-    "title": "Privacy notice · dinobot waitlist",
-    "description": "How the dinobot waitlist collects, uses and stores your email address.",
-    "eyebrow": "Privacy",
-    "h1": "Waitlist privacy notice",
-    "lede": "This notice covers the email waitlist on this site and nothing else. It explains what we collect, why, where it is stored and how to have it removed.",
-    "effectiveLabel": "Effective",
-    "effective": "2026-10-11",
-    "back": "Back to the home page",
-    "sections": [
-      {
-        "title": "Who is responsible",
-        "html": "The waitlist is run by 정승현, who decides how this data is used. Contact: <a href=\"mailto:dev0jsh@gmail.com\">dev0jsh@gmail.com</a>."
-      },
-      {
-        "title": "What we collect",
-        "html": "Your email address, the language of the page you signed up on, the time you signed up, which form you used (optional), and the version of the consent text you agreed to. We do not store your IP address or browser details with your entry."
-      },
-      {
-        "title": "Why we collect it",
-        "html": "To send you waitlist updates and an invitation when early access opens. Nothing else: no advertising, no profiling."
-      },
-      {
-        "title": "How long we keep it",
-        "html": "Until one year after launch, or until you withdraw, whichever comes first. Then the entry is deleted."
-      },
-      {
-        "title": "Where it is stored",
-        "html": "In a Cloudflare D1 database operated by Cloudflare, Inc. (United States) with an Asia-Pacific location hint. This means your email is transferred to and stored on servers outside Korea. It is sent over an encrypted connection when you submit the form and is kept for the period above."
-      },
-      {
-        "title": "Sharing",
-        "html": "We do not sell your email or share it with anyone. Cloudflare stores it on our behalf as the hosting provider."
-      },
-      {
-        "title": "Your rights",
-        "html": "You can ask to see, correct or delete your entry, or withdraw your consent, at any time by emailing <a href=\"mailto:dev0jsh@gmail.com\">dev0jsh@gmail.com</a>. We act on requests without delay."
-      },
-      {
-        "title": "You may refuse",
-        "html": "Joining is optional. If you do not agree, simply don't submit the form; the only consequence is that you won't be on the waitlist."
-      },
-      {
-        "title": "Cookies",
-        "html": "This site sets one cookie, <code>lang</code>, and only when you switch languages, to remember your choice. There are no analytics or advertising cookies."
-      }
-    ]
-  },
-  "notFound": {
-    "title": "Page not found · dinobot",
-    "description": "This page does not exist.",
-    "eyebrow": "404",
-    "h1": "This page doesn't exist.",
-    "body": "The link may be old, or the address has a typo. Downloads are on the home page.",
-    "home": "Go to the home page",
-    "mascot": "dinobot with crossed-out eyes"
-  },
-  "workflow": {
-    "eyebrow": "A task, from request to result",
-    "title": "From a project folder to a getting-started guide",
-    "exampleLabel": "Example request",
-    "request": "Read the README, write GETTING_STARTED.md, run node --check app.js, and show me the output.",
-    "intro": "One small project. A document written to disk. A command result you can inspect.",
-    "steps": [
-      {
-        "title": "Read the project",
-        "command": "cat README.md",
-        "body": "Read the existing project notes before writing the guide."
-      },
-      {
-        "title": "Write the guide",
-        "command": "GETTING_STARTED.md",
-        "body": "Write a short getting-started document into the project folder."
-      },
-      {
-        "title": "Check syntax",
-        "command": "node --check app.js",
-        "body": "Check JavaScript syntax. This does not run the app or test its behavior."
-      },
-      {
-        "title": "Read the result",
-        "command": "cat GETTING_STARTED.md",
-        "body": "Print the new guide so its contents can be reviewed."
-      }
-    ],
-    "result": "The visible result: GETTING_STARTED.md, with a command to run the demo. The app itself was not run.",
-    "detail": "Actual file and command output"
-  },
-  "features": {
-    "eyebrow": "What changes in your work",
-    "title": "Beyond advice in a chat window",
-    "rows": [
-      {
-        "title": "Work with files and commands",
-        "problem": "Copying an answer into your project is still work.",
-        "body": "Let the selected model use read, write, edit and command tools. Inspect the changed file and command output rather than only a suggested answer.",
-        "example": "In this demo: a new GETTING_STARTED.md and its printed contents."
-      },
-      {
-        "title": "Choose your model and tools",
-        "problem": "Your model needs a connection to your working setup.",
-        "body": "Sign in to a provider and select an available model. Configure additional integrations for the tasks you need; model usage is not included with the download.",
-        "example": "Start with /login and /model. MCP connects tools; it is not a model provider."
-      },
-      {
-        "title": "Bring requests from team chat",
-        "problem": "Team requests often start outside the terminal.",
-        "body": "Configure Slack, Discord or Telegram credentials and access settings so permitted people can request work in a connected channel.",
-        "example": "Chat requires setup. It is not automatic conversation transfer between interfaces."
-      }
-    ]
-  },
-  "configuration": {
-    "eyebrow": "Before the first request",
-    "title": "Your model. Your setup.",
-    "rows": [
-      {
-        "title": "Connect and choose",
-        "body": "Use /login to connect a provider and /model to select an available model. Your credentials and provider usage are your responsibility."
-      },
-      {
-        "title": "Add integrations deliberately",
-        "body": "File and command tools are core. Browser, computer and MCP integrations have their own setup, dependencies and accounts. Chat needs credentials and access configuration."
-      },
-      {
-        "title": "Understand the boundary",
-        "body": "Local execution is not isolation or a promise of privacy. External models and connected services may receive data. The HTTP API is unauthenticated: keep it on loopback with trusted local accounts; do not expose it to the Internet."
-      }
-    ],
-    "security": "Read the security guidance",
-    "license": "Source available under PolyForm Noncommercial 1.0.0, not OSI-approved open source. Commercial use requires separate written permission.",
-    "licenseLink": "Read the license"
-  },
-  "start": {
-    "title": "Then make your first request",
-    "body": "Launch Dinobot in your project folder, connect your provider with /login, choose an available model with /model, and start with a small task you can review.",
-    "link": "Return to the example workflow"
-  }
+	meta: {
+		title,
+		description,
+		ogLocale: "en_US",
+		ogLocaleAlt: "ko_KR",
+		ogImage: "/brand/og-en.png",
+		ogImageAlt: "dinobot, the dot-matrix T-rex, next to the headline: AI agents, for everyone.",
+		consentVersion: CONSENT_VERSION,
+		isKo: false,
+		jsonLd: jsonLd({
+			"@context": "https://schema.org",
+			"@graph": [
+				{ "@type": "Organization", "@id": `${SITE}/#org`, name: "dinobot", url: `${SITE}/`, logo: `${SITE}/apple-touch-icon.png` },
+				{ "@type": "WebSite", "@id": `${SITE}/#site`, name: "dinobot", url: `${SITE}/`, inLanguage: ["en", "ko"], publisher: { "@id": `${SITE}/#org` } },
+				{ "@type": "WebPage", "@id": `${SITE}/#page`, url: `${SITE}/`, name: title, description, inLanguage: "en", isPartOf: { "@id": `${SITE}/#site` } },
+			],
+		}),
+	},
+	a11y: {
+		skip: "Skip to content",
+		language: "Language",
+		mainNav: "Main",
+		home: "dinobot home",
+		footerNav: "Footer",
+		marqueePause: "Pause the list",
+		marqueePlay: "Play the list",
+	},
+	nav: {
+		home: "/",
+		strengths: "Strengths",
+		how: "How it works",
+		faq: "FAQ",
+		download: "Download",
+		cta: "Download",
+	},
+	hero: {
+		eyebrow: "Now available",
+		eyebrowNote: "macOS, Windows and the terminal",
+		/** Hero download buttons. app/download.ts swaps in the label for the visitor's OS; every button jumps to #download. */
+		download: {
+			cta: "Download dinobot",
+			ctaMac: "Download for Mac",
+			ctaWindows: "Download for Windows",
+			cli: "Install the CLI",
+			meta: "macOS 13+ · Windows 10 and 11 (64-bit) · CLI for Linux, macOS and Windows",
+		},
+		title: "AI agents, for everyone.",
+		titleHtml: `AI agents, <br class="br-wide">for ${pillWords(["everyone", "your team", "anyone"])}.`,
+		sub: "dinobot is the AI teammate that lives in your chat. Ask in plain words. It plans the work, splits it up, remembers what matters, and learns how your team likes to work.",
+		sceneLabel: "A chat thread: someone asks dinobot to update and publish an FAQ, and dinobot replies with a five-step plan.",
+		/** The dinosaur theme switch in the hero stage (ADR 0100): short visible names, full names for assistive tech. */
+		dino: {
+			label: "Dinosaur theme",
+			options: [
+				{ id: "rex", name: "T-rex", label: "T-rex, Signal theme" },
+				{ id: "ptero", name: "Ptero", label: "Pterodactyl, Dusk theme" },
+				{ id: "brachio", name: "Brachio", label: "Brachiosaurus, Fern theme" },
+				{ id: "tricera", name: "Trike", label: "Triceratops, Canyon theme" },
+			],
+		},
+		chat: {
+			channel: "launch-notes",
+			members: "4 members",
+			user: "Mina",
+			userInitial: "M",
+			time: "10:42",
+			mention: "@dinobot",
+			ask: "update the pricing FAQ in English and Korean, then publish it.",
+			bot: "dinobot",
+			botTag: "App",
+			reply: "Here is the plan. Five steps, two at the same time.",
+			steps: [
+				{ label: "Draft the English FAQ", who: "Helper 1" },
+				{ label: "Draft the Korean FAQ", who: "Helper 2" },
+				{ label: "Check both drafts", who: "Check" },
+				{ label: "Approve publishing", who: "You" },
+				{ label: "Publish", who: "After approval" },
+			],
+			askQ: "Publish the updated FAQ? This can't be undone.",
+			approve: "Approve",
+			deny: "Deny",
+			done: "Published. Every check passed.",
+			queued: "Queued",
+			running: "Running",
+			waiting: "Waiting",
+			finished: "Done",
+		},
+	},
+	/** The waitlist form is no longer on the page (downloads are open); this copy stays as the record of what earlier signups agreed to. */
+	form: {
+		label: "Email",
+		placeholder: "you@company.com",
+		submit: "Join the waitlist",
+		consentHtml: `I'm 14 or older and agree to the collection and use of my email for the waitlist (stored on Cloudflare's servers outside Korea). ${link("/privacy/", "Privacy notice")}`,
+		trust: ["No spam", "Leave any time", "Early access and updates only"],
+		honeypot: "Website (leave this empty)",
+		doneTitle: "You're on the list.",
+		doneSub: "We'll email you about early access and updates.",
+		alreadyTitle: "You're already on the list.",
+		alreadySub: "Same email, same spot. We'll be in touch about early access.",
+		positionLabel: "Your spot on the list",
+		invalidEmail: "Check the email address and try again.",
+		consentRequired: "Please tick the consent box to join.",
+		rateLimited: "Too many tries. Please wait a minute and try again.",
+		offline: "You're offline. Your email is still here; try again once you're connected.",
+		failed: "We couldn't save that. Your email is still here; it's safe to retry.",
+	},
+	channels: {
+		label: "Works where you chat",
+		chat: [
+			{ name: "Slack", glyph: "chat" },
+			{ name: "Telegram", glyph: "chat" },
+			{ name: "Discord", glyph: "chat" },
+			{ name: "Desktop app", glyph: "laptop" },
+			{ name: "Terminal app", glyph: "terminal" },
+			{ name: "HTTP API", glyph: "api" },
+		],
+		tools: [
+			{ name: "Web search", glyph: "search", tag: "on by default" },
+			{ name: "GitHub", glyph: "branch", tag: "opt-in" },
+			{ name: "MCP servers", glyph: "plug", tag: "opt-in" },
+			{ name: "Computer use", glyph: "cursor", tag: "opt-in" },
+		],
+	},
+	philosophy: {
+		eyebrow: "What we believe",
+		statement:
+			"AI agents shouldn't need a specialist. If you can ask a teammate, you can ask dinobot. The planning, the handoffs and the checks happen behind the chat.",
+	},
+	strengths: {
+		eyebrow: "Strengths",
+		title: "Plain words in.",
+		muted: "Real work out.",
+		lede: "Four things happen behind every bigger request. You see the result in your thread; here is what dinobot does to get there.",
+		chapters: [
+			{
+				id: "dag",
+				signal: "mint",
+				num: "01",
+				label: "DAG",
+				title: "Big requests become plans",
+				body: "dinobot turns a multi-step request into a graph of steps, runs independent steps in parallel, checks every requirement, and asks before anything irreversible.",
+				steps: [
+					"You ask once: update the pricing FAQ in two languages, then publish it.",
+					"dinobot writes a five-step plan and checks the plan itself before anything runs.",
+					"Both drafts run at the same time, and a check step reviews them.",
+					"Publishing can't be undone, so that step waits for your approval.",
+				],
+			},
+			{
+				id: "memory",
+				signal: "teal",
+				num: "02",
+				label: "Memory",
+				title: "Remembers what matters",
+				body: "Team and project memory live in dinobot's own database, shared across threads and kept through restarts. It notes project facts as you work and recalls them when relevant.",
+				steps: [
+					"Monday: \u201cWe ship on Thursdays. No pushes on Fridays.\u201d",
+					"In the background, dinobot notes both as project facts.",
+					"Wednesday, another thread asks for this week's release checklist.",
+					"The two facts come back before dinobot answers, so nobody repeats them.",
+				],
+			},
+			{
+				id: "assignment",
+				signal: "cyan",
+				num: "03",
+				label: "Assignment",
+				title: "Delegates like a team lead",
+				body: "dinobot splits a job into parts and assigns each to its own helper agent, running independent parts in parallel and merging the results into one answer.",
+				steps: [
+					"\u201cCompare our three onboarding emails and rewrite the weakest one.\u201d",
+					"Three helper agents review one email each, at the same time.",
+					"Another helper rewrites the weakest email.",
+					"You follow one conversation and get one merged answer.",
+				],
+			},
+			{
+				id: "evolve",
+				signal: "blue",
+				num: "04",
+				label: "Self-improving harness",
+				title: "Learns how your team works",
+				body: "As work wraps up, dinobot reviews what happened and keeps short working agreements, your preferences and its own lessons, and applies them to later requests.",
+				steps: [
+					"You say it once: \u201cRun the tests before you tell me it's done.\u201d",
+					"When the work wraps up, dinobot looks back at what happened.",
+					"It keeps your correction as a working agreement.",
+					"The next request starts with that agreement in effect. Reusable procedures can become versioned skills.",
+				],
+			},
+		],
+	},
+	demo: {
+		eyebrow: "Watch it work",
+		title: "One request, start to finish.",
+		muted: "Pick one and press play.",
+		lede: "Plan, helpers, memory, checks and the answer, in one replayable run.",
+	},
+	bento: {
+		eyebrow: "More strengths",
+		title: "Built for work you can trust.",
+		muted: "Not just answers.",
+		items: [
+			{
+				size: "wide",
+				signal: "mint",
+				glyph: "b-check",
+				label: "Verification",
+				title: "Done means proven",
+				body: "Before it starts, dinobot writes down what success looks like. It runs real checks, keeps the results, and only calls work verified when every required check passes.",
+			},
+			{
+				size: "wide",
+				signal: "indigo",
+				glyph: "b-ask",
+				label: "Asks",
+				title: "Asks only what is yours",
+				body: "dinobot settles routine choices itself and asks you only about the ones that are yours, as two to four buttons in chat. Unanswered approvals default to no.",
+			},
+			{
+				size: "base",
+				signal: "blue",
+				glyph: "b-target",
+				label: "Goals",
+				title: "Goals that survive long work",
+				body: "Every goal is written as measurable checks and shown to dinobot on every request, so the target stays clear through long sessions and restarts.",
+			},
+			{
+				size: "base",
+				signal: "cyan",
+				glyph: "b-tools",
+				label: "Tools",
+				title: "Hands on your real tools",
+				body: "Files, shell, web search and memory are built in. GitHub, Google Workspace, MCP servers and desktop control are opt-in; GitHub and Google start read-only.",
+			},
+			{
+				size: "base",
+				signal: "teal",
+				glyph: "b-threads",
+				label: "Session awareness",
+				title: "Knows what other threads are doing",
+				body: "dinobot searches past conversations, sees which threads are busy, and claims shared work before changing it, so parallel threads avoid duplicate work.",
+			},
+			{
+				size: "wide",
+				signal: "none",
+				glyph: "b-code",
+				label: "Codemode",
+				title: "Many steps, every one recorded",
+				body: "dinobot can script dozens of tool calls in one step. Each call leaves a receipt, so after a crash it checks what finished instead of repeating it.",
+			},
+			{
+				size: "wide",
+				signal: "none",
+				glyph: "b-data",
+				label: "Your data",
+				title: "Stored where dinobot runs",
+				body: "Conversations, memory and credentials are stored on the machine that runs dinobot. Model calls go to the provider you choose, and web search can be turned off.",
+			},
+		],
+	},
+	how: {
+		eyebrow: "How it works",
+		title: "Three steps.",
+		muted: "No new app to learn.",
+		steps: [
+			{ glyph: "plug", title: "Install and connect", body: "Download the desktop app or install the CLI. To bring dinobot into Slack, Telegram or Discord, connect them once in dinobot.yaml." },
+			{ glyph: "chat", title: "Ask in plain words", body: "Write in a thread, a topic or a direct message, or use /ask on Discord." },
+			{ glyph: "check", title: "Get results in the thread", body: "dinobot plans, assigns parts to helper agents, checks results and replies where you asked." },
+		],
+	},
+	faq: {
+		eyebrow: "FAQ",
+		title: "Questions, answered.",
+		muted: "Plainly.",
+		items: [
+			{
+				q: "What is dinobot?",
+				a: "dinobot is an AI agent for teams. It runs as a background service on a computer or server you control and answers in Slack, Telegram, Discord or its terminal app. You ask in plain words; for bigger jobs it plans the steps, assigns parts to helper agents, remembers project context and checks the results.",
+			},
+			{
+				q: "Do I need to know how to code?",
+				a: "Not to use it: you ask in plain words in your chat or in the desktop app. The desktop app for macOS and Windows already includes the dinobot service, so you install it with one command or a download. Connecting a team chat app is still technical: someone signs in to an AI model provider and adds the chat app in a configuration file (dinobot.yaml).",
+			},
+			{
+				q: "Which chat apps does it work with?",
+				a: "Slack, Telegram and Discord, plus dinobot's own desktop app for macOS and Windows, its terminal app and a local HTTP API for scripts. Microsoft Teams is not supported.",
+			},
+			{
+				q: "Which AI models and accounts does it use?",
+				a: "Your own. You sign in to a model provider with /login, using OAuth or an API key, and pick a model with /model. A new install starts with Anthropic's claude-sonnet-4-6. If you add several accounts for one provider, dinobot moves to the next account when one hits a rate or usage limit.",
+			},
+			{
+				q: "Where does my data live?",
+				a: "On the computer that runs dinobot. Conversations, memory and skills are kept in a local SQLite database, and model credentials in a private file next to it. Your messages go to the model provider you connect, and web search queries go to Startpage or DuckDuckGo unless you turn search off. Data reaches the dinobot team only if you consent to /report, and the optional Google plugin signs in through a dinobot relay that does not store your tokens.",
+			},
+			{
+				q: "Can it break things?",
+				a: "It acts with the permissions of the machine it runs on, so connect only what it needs. Guardrails help: GitHub and Google writes stay off until you enable them, desktop control is opt-in, irreversible steps in a plan wait for a person's approval (unanswered approvals default to no), and work is certified only when real checks pass. Its code runner is not a security sandbox, so isolate the machine if you need that.",
+			},
+			{
+				q: "Does it remember things between conversations?",
+				a: "Yes. Team and project memory is shared by every thread and survives restarts. dinobot also notes project facts in the background and keeps working agreements, short rules about how you like work done, which apply to every request. You can ask it to list, change or delete any of them.",
+			},
+			{
+				q: "Will it ask me before doing something important?",
+				a: "For decisions that are yours, yes. dinobot settles routine choices itself and asks about yours with two to four options, shown as buttons in Slack, Telegram and Discord or as a picker in the terminal app, with at most three open choice questions at a time. You can always answer in your own words. Steps marked irreversible in a plan wait for your approval; other actions run without a separate approval step.",
+			},
+			{
+				q: "Is dinobot open source?",
+				a: "No. dinobot's source code is not public, and the package is published without an open-source license.",
+			},
+			{
+				q: "Can I use it now?",
+				a: "Yes. The desktop app for macOS and Windows and the CLI are open to everyone; the download section above has both. dinobot uses your own AI model account, so model usage follows your provider's plan.",
+			},
+			{
+				q: "Why does my computer warn me about the app?",
+				a: "The desktop app is not code-signed or notarized yet. The install commands download it in a way that macOS Gatekeeper and Windows SmartScreen do not stop, and they check every file against its SHA-256 checksum before installing. If you download a file directly instead, macOS blocks it the first time (allow it in System Settings, Privacy & Security, Open Anyway), and Windows SmartScreen asks you to choose More info, then Run anyway.",
+			},
+		],
+	},
+	download: {
+		eyebrow: "Download",
+		title: "Get dinobot.",
+		muted: "Pick your setup.",
+		lede: "The desktop app brings the dinobot service with it, so there is nothing else to install. The CLI runs dinobot in a terminal or on a server.",
+		recommended: "For this device",
+		copy: "Copy",
+		copied: "Copied",
+		commandLabel: "Install command",
+		platforms: [
+			{
+				id: "mac",
+				glyph: "laptop",
+				name: "macOS",
+				requires: "macOS 13 or later · Apple Silicon and Intel",
+				how: "Paste into Terminal",
+				command: "curl -fsSL https://get.dinobot.workers.dev | bash",
+				detail: "Picks the build for your Mac, checks its SHA-256, installs dinobot in Applications and tells you when an update is out.",
+				filesLabel: "Or download the app",
+				files: [
+					{ label: "Apple Silicon (.zip)", href: "https://get.dinobot.workers.dev/download/mac-arm64" },
+					{ label: "Intel (.zip)", href: "https://get.dinobot.workers.dev/download/mac-x64" },
+				],
+				note: "Not notarized by Apple yet. The Terminal command installs without a warning. A downloaded zip is blocked the first time: open System Settings, Privacy & Security, and choose Open Anyway.",
+			},
+			{
+				id: "windows",
+				glyph: "window",
+				name: "Windows",
+				requires: "Windows 10 or 11 · 64-bit",
+				how: "Paste into PowerShell",
+				command: "irm https://get.dinobot.workers.dev/install.ps1 | iex",
+				detail: "Checks the installer's SHA-256, installs dinobot for your account without admin rights and tells you when an update is out.",
+				filesLabel: "Or download the installer",
+				files: [{ label: "Windows installer (.exe)", href: "https://get.dinobot.workers.dev/download/windows" }],
+				note: "Not code-signed yet. The PowerShell command installs without a warning. If SmartScreen stops the downloaded installer, choose More info, then Run anyway.",
+			},
+			{
+				id: "cli",
+				glyph: "terminal",
+				name: "CLI",
+				requires: "Linux, macOS and Windows · Bun 1.4 or later",
+				how: "Install with Bun",
+				command: "bun add -g dinobot",
+				detail: "Then run dinobot init once to create the default settings, and dinobot to open the terminal app. dinobot update keeps it current.",
+				filesLabel: "Links",
+				files: [
+					{ label: "Get Bun", href: "https://bun.sh" },
+					{ label: "dinobot on npm", href: "https://www.npmjs.com/package/dinobot" },
+				],
+				note: "Runs as a background service with channels for Slack, Telegram and Discord. The desktop app is the easier start on a personal computer.",
+			},
+		],
+		footHtml: `Latest desktop release and SHA-256 checksums: ${link("https://get.dinobot.workers.dev/latest.json", "latest.json")}`,
+	},
+	final: {
+		eyebrow: "Get started",
+		title: "Meet your new teammate.",
+		muted: "On Mac, Windows and the terminal.",
+		cta: "Download dinobot",
+	},
+	footer: {
+		tagline: "AI agents, for everyone.",
+		privacy: "Privacy",
+		privacyHref: "/privacy/",
+		top: "Back to top",
+		legal: "\u00a9 2026 dinobot",
+	},
+	privacy: {
+		title: "Privacy notice · dinobot waitlist",
+		description: "How the dinobot waitlist collects, uses and stores your email address.",
+		eyebrow: "Privacy",
+		h1: "Waitlist privacy notice",
+		lede: "This notice covers the email waitlist on this site and nothing else. It explains what we collect, why, where it is stored and how to have it removed.",
+		effectiveLabel: "Effective",
+		effective: "2026-10-11",
+		back: "Back to the home page",
+		sections: [
+			{
+				title: "Who is responsible",
+				html: `The waitlist is run by 정승현, who decides how this data is used. Contact: ${link("mailto:dev0jsh@gmail.com", "dev0jsh@gmail.com")}.`,
+			},
+			{
+				title: "What we collect",
+				html: "Your email address, the language of the page you signed up on, the time you signed up, which form you used (optional), and the version of the consent text you agreed to. We do not store your IP address or browser details with your entry.",
+			},
+			{
+				title: "Why we collect it",
+				html: "To send you waitlist updates and an invitation when early access opens. Nothing else: no advertising, no profiling.",
+			},
+			{
+				title: "How long we keep it",
+				html: "Until one year after launch, or until you withdraw, whichever comes first. Then the entry is deleted.",
+			},
+			{
+				title: "Where it is stored",
+				html: "In a Cloudflare D1 database operated by Cloudflare, Inc. (United States) with an Asia-Pacific location hint. This means your email is transferred to and stored on servers outside Korea. It is sent over an encrypted connection when you submit the form and is kept for the period above.",
+			},
+			{
+				title: "Sharing",
+				html: "We do not sell your email or share it with anyone. Cloudflare stores it on our behalf as the hosting provider.",
+			},
+			{
+				title: "Your rights",
+				html: `You can ask to see, correct or delete your entry, or withdraw your consent, at any time by emailing ${link("mailto:dev0jsh@gmail.com", "dev0jsh@gmail.com")}. We act on requests without delay.`,
+			},
+			{
+				title: "You may refuse",
+				html: "Joining is optional. If you do not agree, simply don't submit the form; the only consequence is that you won't be on the waitlist.",
+			},
+			{
+				title: "Cookies",
+				html: "This site sets one cookie, <code>lang</code>, and only when you switch languages, to remember your choice. There are no analytics or advertising cookies.",
+			},
+		],
+	},
+	notFound: {
+		title: "Page not found · dinobot",
+		description: "This page does not exist.",
+		eyebrow: "404",
+		h1: "This page doesn't exist.",
+		body: "The link may be old, or the address has a typo. Downloads are on the home page.",
+		home: "Go to the home page",
+		mascot: "dinobot with crossed-out eyes",
+	},
 };
+
 export type Content = typeof en;

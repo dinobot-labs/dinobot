@@ -1,250 +1,462 @@
-/** Product copy; historical privacy semantics preserved. */
+/**
+ * Korean copy; exactly the same shape as src/content/en.ts (type Content). Natural Korean, not a word-for-word
+ * translation; meanings and claims match docs/product-facts.md (KO lines there are the source).
+ * Line breaks: base.css sets word-break: keep-all for [lang="ko"], so lines break between words.
+ */
+import { CONSENT_VERSION } from "../worker/waitlist.ts";
 import type { Content } from "./en.ts";
-export const ko = {
-  "meta": {
-    "title": "Dinobot — AI와 파일·명령어 작업",
-    "description": "데스크톱이나 터미널에서 선택한 AI 모델로 프로젝트 파일을 읽고 수정하고, 명령어를 실행하세요. 팀 채팅에서 요청하려면 Slack, Discord, Telegram을 연결할 수 있어요.",
-    "ogLocale": "ko_KR",
-    "ogLocaleAlt": "en_US",
-    "ogImage": "/brand/og-ko.png",
-    "ogImageAlt": "Dinobot — 데스크톱과 터미널 에이전트",
-    "isKo": true
-  },
-  "a11y": {
-    "skip": "본문으로 건너뛰기",
-    "language": "언어",
-    "mainNav": "주 메뉴",
-    "home": "Dinobot 홈",
-    "footerNav": "하단 메뉴"
-  },
-  "nav": {
-    "home": "/ko/",
-    "product": "제품",
-    "install": "설치",
-    "faq": "자주 묻는 질문",
-    "cta": "설치"
-  },
-  "hero": {
-    "eyebrow": "프로젝트 작업을 위한 AI",
-    "title": "AI와 파일을 읽고 수정하고, 명령어를 실행하세요.",
-    "body": "데스크톱이나 터미널에서 선택한 AI 모델로 프로젝트 파일을 읽고 수정하고, 명령어를 실행하세요. 팀 채팅에서 요청하려면 Slack, Discord, Telegram을 연결할 수 있어요.",
-    "setup": "모델 계정이 필요하며, 채팅 채널과 추가 도구는 별도 설정이 필요합니다.",
-    "primary": "Dinobot 시작하기",
-    "secondary": "작업 흐름 보기",
-    "open": "원본 이미지 보기",
-    "caption": "시나리오 기반 앱 시연: 로컬 모의 모델을 사용했고, 파일·명령 도구는 실제 실행했습니다. JavaScript 구문 검사만 수행했으며 전체 테스트는 아닙니다.",
-    "alt": "기본 라이트 테마의 Dinobot Desktop. README 요청, 실제 bash 실행과 새로 작성한 시작 안내가 보입니다.",
-    "detailAlt": "README 내용과 node --check app.js 이후 출력한 GETTING_STARTED.md 안내가 보이는 실제 bash 실행 결과.",
-    "unavailable": "이미지를 불러오지 못했습니다. 원본 이미지 링크를 이용해 주세요.",
-    "imageHint": "실제 Desktop 화면 · README에서 시작 안내까지",
-    "mobileHint": "이미지를 가로로 스크롤하거나 원본을 열어 전체 명령을 읽을 수 있어요."
-  },
-  "interfaces": {
-    "eyebrow": "Desktop · 터미널 · 채팅",
-    "title": "에이전트를 만나는 여러 방법",
-    "desktop": "별도로 다운로드하는 전용 그래픽 클라이언트입니다. 호환되는 Dinobot 데몬이 필요합니다.",
-    "cli": "로컬 에이전트 데몬에 연결하는 터미널 인터페이스입니다. TUI를 닫아도 데몬은 종료되지 않습니다.",
-    "chat": "설정한 채팅",
-    "chatBody": "허용된 사용자와 채널을 위한 Slack, Discord, Telegram 연결입니다. 호스팅된 공동 작업 서비스는 아닙니다.",
-    "privacy": "각각 에이전트에 요청하는 진입점이며, 인터페이스 사이에서 대화가 자동 이동한다는 뜻은 아닙니다.",
-    "daemon": "로컬 에이전트 데몬",
-    "model": "선택한 외부 모델 제공업체",
-    "tools": "파일·명령 및 설정한 도구",
-    "diagramLabel": "Desktop, TUI와 설정한 채팅은 로컬 에이전트 데몬에 연결됩니다. 데몬은 선택한 외부 모델 제공업체와 사용 가능한 도구를 이용합니다."
-  },
-  "install": {
-    "title": "Dinobot 시작하기.",
-    "installer": "설치 파일 받기",
-    "zip": "ZIP 받기",
-    "unsigned": "Windows 설치 파일과 앱은 코드 서명이 없습니다.",
-    "checksums": "체크섬",
-    "linux": "Linux에서는 CLI/TUI를 사용하세요. 제공되는 Linux Desktop 다운로드는 없습니다.",
-    "cliTitle": "CLI / TUI 설치.",
-    "requires": "Bun 1.4.2 이상이 먼저 설치되어 있어야 합니다. 아래 명령은 Bun을 설치하지 않습니다.",
-    "os": "설치할 운영체제",
-    "copy": "명령 복사",
-    "pending": "복사 중…",
-    "copied": "복사됨",
-    "success": "명령을 복사했습니다.",
-    "manual": "자동 복사가 되지 않습니다. 명령을 선택해 복사하세요.",
-    "path": "설치기가 출력한 실행 경로를 사용하거나 bin 디렉터리를 PATH에 직접 추가하세요. PATH는 자동으로 바뀌지 않으며, 기존 전역 설치가 먼저 실행될 수 있습니다.",
-    "details": "실행 경로와 업데이트",
-    "updates": "기본 실행 경로는 Windows의 LOCALAPPDATA/dinobot/bin/dinobot.cmd, macOS·Linux의 ~/.local/bin/dinobot입니다. DINOBOT_INSTALL_DIR를 지정하면 위치가 달라집니다. 관리형 실행기는 실행할 때마다 업데이트를 확인합니다. 실행 중인 데몬은 다음에 해당 실행기를 통해 새로 시작할 때 버전이 바뀝니다. TUI만 닫아서는 데몬이 재시작되지 않으며, 기존 전역 설치도 자동 이전되지 않습니다."
-  },
-  "faq": {
-    "title": "시작하기 전에.",
-    "rows": [
-      {
-        "q": "모델 계정이 필요한가요?",
-        "a": "네. 사용자의 모델 제공업체 계정으로 로그인하고 모델을 선택하세요. 다운로드에 무제한 모델 사용이 포함되지는 않습니다."
-      },
-      {
-        "q": "Desktop과 CLI는 같은 다운로드인가요?",
-        "a": "아니요. Desktop은 별도 클라이언트입니다. CLI 설치기는 Desktop이 아니라 코어 데몬과 터미널 인터페이스를 설치합니다."
-      },
-      {
-        "q": "어떤 운영체제를 지원하나요?",
-        "a": "Desktop은 서명 없는 Windows x64 0.1.5와 macOS Apple Silicon·Intel 0.1.4 다운로드를 제공합니다. Linux Desktop 다운로드는 없습니다. CLI/TUI는 Bun 1.4.2 이상이 설치된 Windows, macOS, Linux에서 사용할 수 있습니다."
-      },
-      {
-        "q": "관리형 업데이트는 언제 적용되나요?",
-        "a": "관리형 실행기는 실행 시 업데이트를 확인합니다. 실행 중인 데몬은 다음에 해당 실행기를 통해 새로 시작할 때까지 현재 파일을 사용합니다. TUI만 닫아서는 재시작되지 않습니다. 기존 전역 설치는 이 실행기로 자동 이전되거나 업데이트되지 않습니다."
-      },
-      {
-        "q": "Dinobot은 오픈 소스인가요?",
-        "a": "소스는 PolyForm Noncommercial 1.0.0으로 공개되어 있습니다. OSI 승인 오픈 소스 라이선스나 제한 없는 상업적 이용 허가는 아닙니다."
-      },
-      {
-        "q": "모든 데이터가 내 기기에만 남나요?",
-        "a": "아니요. Dinobot은 기기에서 실행되지만 외부 모델 요청은 선택한 제공업체로 전송됩니다. 연결한 채널과 도구도 외부 서비스와 통신할 수 있습니다. 사용하는 서비스의 정책을 확인하세요."
-      }
-    ]
-  },
-  "footer": {
-    "core": "코어 소스",
-    "desktop": "Desktop 소스",
-    "privacy": "개인정보 처리방침",
-    "privacyHref": "/ko/privacy/",
-    "license": "소스 공개 · PolyForm Noncommercial",
-    "legal": "©2026 Dinobot",
-    "tagline": "AI와 파일을 읽고 수정하고, 명령어를 실행하세요."
-  },
-  "privacy": {
-    "title": "개인정보 처리방침 · dinobot 대기자 명단",
-    "description": "dinobot 대기자 명단이 이메일 주소를 수집하고 이용하고 보관하는 방법입니다.",
-    "eyebrow": "개인정보",
-    "h1": "대기자 명단 개인정보 처리방침",
-    "lede": "이 방침은 이 사이트의 이메일 대기자 명단에만 적용됩니다. 무엇을 왜 수집하는지, 어디에 보관하는지, 어떻게 삭제를 요청하는지 설명합니다.",
-    "effectiveLabel": "시행일",
-    "effective": "2026-10-11",
-    "back": "홈으로 돌아가기",
-    "sections": [
-      {
-        "title": "개인정보 처리자",
-        "html": "대기자 명단은 정승현이 운영하며, 이 정보의 이용 방법을 결정합니다. 연락처: <a href=\"mailto:dev0jsh@gmail.com\">dev0jsh@gmail.com</a>"
-      },
-      {
-        "title": "수집하는 항목",
-        "html": "이메일 주소, 등록한 페이지의 언어, 등록 시각, 사용한 신청 양식(선택), 동의한 안내문의 버전입니다. IP 주소나 브라우저 정보는 등록 정보와 함께 저장하지 않습니다."
-      },
-      {
-        "title": "수집·이용 목적",
-        "html": "대기자 안내와 얼리 액세스가 열릴 때의 초대 메일 발송에만 씁니다. 광고나 프로파일링에는 쓰지 않습니다."
-      },
-      {
-        "title": "보유 기간",
-        "html": "출시 후 1년이 지나거나 동의를 철회할 때 중 먼저 오는 시점까지 보관하고, 그 뒤 삭제합니다."
-      },
-      {
-        "title": "보관 장소와 국외 이전",
-        "html": "Cloudflare, Inc.(미국)가 운영하는 Cloudflare D1 데이터베이스에 아시아·태평양 위치 힌트로 보관합니다. 즉, 이메일은 국외 서버로 이전되어 보관됩니다. 양식을 제출할 때 암호화된 연결로 전송되며, 위 보유 기간 동안 보관됩니다."
-      },
-      {
-        "title": "제3자 제공",
-        "html": "이메일을 판매하거나 다른 곳에 제공하지 않습니다. Cloudflare는 호스팅 제공자로서 저희를 대신해 보관만 합니다."
-      },
-      {
-        "title": "정보주체의 권리",
-        "html": "언제든 <a href=\"mailto:dev0jsh@gmail.com\">dev0jsh@gmail.com</a>로 메일을 보내 등록 정보의 열람, 정정, 삭제나 동의 철회를 요청할 수 있습니다. 요청은 지체 없이 처리합니다."
-      },
-      {
-        "title": "동의를 거부할 권리",
-        "html": "등록은 선택입니다. 동의하지 않으면 양식을 제출하지 않으면 되며, 그 경우 대기자 명단에 오르지 않는 것 외에 다른 불이익은 없습니다."
-      },
-      {
-        "title": "쿠키",
-        "html": "이 사이트는 언어를 바꿀 때만 선택을 기억하기 위해 <code>lang</code> 쿠키 하나를 설정합니다. 분석이나 광고용 쿠키는 없습니다."
-      }
-    ]
-  },
-  "notFound": {
-    "title": "페이지를 찾을 수 없습니다 · dinobot",
-    "description": "존재하지 않는 페이지입니다.",
-    "eyebrow": "404",
-    "h1": "없는 페이지입니다.",
-    "body": "링크가 오래됐거나 주소에 오타가 있을 수 있어요. 다운로드는 홈에 있습니다.",
-    "home": "홈으로 가기",
-    "mascot": "눈이 X로 바뀐 dinobot"
-  },
-  "workflow": {
-    "eyebrow": "요청에서 결과까지",
-    "title": "프로젝트 폴더에서 시작 안내까지",
-    "exampleLabel": "요청 예시",
-    "request": "README를 읽고 GETTING_STARTED.md를 작성한 뒤, node --check app.js를 실행하고 결과를 보여 줘.",
-    "intro": "작은 프로젝트 하나, 파일로 저장한 안내 하나. 실행한 명령과 결과를 직접 확인하세요.",
-    "steps": [
-      {
-        "title": "프로젝트 읽기",
-        "command": "cat README.md",
-        "body": "기존 프로젝트 설명을 읽고 안내를 작성할 준비를 합니다."
-      },
-      {
-        "title": "시작 안내 작성",
-        "command": "GETTING_STARTED.md",
-        "body": "프로젝트 폴더에 짧은 시작 안내 문서를 작성합니다."
-      },
-      {
-        "title": "구문 검사",
-        "command": "node --check app.js",
-        "body": "JavaScript 구문을 검사합니다. 앱을 실행하거나 기능을 테스트한 것은 아닙니다."
-      },
-      {
-        "title": "결과 읽기",
-        "command": "cat GETTING_STARTED.md",
-        "body": "새 안내 파일을 출력해 내용을 검토할 수 있게 합니다."
-      }
-    ],
-    "result": "확인할 수 있는 결과는 데모 실행 명령이 담긴 GETTING_STARTED.md입니다. 앱 자체를 실행한 것은 아닙니다.",
-    "detail": "실제 파일·명령 실행 결과"
-  },
-  "features": {
-    "eyebrow": "작업에서 달라지는 점",
-    "title": "답변을 넘어, 프로젝트 안에서",
-    "rows": [
-      {
-        "title": "파일과 명령어 작업",
-        "problem": "답변을 프로젝트에 옮기는 것도 작업입니다.",
-        "body": "선택한 모델이 읽기·쓰기·수정·명령 도구를 사용합니다. 제안만 받는 대신 바뀐 파일과 명령 출력을 확인할 수 있어요.",
-        "example": "이 시연에서는 GETTING_STARTED.md를 새로 만들고 내용을 출력했습니다."
-      },
-      {
-        "title": "모델과 도구 선택",
-        "problem": "모델을 실제 작업 환경에 연결해야 합니다.",
-        "body": "제공업체에 로그인하고 이용 가능한 모델을 선택하세요. 필요한 작업에 맞게 추가 도구를 설정할 수 있어요. 다운로드에 모델 사용량이 포함되지는 않습니다.",
-        "example": "/login과 /model로 시작하세요. MCP는 모델 제공업체가 아니라 도구 연결 방식입니다."
-      },
-      {
-        "title": "팀 채팅의 작업 요청",
-        "problem": "팀의 요청은 터미널 밖에서도 시작됩니다.",
-        "body": "Slack, Discord, Telegram의 인증 정보와 접근 권한을 설정하면 허용된 사람이 연결한 채널에서 작업을 요청할 수 있어요.",
-        "example": "채팅은 별도 설정이 필요합니다. 인터페이스 사이에서 대화가 자동 이전되는 것은 아닙니다."
-      }
-    ]
-  },
-  "configuration": {
-    "eyebrow": "첫 요청 전에",
-    "title": "모델과 작업 환경 설정",
-    "rows": [
-      {
-        "title": "로그인과 모델 선택",
-        "body": "/login으로 제공업체에 연결하고 /model로 이용 가능한 모델을 선택하세요. 인증 정보와 제공업체 사용 요금은 사용자가 관리합니다."
-      },
-      {
-        "title": "필요한 연결만 설정",
-        "body": "파일·명령 도구는 기본입니다. 브라우저, 컴퓨터 제어, MCP 연결에는 각각 설정·의존성·계정이 필요할 수 있어요. 채팅에는 인증 정보와 접근 설정이 필요합니다."
-      },
-      {
-        "title": "실행 환경의 경계",
-        "body": "로컬 실행이 격리나 개인정보 보호를 보장하지는 않습니다. 외부 모델과 연결한 서비스로 데이터가 전송될 수 있어요. HTTP API에는 인증이 없으므로 신뢰하는 로컬 계정과 루프백에서만 사용하고 인터넷에 노출하지 마세요."
-      }
-    ],
-    "security": "보안 안내 읽기",
-    "license": "PolyForm Noncommercial 1.0.0으로 소스를 공개합니다. OSI 승인 오픈 소스가 아니며, 상업적 이용에는 별도의 서면 허가가 필요합니다.",
-    "licenseLink": "라이선스 읽기"
-  },
-  "start": {
-    "title": "이제 첫 요청",
-    "body": "프로젝트 폴더에서 Dinobot을 실행하고 /login으로 제공업체에 연결한 뒤 /model로 모델을 선택하세요. 결과를 검토할 수 있는 작은 작업부터 시작해 보세요.",
-    "link": "작업 예시로 돌아가기"
-  }
-} satisfies Content;
+import { jsonLd, link, pillWords, SITE } from "./markup.ts";
+
+const title = "dinobot: 누구나 쉽게 쓰는 AI 에이전트";
+const description =
+	"dinobot은 팀 채팅 안에서 일하는 AI 팀원입니다. 평소 말투로 부탁하세요. 일을 계획하고, 나눠 맡기고, 중요한 것은 기억하고, 팀이 일하는 방식을 배웁니다.";
+
+export const ko: Content = {
+	meta: {
+		title,
+		description,
+		ogLocale: "ko_KR",
+		ogLocaleAlt: "en_US",
+		ogImage: "/brand/og-ko.png",
+		ogImageAlt: "도트로 그린 티라노 dinobot과 헤드라인: 누구나 쉽게 쓰는 AI 에이전트",
+		consentVersion: CONSENT_VERSION,
+		isKo: true,
+		jsonLd: jsonLd({
+			"@context": "https://schema.org",
+			"@graph": [
+				{ "@type": "Organization", "@id": `${SITE}/#org`, name: "dinobot", url: `${SITE}/`, logo: `${SITE}/apple-touch-icon.png` },
+				{ "@type": "WebSite", "@id": `${SITE}/#site`, name: "dinobot", url: `${SITE}/`, inLanguage: ["en", "ko"], publisher: { "@id": `${SITE}/#org` } },
+				{ "@type": "WebPage", "@id": `${SITE}/ko/#page`, url: `${SITE}/ko/`, name: title, description, inLanguage: "ko", isPartOf: { "@id": `${SITE}/#site` } },
+			],
+		}),
+	},
+	a11y: {
+		skip: "본문으로 건너뛰기",
+		language: "언어",
+		mainNav: "주요 메뉴",
+		home: "dinobot 홈",
+		footerNav: "하단 메뉴",
+		marqueePause: "목록 멈추기",
+		marqueePlay: "목록 재생",
+	},
+	nav: {
+		home: "/ko/",
+		strengths: "강점",
+		how: "사용 방법",
+		faq: "FAQ",
+		download: "다운로드",
+		cta: "다운로드",
+	},
+	hero: {
+		eyebrow: "지금 바로 사용 가능",
+		eyebrowNote: "macOS, Windows, 터미널",
+		download: {
+			cta: "dinobot 다운로드",
+			ctaMac: "Mac용 다운로드",
+			ctaWindows: "Windows용 다운로드",
+			cli: "CLI 설치",
+			meta: "macOS 13 이상 · Windows 10, 11 (64비트) · CLI는 Linux, macOS, Windows",
+		},
+		title: "누구나 쉽게 쓰는 AI 에이전트",
+		titleHtml: `${pillWords(["누구나", "모두가", "당신도"])} 쉽게 쓰는<br> AI 에이전트`,
+		sub: "dinobot은 팀 채팅 안에서 일하는 AI 팀원입니다. 평소 말투로 부탁하세요. 일을 계획하고, 나눠 맡기고, 중요한 것은 기억하고, 팀이 일하는 방식을 배웁니다.",
+		sceneLabel: "채팅 스레드: 한 사람이 FAQ를 고쳐서 게시해 달라고 부탁하고, dinobot이 다섯 단계 계획으로 답합니다.",
+		/** The dinosaur theme switch in the hero stage (ADR 0100): short visible names, full names for assistive tech. */
+		dino: {
+			label: "공룡 테마",
+			options: [
+				{ id: "rex", name: "티라노", label: "티라노, Signal 테마" },
+				{ id: "ptero", name: "익룡", label: "익룡, Dusk 테마" },
+				{ id: "brachio", name: "브라키오", label: "브라키오사우루스, Fern 테마" },
+				{ id: "tricera", name: "트리케라", label: "트리케라톱스, Canyon 테마" },
+			],
+		},
+		chat: {
+			channel: "launch-notes",
+			members: "멤버 4명",
+			user: "미나",
+			userInitial: "미",
+			time: "오전 10:42",
+			mention: "@dinobot",
+			ask: "가격 FAQ를 영어와 한국어로 고치고 게시해 줘.",
+			bot: "dinobot",
+			botTag: "앱",
+			reply: "계획을 세웠어요. 다섯 단계 중 두 단계는 동시에 진행합니다.",
+			steps: [
+				{ label: "영어 FAQ 초안 작성", who: "보조 1" },
+				{ label: "한국어 FAQ 초안 작성", who: "보조 2" },
+				{ label: "두 초안 검사", who: "검사" },
+				{ label: "게시 승인", who: "나" },
+				{ label: "게시", who: "승인 후" },
+			],
+			askQ: "수정한 FAQ를 게시할까요? 되돌릴 수 없는 작업입니다.",
+			approve: "승인",
+			deny: "거절",
+			done: "게시했습니다. 모든 검사를 통과했어요.",
+			queued: "대기",
+			running: "진행 중",
+			waiting: "승인 대기",
+			finished: "완료",
+		},
+	},
+	/** 대기자 폼은 페이지에서 빠졌습니다(다운로드 공개). 이전 등록자가 동의한 문구의 기록으로 남겨 둡니다. */
+	form: {
+		label: "이메일",
+		placeholder: "you@company.com",
+		submit: "대기자 명단에 등록",
+		consentHtml: `만 14세 이상이며, 대기자 안내를 위한 이메일 수집·이용(국외 소재 Cloudflare 서버 보관 포함)에 동의합니다. ${link("/ko/privacy/", "개인정보 처리방침")}`,
+		trust: ["스팸 없음", "언제든 해지", "얼리 액세스와 소식만"],
+		honeypot: "웹사이트(비워 두세요)",
+		doneTitle: "대기자 명단에 등록됐어요.",
+		doneSub: "얼리 액세스와 새 소식을 이메일로 알려 드릴게요.",
+		alreadyTitle: "이미 등록되어 있어요",
+		alreadySub: "같은 이메일이라 순서도 그대로입니다. 얼리 액세스 소식을 보내 드릴게요.",
+		positionLabel: "대기 순번",
+		invalidEmail: "이메일 주소를 확인한 뒤 다시 시도해 주세요.",
+		consentRequired: "등록하려면 동의란에 체크해 주세요.",
+		rateLimited: "시도가 너무 많았어요. 1분 뒤에 다시 시도해 주세요.",
+		offline: "인터넷에 연결되어 있지 않아요. 입력한 이메일은 그대로 있으니 연결된 뒤 다시 시도해 주세요.",
+		failed: "저장하지 못했어요. 입력한 이메일은 그대로 있으니 다시 시도해도 괜찮습니다.",
+	},
+	channels: {
+		label: "늘 쓰던 곳에서",
+		chat: [
+			{ name: "Slack", glyph: "chat" },
+			{ name: "Telegram", glyph: "chat" },
+			{ name: "Discord", glyph: "chat" },
+			{ name: "데스크톱 앱", glyph: "laptop" },
+			{ name: "터미널 앱", glyph: "terminal" },
+			{ name: "HTTP API", glyph: "api" },
+		],
+		tools: [
+			{ name: "웹 검색", glyph: "search", tag: "기본 켜짐" },
+			{ name: "GitHub", glyph: "branch", tag: "선택" },
+			{ name: "MCP 서버", glyph: "plug", tag: "선택" },
+			{ name: "컴퓨터 사용", glyph: "cursor", tag: "선택" },
+		],
+	},
+	philosophy: {
+		eyebrow: "우리의 생각",
+		statement:
+			"AI 에이전트는 전문가만의 도구가 아니어야 합니다. 동료에게 부탁할 수 있다면 dinobot에게도 부탁할 수 있습니다. 계획과 분담, 확인은 채팅 뒤에서 이루어집니다.",
+	},
+	strengths: {
+		eyebrow: "강점",
+		title: "평소 말로 부탁하면,",
+		muted: "실제 일이 끝납니다.",
+		lede: "조금 큰 요청 뒤에서는 네 가지 일이 일어납니다. 스레드에는 결과만 보이지만, 그 과정은 이렇습니다.",
+		chapters: [
+			{
+				id: "dag",
+				signal: "mint",
+				num: "01",
+				label: "DAG",
+				title: "큰 요청은 계획부터",
+				body: "dinobot은 여러 단계가 필요한 요청을 단계 그래프로 바꾸고, 독립적인 단계는 동시에 실행하며, 모든 요구사항을 검사하고, 되돌릴 수 없는 일은 먼저 묻습니다.",
+				steps: [
+					"한 번만 부탁합니다. 가격 FAQ를 두 언어로 고치고 게시해 달라고요.",
+					"dinobot이 다섯 단계 계획을 세우고, 실행 전에 계획 자체를 검사합니다.",
+					"두 초안은 동시에 작성되고, 검사 단계가 둘을 검토합니다.",
+					"게시는 되돌릴 수 없으니, 그 단계는 당신의 승인을 기다립니다.",
+				],
+			},
+			{
+				id: "memory",
+				signal: "teal",
+				num: "02",
+				label: "기억",
+				title: "중요한 것은 기억합니다",
+				body: "팀 기억과 프로젝트 기억은 dinobot의 데이터베이스에 저장되어 모든 스레드가 함께 쓰고, 재시작해도 남습니다. 일하는 동안 프로젝트 사실을 적어 두었다가 필요할 때 다시 꺼냅니다.",
+				steps: [
+					"월요일: \u201c배포는 목요일에 해요. 금요일엔 푸시 금지.\u201d",
+					"dinobot이 백그라운드에서 두 가지를 프로젝트 사실로 적어 둡니다.",
+					"수요일, 다른 스레드에서 이번 주 배포 체크리스트를 부탁합니다.",
+					"답하기 전에 두 사실이 다시 떠오르니, 아무도 같은 말을 반복하지 않습니다.",
+				],
+			},
+			{
+				id: "assignment",
+				signal: "cyan",
+				num: "03",
+				label: "배정",
+				title: "팀장처럼 일을 나눠 맡깁니다",
+				body: "dinobot은 일을 여러 부분으로 나눠 각각 전담 보조 에이전트에게 맡기고, 독립적인 부분은 동시에 진행한 뒤 결과를 하나의 답으로 모읍니다.",
+				steps: [
+					"\u201c온보딩 이메일 세 개를 비교하고 가장 약한 걸 다시 써 줘.\u201d",
+					"보조 에이전트 셋이 이메일을 하나씩 맡아 동시에 검토합니다.",
+					"다른 보조 에이전트가 가장 약한 이메일을 다시 씁니다.",
+					"당신은 대화 하나만 따라가고, 합쳐진 답 하나를 받습니다.",
+				],
+			},
+			{
+				id: "evolve",
+				signal: "blue",
+				num: "04",
+				label: "스스로 배우는 하네스",
+				title: "팀이 일하는 방식을 배웁니다",
+				body: "작업이 마무리되면 dinobot이 과정을 돌아보고, 사용자의 선호와 스스로 얻은 교훈을 짧은 작업 약속으로 남겨 이후 요청에 적용합니다.",
+				steps: [
+					"한 번만 말합니다. \u201c끝났다고 하기 전에 테스트부터 돌려 줘.\u201d",
+					"작업이 마무리되면 dinobot이 과정을 돌아봅니다.",
+					"당신의 교정을 작업 약속으로 남깁니다.",
+					"다음 요청은 그 약속을 적용한 채 시작합니다. 반복되는 절차는 버전이 관리되는 스킬이 되기도 합니다.",
+				],
+			},
+		],
+	},
+	demo: {
+		eyebrow: "직접 보기",
+		title: "요청 하나, 처음부터 끝까지.",
+		muted: "하나를 골라 재생하세요.",
+		lede: "계획, 보조 에이전트, 기억, 검사, 그리고 답까지. 다시 돌려 볼 수 있는 한 번의 실행입니다.",
+	},
+	bento: {
+		eyebrow: "더 많은 강점",
+		title: "믿고 맡길 수 있게.",
+		muted: "답만 주지 않습니다.",
+		items: [
+			{
+				size: "wide",
+				signal: "mint",
+				glyph: "b-check",
+				label: "검증",
+				title: "완료는 증거로 말합니다",
+				body: "dinobot은 시작하기 전에 성공 기준을 적어 둡니다. 실제 검사를 실행해 결과를 보관하고, 필수 검사를 모두 통과해야만 검증 완료로 표시합니다.",
+			},
+			{
+				size: "wide",
+				signal: "indigo",
+				glyph: "b-ask",
+				label: "질문",
+				title: "당신이 정할 일만 묻습니다",
+				body: "dinobot은 일상적인 선택은 스스로 정하고, 당신이 정할 일만 2~4개의 선택지 버튼으로 채팅에서 묻습니다. 답이 없는 승인 요청은 거절로 처리합니다.",
+			},
+			{
+				size: "base",
+				signal: "blue",
+				glyph: "b-target",
+				label: "목표",
+				title: "긴 작업에도 목표는 그대로",
+				body: "모든 목표는 측정 가능한 기준으로 기록되고 요청마다 dinobot에게 다시 제시되어, 긴 작업과 재시작 뒤에도 목표가 흐려지지 않습니다.",
+			},
+			{
+				size: "base",
+				signal: "cyan",
+				glyph: "b-tools",
+				label: "도구",
+				title: "실제 도구로 일합니다",
+				body: "파일, 셸, 웹 검색, 기억은 기본으로 들어 있습니다. GitHub, Google Workspace, MCP 서버, 데스크톱 제어는 켜야 쓸 수 있고, GitHub와 Google은 읽기 전용으로 시작합니다.",
+			},
+			{
+				size: "base",
+				signal: "teal",
+				glyph: "b-threads",
+				label: "세션 인식",
+				title: "다른 스레드의 일도 압니다",
+				body: "dinobot은 지난 대화를 검색하고 어떤 스레드가 바쁜지 확인하며, 공유 작업은 바꾸기 전에 먼저 맡아 두어 스레드끼리 같은 일을 겹쳐 하지 않게 합니다.",
+			},
+			{
+				size: "wide",
+				signal: "none",
+				glyph: "b-code",
+				label: "코드모드",
+				title: "많은 단계, 빠짐없는 기록",
+				body: "dinobot은 수십 개의 도구 호출을 한 번에 스크립트로 실행합니다. 호출마다 영수증이 남아, 중단되더라도 반복하는 대신 무엇이 끝났는지부터 확인합니다.",
+			},
+			{
+				size: "wide",
+				signal: "none",
+				glyph: "b-data",
+				label: "데이터",
+				title: "dinobot이 실행되는 곳에 저장",
+				body: "대화, 기억, 자격 증명은 dinobot을 실행하는 컴퓨터에 저장됩니다. 모델 호출은 사용자가 고른 제공자에게 가고, 웹 검색은 끌 수 있습니다.",
+			},
+		],
+	},
+	how: {
+		eyebrow: "사용 방법",
+		title: "세 단계면 됩니다.",
+		muted: "새로 배울 앱은 없습니다.",
+		steps: [
+			{ glyph: "plug", title: "설치하고 연결하세요", body: "데스크톱 앱을 받거나 CLI를 설치합니다. Slack, Telegram, Discord에서 쓰려면 dinobot.yaml에서 한 번 연결합니다." },
+			{ glyph: "chat", title: "평소 말로 부탁하세요", body: "스레드, 토픽, 개인 메시지에 쓰거나 Discord에서는 /ask를 씁니다." },
+			{ glyph: "check", title: "스레드에서 결과를 받으세요", body: "dinobot이 계획하고, 보조 에이전트에게 나눠 맡기고, 결과를 확인한 뒤 부탁한 곳에 답합니다." },
+		],
+	},
+	faq: {
+		eyebrow: "FAQ",
+		title: "자주 묻는 질문.",
+		muted: "쉽게 답합니다.",
+		items: [
+			{
+				q: "dinobot은 무엇인가요?",
+				a: "dinobot은 팀을 위한 AI 에이전트입니다. 사용자가 관리하는 컴퓨터나 서버에서 백그라운드 서비스로 실행되며 Slack, Telegram, Discord나 전용 터미널 앱에서 답합니다. 평소 말로 부탁하면, 큰 일은 단계를 계획해 보조 에이전트에게 나눠 맡기고, 프로젝트 맥락을 기억하며, 결과를 확인합니다.",
+			},
+			{
+				q: "코딩을 할 줄 알아야 하나요?",
+				a: "사용하는 데는 필요 없습니다. 채팅이나 데스크톱 앱에서 평소 말로 부탁하면 됩니다. macOS·Windows 데스크톱 앱에는 dinobot 서비스가 함께 들어 있어서 명령 한 줄이나 다운로드로 설치합니다. 팀 채팅 앱 연결은 아직 기술적입니다. 누군가 AI 모델 제공자에 로그인하고 설정 파일(dinobot.yaml)에 채팅 앱을 추가해야 합니다.",
+			},
+			{
+				q: "어떤 채팅 앱에서 쓸 수 있나요?",
+				a: "Slack, Telegram, Discord와 macOS·Windows용 dinobot 데스크톱 앱, 전용 터미널 앱, 그리고 스크립트용 로컬 HTTP API에서 쓸 수 있습니다. Microsoft Teams는 지원하지 않습니다.",
+			},
+			{
+				q: "어떤 AI 모델과 계정을 쓰나요?",
+				a: "사용자의 계정을 씁니다. /login으로 모델 제공자에 로그인(OAuth 또는 API 키)하고 /model로 모델을 고릅니다. 새로 설치하면 Anthropic의 claude-sonnet-4-6으로 시작합니다. 한 제공자에 계정을 여러 개 추가하면, 한 계정이 요청 한도나 사용량 한도에 걸릴 때 다음 계정으로 넘어갑니다.",
+			},
+			{
+				q: "데이터는 어디에 저장되나요?",
+				a: "dinobot을 실행하는 컴퓨터에 저장됩니다. 대화, 기억, 스킬은 로컬 SQLite 데이터베이스에, 모델 자격 증명은 같은 곳의 비공개 파일에 보관됩니다. 메시지는 연결한 모델 제공자에게 전송되고, 웹 검색어는 검색을 끄지 않는 한 Startpage나 DuckDuckGo로 갑니다. dinobot 팀에는 /report에 동의한 경우에만 데이터가 전달되며, 선택 기능인 Google 플러그인은 토큰을 저장하지 않는 dinobot 중계 서버를 거쳐 로그인합니다.",
+			},
+			{
+				q: "dinobot이 뭔가를 망가뜨릴 수 있나요?",
+				a: "dinobot은 실행되는 컴퓨터의 권한으로 동작하므로 필요한 것만 연결하세요. 안전장치도 있습니다. GitHub와 Google의 쓰기 기능은 켜기 전까지 꺼져 있고, 데스크톱 제어는 선택 기능이며, 계획 속 되돌릴 수 없는 단계는 사람의 승인을 기다리고(답이 없으면 거절), 작업 완료 인증은 실제 검사를 통과해야만 발급됩니다. 코드 실행기는 보안 샌드박스가 아니므로, 격리가 필요하면 컴퓨터 자체를 분리해 운영하세요.",
+			},
+			{
+				q: "대화가 바뀌어도 기억하나요?",
+				a: "네. 팀 기억과 프로젝트 기억은 모든 스레드가 함께 쓰고 재시작해도 남습니다. 또 백그라운드에서 프로젝트 사실을 기록하고, 일하는 방식에 대한 짧은 규칙인 작업 약속을 모든 요청에 적용합니다. 어떤 항목이든 조회, 수정, 삭제를 요청할 수 있습니다.",
+			},
+			{
+				q: "중요한 일은 먼저 물어보나요?",
+				a: "당신이 정할 결정이라면 그렇습니다. dinobot은 일상적인 선택은 스스로 정하고, 당신의 결정은 2~4개의 선택지로 묻습니다. Slack, Telegram, Discord에서는 버튼으로, 터미널 앱에서는 선택 창으로 보이며, 동시에 열린 선택 질문은 최대 3개입니다. 언제든 직접 글로 답해도 됩니다. 계획에서 되돌릴 수 없다고 표시된 단계는 승인을 기다리며, 그 밖의 작업은 별도 승인 단계 없이 진행됩니다.",
+			},
+			{
+				q: "dinobot은 오픈소스인가요?",
+				a: "아니요. dinobot의 소스 코드는 공개되어 있지 않으며, 패키지도 오픈소스 라이선스 없이 배포됩니다.",
+			},
+			{
+				q: "지금 바로 쓸 수 있나요?",
+				a: "네. macOS·Windows 데스크톱 앱과 CLI를 누구나 받을 수 있습니다. 위 다운로드 섹션에서 둘 다 받을 수 있어요. dinobot은 사용자의 AI 모델 계정을 쓰므로 모델 사용량은 그 제공자의 요금제를 따릅니다.",
+			},
+			{
+				q: "앱을 열 때 경고가 뜨는 이유는 무엇인가요?",
+				a: "데스크톱 앱은 아직 코드 서명과 Apple 공증을 받지 않았습니다. 설치 명령은 macOS Gatekeeper와 Windows SmartScreen이 막지 않는 방식으로 내려받고, 설치 전에 모든 파일을 SHA-256 체크섬으로 확인합니다. 파일을 직접 내려받으면 macOS는 처음 한 번 실행을 막고(시스템 설정, 개인정보 보호 및 보안에서 그래도 열기), Windows SmartScreen은 추가 정보를 누른 뒤 실행을 고르게 합니다.",
+			},
+		],
+	},
+	download: {
+		eyebrow: "다운로드",
+		title: "dinobot 받기.",
+		muted: "쓰는 환경을 고르세요.",
+		lede: "데스크톱 앱에는 dinobot 서비스가 함께 들어 있어 따로 설치할 것이 없습니다. CLI는 터미널이나 서버에서 dinobot을 실행합니다.",
+		recommended: "이 기기용",
+		copy: "복사",
+		copied: "복사됨",
+		commandLabel: "설치 명령",
+		platforms: [
+			{
+				id: "mac",
+				glyph: "laptop",
+				name: "macOS",
+				requires: "macOS 13 이상 · Apple Silicon, Intel",
+				how: "터미널에 붙여 넣기",
+				command: "curl -fsSL https://get.dinobot.workers.dev | bash",
+				detail: "Mac에 맞는 빌드를 골라 SHA-256을 확인하고, 응용 프로그램 폴더에 설치하며, 새 버전이 나오면 알려 줍니다.",
+				filesLabel: "또는 앱 파일 받기",
+				files: [
+					{ label: "Apple Silicon (.zip)", href: "https://get.dinobot.workers.dev/download/mac-arm64" },
+					{ label: "Intel (.zip)", href: "https://get.dinobot.workers.dev/download/mac-x64" },
+				],
+				note: "아직 Apple 공증 전입니다. 터미널 명령으로 설치하면 경고가 뜨지 않습니다. 직접 받은 zip은 처음에 실행이 막히니 시스템 설정, 개인정보 보호 및 보안에서 그래도 열기를 누르세요.",
+			},
+			{
+				id: "windows",
+				glyph: "window",
+				name: "Windows",
+				requires: "Windows 10, 11 · 64비트",
+				how: "PowerShell에 붙여 넣기",
+				command: "irm https://get.dinobot.workers.dev/install.ps1 | iex",
+				detail: "설치 파일의 SHA-256을 확인하고, 관리자 권한 없이 내 계정에 설치하며, 새 버전이 나오면 알려 줍니다.",
+				filesLabel: "또는 설치 파일 받기",
+				files: [{ label: "Windows 설치 파일 (.exe)", href: "https://get.dinobot.workers.dev/download/windows" }],
+				note: "아직 코드 서명 전입니다. PowerShell 명령으로 설치하면 경고가 뜨지 않습니다. 직접 받은 설치 파일을 SmartScreen이 막으면 추가 정보를 누른 뒤 실행을 고르세요.",
+			},
+			{
+				id: "cli",
+				glyph: "terminal",
+				name: "CLI",
+				requires: "Linux, macOS, Windows · Bun 1.4 이상",
+				how: "Bun으로 설치",
+				command: "bun add -g dinobot",
+				detail: "설치한 뒤 dinobot init을 한 번 실행해 기본 설정을 만들고, dinobot으로 터미널 앱을 엽니다. dinobot update로 최신 버전을 유지합니다.",
+				filesLabel: "링크",
+				files: [
+					{ label: "Bun 받기", href: "https://bun.sh" },
+					{ label: "npm의 dinobot", href: "https://www.npmjs.com/package/dinobot" },
+				],
+				note: "백그라운드 서비스로 실행되며 Slack, Telegram, Discord 채널을 연결할 수 있습니다. 개인 컴퓨터라면 데스크톱 앱으로 시작하는 편이 쉽습니다.",
+			},
+		],
+		footHtml: `최신 데스크톱 릴리스와 SHA-256 체크섬: ${link("https://get.dinobot.workers.dev/latest.json", "latest.json")}`,
+	},
+	final: {
+		eyebrow: "시작하기",
+		title: "새 AI 팀원을 만나 보세요.",
+		muted: "Mac, Windows, 터미널에서.",
+		cta: "dinobot 다운로드",
+	},
+	footer: {
+		tagline: "누구나 쉽게 쓰는 AI 에이전트",
+		privacy: "개인정보 처리방침",
+		privacyHref: "/ko/privacy/",
+		top: "맨 위로",
+		legal: "\u00a9 2026 dinobot",
+	},
+	privacy: {
+		title: "개인정보 처리방침 · dinobot 대기자 명단",
+		description: "dinobot 대기자 명단이 이메일 주소를 수집하고 이용하고 보관하는 방법입니다.",
+		eyebrow: "개인정보",
+		h1: "대기자 명단 개인정보 처리방침",
+		lede: "이 방침은 이 사이트의 이메일 대기자 명단에만 적용됩니다. 무엇을 왜 수집하는지, 어디에 보관하는지, 어떻게 삭제를 요청하는지 설명합니다.",
+		effectiveLabel: "시행일",
+		effective: "2026-10-11",
+		back: "홈으로 돌아가기",
+		sections: [
+			{
+				title: "개인정보 처리자",
+				html: `대기자 명단은 정승현이 운영하며, 이 정보의 이용 방법을 결정합니다. 연락처: ${link("mailto:dev0jsh@gmail.com", "dev0jsh@gmail.com")}`,
+			},
+			{
+				title: "수집하는 항목",
+				html: "이메일 주소, 등록한 페이지의 언어, 등록 시각, 사용한 신청 양식(선택), 동의한 안내문의 버전입니다. IP 주소나 브라우저 정보는 등록 정보와 함께 저장하지 않습니다.",
+			},
+			{
+				title: "수집·이용 목적",
+				html: "대기자 안내와 얼리 액세스가 열릴 때의 초대 메일 발송에만 씁니다. 광고나 프로파일링에는 쓰지 않습니다.",
+			},
+			{
+				title: "보유 기간",
+				html: "출시 후 1년이 지나거나 동의를 철회할 때 중 먼저 오는 시점까지 보관하고, 그 뒤 삭제합니다.",
+			},
+			{
+				title: "보관 장소와 국외 이전",
+				html: "Cloudflare, Inc.(미국)가 운영하는 Cloudflare D1 데이터베이스에 아시아·태평양 위치 힌트로 보관합니다. 즉, 이메일은 국외 서버로 이전되어 보관됩니다. 양식을 제출할 때 암호화된 연결로 전송되며, 위 보유 기간 동안 보관됩니다.",
+			},
+			{
+				title: "제3자 제공",
+				html: "이메일을 판매하거나 다른 곳에 제공하지 않습니다. Cloudflare는 호스팅 제공자로서 저희를 대신해 보관만 합니다.",
+			},
+			{
+				title: "정보주체의 권리",
+				html: `언제든 ${link("mailto:dev0jsh@gmail.com", "dev0jsh@gmail.com")}로 메일을 보내 등록 정보의 열람, 정정, 삭제나 동의 철회를 요청할 수 있습니다. 요청은 지체 없이 처리합니다.`,
+			},
+			{
+				title: "동의를 거부할 권리",
+				html: "등록은 선택입니다. 동의하지 않으면 양식을 제출하지 않으면 되며, 그 경우 대기자 명단에 오르지 않는 것 외에 다른 불이익은 없습니다.",
+			},
+			{
+				title: "쿠키",
+				html: "이 사이트는 언어를 바꿀 때만 선택을 기억하기 위해 <code>lang</code> 쿠키 하나를 설정합니다. 분석이나 광고용 쿠키는 없습니다.",
+			},
+		],
+	},
+	notFound: {
+		title: "페이지를 찾을 수 없습니다 · dinobot",
+		description: "존재하지 않는 페이지입니다.",
+		eyebrow: "404",
+		h1: "없는 페이지입니다.",
+		body: "링크가 오래됐거나 주소에 오타가 있을 수 있어요. 다운로드는 홈에 있습니다.",
+		home: "홈으로 가기",
+		mascot: "눈이 X로 바뀐 dinobot",
+	},
+};

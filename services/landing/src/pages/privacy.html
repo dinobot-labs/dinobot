@@ -35,7 +35,26 @@
 <body class="page page--privacy">
 <a class="skip-link" href="#main">{{a11y.skip}}</a>
 
-{{> header}}
+<header class="nav" data-nav>
+	<div class="nav__inner container container--wide">
+		<a class="brand" href="{{nav.home}}" aria-label="{{a11y.home}}">
+			<img class="brand__mark" src="/brand/mark.svg" alt="" width="27" height="22">
+			<span class="brand__word">dinobot</span>
+		</a>
+		<nav class="nav__links" aria-label="{{a11y.mainNav}}">
+			<a class="nav__link" href="{{nav.home}}#strengths">{{nav.strengths}}</a>
+			<a class="nav__link" href="{{nav.home}}#how">{{nav.how}}</a>
+			<a class="nav__link" href="{{nav.home}}#faq">{{nav.faq}}</a>
+		</nav>
+		<div class="nav__actions">
+			<nav class="locale" aria-label="{{a11y.language}}">
+				<a class="locale__opt" href="{{$.alt.en}}" hreflang="en" lang="en" data-locale-toggle="en"{{#unless meta.isKo}} aria-current="true"{{/unless}}>EN</a>
+				<a class="locale__opt" href="{{$.alt.ko}}" hreflang="ko" lang="ko" data-locale-toggle="ko"{{#if meta.isKo}} aria-current="true"{{/if}}>KO</a>
+			</nav>
+			<a class="btn btn--primary btn--sm" href="{{nav.home}}#download" data-cta="nav">{{nav.cta}}</a>
+		</div>
+	</div>
+</header>
 
 <main id="main" tabindex="-1" class="legal">
 	<article class="legal__inner container container--text">
@@ -55,8 +74,24 @@
 	</article>
 </main>
 
-{{> footer}}
+<footer class="footer">
+	<div class="footer__inner container container--wide">
+		<div class="footer__brand">
+			<a class="brand" href="{{nav.home}}" aria-label="{{a11y.home}}"><img class="brand__mark" src="/brand/mark.svg" alt="" width="27" height="22"><span class="brand__word">dinobot</span></a>
+			<span class="signature stripes" aria-hidden="true"></span>
+			<p class="footer__tagline">{{footer.tagline}}</p>
+		</div>
+		<nav class="footer__links" aria-label="{{a11y.footerNav}}">
+			<a href="{{footer.privacyHref}}" aria-current="page">{{footer.privacy}}</a>
+			<span class="locale" role="group" aria-label="{{a11y.language}}">
+				<a class="locale__opt" href="{{$.alt.en}}" hreflang="en" lang="en" data-locale-toggle="en"{{#unless meta.isKo}} aria-current="true"{{/unless}}>EN</a>
+				<a class="locale__opt" href="{{$.alt.ko}}" hreflang="ko" lang="ko" data-locale-toggle="ko"{{#if meta.isKo}} aria-current="true"{{/if}}>KO</a>
+			</span>
+		</nav>
+		<p class="footer__legal"><span>{{footer.legal}}</span></p>
+	</div>
+</footer>
 
-
+<div class="runner-host" data-runner></div>
 </body>
 </html>
