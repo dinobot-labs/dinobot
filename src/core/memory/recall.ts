@@ -100,6 +100,7 @@ export function noteText(items: readonly { key: string; content: string; savedAt
 export function createMemoryRecall(options: {
 	readonly config: MemoryConfig["recall"];
 	readonly workspaceRoot: string;
+	readonly projectAliases?: readonly import("./project-aliases.ts").ProjectAlias[];
 	readonly getHarness: () => Harness;
 	readonly log?: (line: string) => void;
 }) {
@@ -120,7 +121,7 @@ export function createMemoryRecall(options: {
 		const harness = options.getHarness();
 		const left = (await harness.snapshot(NotedDoc, conversation.id, context))?.pending;
 		if (left) await deliver(conversation, JSON.parse(JSON.stringify(left)) as PendingNote, context);
-		const project = await projectOf(harness, conversation.id, options.workspaceRoot, context);
+		const project = await projectOf(harness, conversation.id, options.workspaceRoot, context, options.projectAliases);
 		if (project === undefined) return;
 		const [memory, noted] = await Promise.all([harness.snapshot(MemoryDoc, context), harness.snapshot(NotedDoc, conversation.id, context)]);
 		// Delivery history must not alter document frequencies or another entry's rank.

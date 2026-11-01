@@ -66,6 +66,7 @@ export type CuratorEvent =
 export type CuratorOptions = {
 	readonly config: MemoryConfig["auto"];
 	readonly workspaceRoot: string;
+	readonly projectAliases?: readonly import("./project-aliases.ts").ProjectAlias[];
 	readonly getHarness: () => Harness;
 	/** Lease clock (epoch ms). Default Date.now. */
 	readonly now?: () => number;
@@ -398,7 +399,7 @@ export function createMemoryCurator(options: CuratorOptions) {
 		if (!Object.values(await listThreads(harness, context)).includes(conversationId)) return;
 		const conversation = await harness.conversation(conversationId, context);
 		if (conversation === undefined) return;
-		const project = await projectOf(harness, conversationId, options.workspaceRoot, context);
+		const project = await projectOf(harness, conversationId, options.workspaceRoot, context, options.projectAliases);
 		if (project === undefined) return;
 		const seen = (await harness.snapshot(CuratorDoc, conversationId, context))?.scannedTo ?? 0;
 		const entries = await readEntries(conversation, seen + 1, undefined, context);

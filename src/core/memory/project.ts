@@ -1,5 +1,7 @@
 import { realpath } from "node:fs/promises";
+import { realpathSync } from "node:fs";
 import { basename, dirname, resolve } from "node:path";
+import { aliasProject, type ProjectAlias } from "./project-aliases.ts";
 import type { Context } from "@earendil-works/chord";
 import { AgentDoc, type ConversationId, type DocumentReader } from "@earendil-works/pi-durable";
 
@@ -9,19 +11,22 @@ import { AgentDoc, type ConversationId, type DocumentReader } from "@earendil-wo
  * outside git. All worktrees of one repository therefore share one project, and so do every channel and the TUI when
  * they work in the same repository. The key is that absolute path, so it is readable in tool output.
  *
- * The key is a function of the directory only, recomputed on demand and memoized per process; an unreadable directory
- * has no project.
+ * Owner-configured aliases preserve historical keys after a move. Canonicalize the directory before memoizing Git
+ * discovery; key the cache by alias settings too. An unreadable directory has no project.
  */
 const keys = new Map<string, Promise<string | undefined>>();
 
-export function projectKeyFor(directory: string): Promise<string | undefined> {
-	const absolute = resolve(directory);
-	let key = keys.get(absolute);
+export function projectKeyFor(directory: string, aliases: readonly ProjectAlias[] = []): Promise<string | undefined> {
+	let real: string;
+	try { real = realpathSync.native(resolve(directory)); } catch { return Promise.resolve(undefined); }
+	// Snapshot configuration before asynchronous discovery; no cross-bot global alias state.
+	const snapshot = aliases.map((alias) => ({ ...alias }));
+	const cacheKey = JSON.stringify([real, snapshot]);
+	let key = keys.get(cacheKey);
 	if (!key) {
-		key = compute(absolute);
-		keys.set(absolute, key);
-		// A missing directory may appear later; do not memoize the failure.
-		void key.then((value) => { if (value === undefined) keys.delete(absolute); });
+		key = compute(real).then((project) => project === undefined ? undefined : aliasProject(project, snapshot));
+		keys.set(cacheKey, key);
+		void key.then((value) => { if (value === undefined) keys.delete(cacheKey); }, () => { keys.delete(cacheKey); });
 	}
 	return key;
 }
@@ -47,7 +52,7 @@ async function compute(directory: string): Promise<string | undefined> {
 }
 
 /** The project of a conversation, from its agent cwd (default: the workspace root). */
-export async function projectOf(read: DocumentReader, conversationId: ConversationId, workspaceRoot: string, context: Context): Promise<string | undefined> {
+export async function projectOf(read: DocumentReader, conversationId: ConversationId, workspaceRoot: string, context: Context, aliases: readonly ProjectAlias[] = []): Promise<string | undefined> {
 	const cwd = (await read.snapshot(AgentDoc, conversationId, context))?.cwd;
-	return projectKeyFor(resolve(workspaceRoot, cwd ?? "."));
+	return projectKeyFor(resolve(workspaceRoot, cwd ?? "."), aliases);
 }

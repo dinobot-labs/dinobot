@@ -193,6 +193,7 @@ export type RetroEvent =
 export type RetroOptions = {
 	readonly config: MemoryConfig["retro"];
 	readonly workspaceRoot: string;
+	readonly projectAliases?: readonly import("./project-aliases.ts").ProjectAlias[];
 	readonly getHarness: () => Harness;
 	/** Lease and idle clock (epoch ms). Default Date.now. */
 	readonly now?: () => number;
@@ -411,7 +412,7 @@ export function createMemoryRetro(options: RetroOptions) {
 		if (!Object.values(await listThreads(harness, context)).includes(conversationId)) return;
 		const conversation = await harness.conversation(conversationId, context);
 		if (conversation === undefined) return;
-		const project = await projectOf(harness, conversationId, options.workspaceRoot, context);
+		const project = await projectOf(harness, conversationId, options.workspaceRoot, context, options.projectAliases);
 		if (project === undefined) return;
 		const previous = await harness.snapshot(RetroDoc, conversationId, context);
 		const seen = previous?.scannedTo ?? 0;

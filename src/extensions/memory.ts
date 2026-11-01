@@ -34,6 +34,7 @@ const result = (value: unknown) => ({ content: [{ type: "text" as const, text: J
 export type MemoryExtensionOptions = {
 	/** Resolves a conversation's working directory to its project. */
 	readonly workspaceRoot: string;
+	readonly projectAliases?: readonly import("../core/memory/project-aliases.ts").ProjectAlias[];
 	/** Background tasks (the curator) and hooks (recall) of the automatic loops, when enabled. */
 	readonly tasks?: readonly AnyTask[];
 	readonly hooks?: readonly HookRegistration[];
@@ -52,7 +53,7 @@ const AUTOMATIC = " Project memories are also extracted automatically from conve
 
 export function memoryExtension(options: MemoryExtensionOptions) {
 	async function projectFor(api: ToolExecutionApi, context: Context): Promise<string | undefined> {
-		return projectOf(api, api.conversationId, options.workspaceRoot, context);
+		return projectOf(api, api.conversationId, options.workspaceRoot, context, options.projectAliases);
 	}
 	/** Automatic entries only exist in project scope, so their keys default to it. */
 	const effective = (requested: "team" | "project" | undefined, key: string) => requested ?? (key.startsWith(AUTO_PREFIX) ? "project" : "team");
@@ -81,7 +82,7 @@ export function memoryExtension(options: MemoryExtensionOptions) {
 			// Live ledger state: pi-durable appends a changed section as a system patch entry, so an agreement learned while a
 			// conversation runs reaches it at the next model request without rewriting the earlier prompt.
 			section(AGREEMENTS_SECTION, async ({ conversationId, read }, context) =>
-				renderAgreements(await read.snapshot(AgreementsDoc, context), await projectOf(read, conversationId, options.workspaceRoot, context))),
+				renderAgreements(await read.snapshot(AgreementsDoc, context), await projectOf(read, conversationId, options.workspaceRoot, context, options.projectAliases))),
 		],
 		tools: [
 			defineTool({

@@ -1,5 +1,5 @@
 import { afterEach, expect, test } from "bun:test";
-import { mkdtemp, realpath, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, realpath, rename, rm, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { BACKGROUND_CONTEXT as context } from "@earendil-works/chord/context";
@@ -126,6 +126,44 @@ test("tools: project scope is per repository, team scope is shared, list and sea
 	expect(await run("a", workspace, "memory_delete", { key: "stamped", scope: "project" })).toMatchObject({ deleted: true });
 	expect(await run("a", workspace, "memory_delete", { key })).toMatchObject({ deleted: true, scope: "project" });
 	expect((await memory(bot))?.forgotten?.[workspace]).toEqual([key]);
+});
+
+test("migration aliases reach real memory tools and agreement sections in resumed and new conversations", async () => {
+	const base = await directory();
+	const old = join(base, "old"), moved = join(base, "moved"), sibling = join(base, "moved-sibling");
+	await mkdir(old);
+	await mkdir(sibling);
+	const databasePath = join(base, "migration.sqlite");
+	const storage = await openNodeSqliteStorage(databasePath);
+	const calls: { name: string; args: JsonObject }[] = [];
+	const main: FauxResponseFactory = (transcript) => {
+		const last = (transcript as { messages: { role: string }[] }).messages.at(-1)!;
+		if (last.role === "toolResult") return fauxAssistantMessage("done");
+		const call = calls.shift();
+		return call ? fauxAssistantMessage(fauxToolCall(call.name, call.args), { stopReason: "toolUse" }) : fauxAssistantMessage("done");
+	};
+	const run = async (bot: Bot, thread: string, cwd: string, name: string, args: JsonObject) => {
+		const conversation = await bot.conversation("test", thread, context, cwd);
+		calls.push({ name, args });
+		await (await conversation.submit({ type: "input", content: "go" }, context)).wait(context);
+		const result = (await conversation.context(context)).messages.filter((message) => message.role === "toolResult").at(-1)!;
+		return JSON.parse((result.content[0] as { text: string }).text);
+	};
+	const first = await start({ workspace: base, storage, main, memory: DISABLED_MEMORY });
+	expect(await run(first.bot, "existing", old, "memory_write", { key: "migration", content: "original", scope: "project" })).toMatchObject({ scope: "project" });
+	await run(first.bot, "existing", old, "agreements_write", { text: "Keep historical project identity.", scope: "project" });
+	await first.bot.close(context);
+	bots.splice(bots.indexOf(first.bot), 1);
+	await rename(old, moved);
+	await symlink(moved, old, process.platform === "win32" ? "junction" : "dir");
+	const next = await start({ workspace: base, storage: await openNodeSqliteStorage(databasePath), main, memory: { ...DISABLED_MEMORY, projectAliases: [{ path: moved, identity: old }] } });
+	for (const [thread, cwd] of [["existing", old], ["new", moved]] as const) {
+		expect(await run(next.bot, thread, cwd, "memory_read", { key: "migration", scope: "project" })).toMatchObject({ found: true, content: "original" });
+		expect(JSON.stringify(await run(next.bot, thread, cwd, "agreements_list", {}))).toContain("Keep historical project identity.");
+	}
+	expect(next.mainRequests.some((request) => request.includes("Keep historical project identity."))).toBe(true);
+	expect(await run(next.bot, "other", sibling, "memory_read", { key: "migration", scope: "project" })).toMatchObject({ found: false });
+	expect(JSON.stringify(await run(next.bot, "other", sibling, "agreements_list", {}))).not.toContain("Keep historical project identity.");
 });
 
 test("curator: every N user turns the window is extracted into project memory with content keys", async () => {

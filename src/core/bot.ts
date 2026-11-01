@@ -223,11 +223,12 @@ export async function openBot(options: BotOptions, context: Context): Promise<Bo
 		return openedHarness;
 	};
 	// Registered even when disabled, so a curator task left by an earlier enabled run can still resume and settle.
-	const memoryCurator = createMemoryCurator({ config: memory.auto, workspaceRoot, getHarness: getMemoryHarness });
-	const memoryRecall = createMemoryRecall({ config: memory.recall, workspaceRoot, getHarness: getMemoryHarness });
-	const memoryRetro = createMemoryRetro({ config: memory.retro, workspaceRoot, getHarness: getMemoryHarness });
+	const projectAliases = memory.projectAliases ?? [];
+	const memoryCurator = createMemoryCurator({ config: memory.auto, workspaceRoot, projectAliases, getHarness: getMemoryHarness });
+	const memoryRecall = createMemoryRecall({ config: memory.recall, workspaceRoot, projectAliases, getHarness: getMemoryHarness });
+	const memoryRetro = createMemoryRetro({ config: memory.retro, workspaceRoot, projectAliases, getHarness: getMemoryHarness });
 	registry.install(memoryExtension({
-		workspaceRoot, tasks: [memoryCurator.task, memoryRetro.task], automatic: memory.auto.enabled || memory.recall.enabled,
+		workspaceRoot, projectAliases, tasks: [memoryCurator.task, memoryRetro.task], automatic: memory.auto.enabled || memory.recall.enabled,
 		retro: memory.retro.enabled, agreementLimits: memory.retro,
 	}));
 	/**

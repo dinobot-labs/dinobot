@@ -1,8 +1,14 @@
 import { type Static, Type } from "@earendil-works/pi-ai";
 import type { ModelRef } from "@earendil-works/pi-durable";
+import { projectAliasProblems, type ProjectAlias } from "./project-aliases.ts";
 
 /** Manifest `memory` block. Every field is optional; see `memoryConfig` for the defaults. */
 export const MemoryShape = Type.Object({
+	/** Owner-configured exact canonical root -> historical project key. */
+	projectAliases: Type.Optional(Type.Array(Type.Object({
+		path: Type.String({ minLength: 1 }),
+		identity: Type.String({ minLength: 1 }),
+	}, { additionalProperties: false }), { maxItems: 128 })),
 	auto: Type.Optional(Type.Object({
 		enabled: Type.Optional(Type.Boolean()),
 		/** Extract once every N user turns of a channel/TUI thread. */
@@ -40,6 +46,7 @@ export const MemoryShape = Type.Object({
 export type MemoryOptions = Static<typeof MemoryShape>;
 
 export type MemoryConfig = {
+	readonly projectAliases?: readonly ProjectAlias[];
 	readonly auto: {
 		readonly enabled: boolean;
 		readonly everyTurns: number;
@@ -88,7 +95,7 @@ function parseModel(raw: string, field: string, problems: string[]): ModelRef | 
 
 /** Defaults applied, `model` parsed. Every loop is on unless a deployment turns it off. */
 export function memoryConfig(options: MemoryOptions = {}): { config: MemoryConfig; problems: string[] } {
-	const problems: string[] = [];
+	const problems: string[] = projectAliasProblems(options.projectAliases ?? []);
 	const model = parseModel(options.auto?.model ?? "inherit", "memory.auto.model", problems);
 	const defaults = DISABLED_MEMORY.auto;
 	const given = options.auto ?? {};
@@ -113,6 +120,7 @@ export function memoryConfig(options: MemoryOptions = {}): { config: MemoryConfi
 	if (retro.leaseMs <= 2 * retro.timeoutMs) problems.push("memory.retro.leaseMs must exceed twice memory.retro.timeoutMs");
 	return {
 		config: {
+			...(options.projectAliases ? { projectAliases: options.projectAliases.map((alias) => ({ ...alias })) } : {}),
 			auto,
 			recall: { ...DISABLED_MEMORY.recall, ...options.recall, enabled: options.recall?.enabled ?? true },
 			retro,

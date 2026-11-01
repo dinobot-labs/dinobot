@@ -67,6 +67,19 @@ test("research readiness profile preserves both stages and rejects editable eval
 	]) expect((await problems({ ...manifest(), research: { codeProfiles: { ready: { ...profile, readiness } } } })).length).toBeGreaterThan(0);
 });
 
+test("owner project aliases survive YAML serialization and reject unsafe mappings at boot", async () => {
+	const { resolve } = await import("node:path");
+	const projectAliases = [{ path: resolve("moved"), identity: resolve("historical") }];
+	const raw = { ...manifest(), memory: { projectAliases } };
+	const serialized = Bun.YAML.stringify(raw);
+	expect((await parseManifest(Bun.YAML.parse(serialized), catalogs)).memory.projectAliases).toEqual(projectAliases);
+	for (const aliases of [
+		[{ path: "relative", identity: resolve("historical") }],
+		[{ path: resolve("moved"), identity: resolve("moved") }],
+		[{ ...projectAliases[0], arbitrary: true }],
+	]) expect(await problems({ ...manifest(), memory: { projectAliases: aliases } })).toContainEqual(expect.stringContaining("projectAliases"));
+});
+
 test("workspaceRoot is optional and preserves an explicit execution directory", async () => {
 	expect((await parseManifest(manifest({ bot: { workspaceRoot: "/work/project" } }), catalogs)).workspaceRoot).toBe("/work/project");
 	expect((await parseManifest(manifest(), catalogs)).workspaceRoot).toBeUndefined();
