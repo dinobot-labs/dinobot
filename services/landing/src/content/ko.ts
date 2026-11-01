@@ -2,8 +2,8 @@
 import type { Content } from "./en.ts";
 export const ko = {
   "meta": {
-    "title": "Dinobot — 지금 해야 할 일에, 함께하는 에이전트.",
-    "description": "데스크톱이나 터미널에서 시작하세요. 모델을 고르고 팀 채팅을 연결하세요.",
+    "title": "Dinobot — AI와 파일·명령어 작업",
+    "description": "데스크톱이나 터미널에서 선택한 AI 모델로 프로젝트 파일을 읽고 수정하고, 명령어를 실행하세요. 팀 채팅에서 요청하려면 Slack, Discord, Telegram을 연결할 수 있어요.",
     "ogLocale": "ko_KR",
     "ogLocaleAlt": "en_US",
     "ogImage": "/brand/og-ko.png",
@@ -25,52 +25,32 @@ export const ko = {
     "cta": "설치"
   },
   "hero": {
-    "eyebrow": "데스크톱 + 터미널",
-    "line1": "지금 해야 할 일에,",
-    "line2": "함께하는 에이전트.",
-    "sub1": "데스크톱이나 터미널에서 시작하세요.",
-    "sub2": "모델을 고르고 팀 채팅을 연결하세요.",
+    "eyebrow": "프로젝트 작업을 위한 AI",
+    "title": "AI와 파일을 읽고 수정하고, 명령어를 실행하세요.",
+    "body": "데스크톱이나 터미널에서 선택한 AI 모델로 프로젝트 파일을 읽고 수정하고, 명령어를 실행하세요. 팀 채팅에서 요청하려면 Slack, Discord, Telegram을 연결할 수 있어요.",
+    "setup": "모델 계정이 필요하며, 채팅 채널과 추가 도구는 별도 설정이 필요합니다.",
     "primary": "Dinobot 시작하기",
-    "source": "소스 보기",
-    "demo": "앱 시연 화면",
-    "blue": "블루",
-    "black": "블랙",
-    "open": "원본 보기",
-    "caption": "제품 시연 · 실제 데스크톱 앱에서 모의 모델로 진행한 대화입니다.",
-    "altBlue": "프로젝트 파일 세 개를 보여 주는 bash 실행 결과가 펼쳐진 Dinobot 블루 테마 화면.",
-    "altBlack": "프로젝트 파일 세 개를 보여 주는 bash 실행 결과가 펼쳐진 Dinobot 블랙 테마 화면.",
-    "unavailable": "미리보기를 불러오지 못했습니다. 원본을 열어 주세요."
-  },
-  "tools": {
-    "title": "말로 요청하고, 도구 실행을 확인하세요.",
-    "body": "작은 프로젝트의 파일을 보여 달라고 요청한 시연입니다. 펼친 bash 결과에서 명령어와 출력을 확인할 수 있습니다.",
-    "label": "도구 실행 결과 · 앱 시연 화면"
-  },
-  "workflows": {
-    "title": "원하는 방식으로 일하세요.",
-    "rows": [
-      {
-        "title": "모델을 고르세요.",
-        "body": "모델 제공업체 계정으로 로그인한 뒤 사용할 모델을 선택하세요."
-      },
-      {
-        "title": "필요한 도구를 연결하세요.",
-        "body": "MCP, 브라우저, 데스크톱 도구로 Dinobot을 확장하세요."
-      },
-      {
-        "title": "팀 채팅을 연결하세요.",
-        "body": "Slack, Discord, Telegram을 대화 채널로 설정하세요."
-      }
-    ],
-    "note": "사용하는 기능에 따라 모델 계정, 채널 인증 정보와 도구 설정이 필요합니다."
+    "secondary": "작업 흐름 보기",
+    "open": "원본 이미지 보기",
+    "caption": "시나리오 기반 앱 시연: 로컬 모의 모델을 사용했고, 파일·명령 도구는 실제 실행했습니다. JavaScript 구문 검사만 수행했으며 전체 테스트는 아닙니다.",
+    "alt": "기본 라이트 테마의 Dinobot Desktop. README 요청, 실제 bash 실행과 새로 작성한 시작 안내가 보입니다.",
+    "detailAlt": "README 내용과 node --check app.js 이후 출력한 GETTING_STARTED.md 안내가 보이는 실제 bash 실행 결과.",
+    "unavailable": "이미지를 불러오지 못했습니다. 원본 이미지 링크를 이용해 주세요.",
+    "imageHint": "실제 Desktop 화면 · README에서 시작 안내까지",
+    "mobileHint": "이미지를 가로로 스크롤하거나 원본을 열어 전체 명령을 읽을 수 있어요."
   },
   "interfaces": {
-    "title": "데스크톱과 터미널, 편한 곳에서 시작하세요.",
-    "desktop": "Dinobot을 사용하는 별도의 데스크톱 클라이언트입니다.",
-    "cli": "에이전트 데몬과 터미널 인터페이스입니다.",
-    "chat": "팀 채팅",
-    "chatBody": "직접 설정해 연결하는 Slack, Discord, Telegram 채널입니다.",
-    "privacy": "Dinobot은 사용자 기기에서 실행됩니다. 외부 모델 요청은 선택한 제공업체로 전송됩니다."
+    "eyebrow": "Desktop · 터미널 · 채팅",
+    "title": "에이전트를 만나는 여러 방법",
+    "desktop": "별도로 다운로드하는 전용 그래픽 클라이언트입니다. 호환되는 Dinobot 데몬이 필요합니다.",
+    "cli": "로컬 에이전트 데몬에 연결하는 터미널 인터페이스입니다. TUI를 닫아도 데몬은 종료되지 않습니다.",
+    "chat": "설정한 채팅",
+    "chatBody": "허용된 사용자와 채널을 위한 Slack, Discord, Telegram 연결입니다. 호스팅된 공동 작업 서비스는 아닙니다.",
+    "privacy": "각각 에이전트에 요청하는 진입점이며, 인터페이스 사이에서 대화가 자동 이동한다는 뜻은 아닙니다.",
+    "daemon": "로컬 에이전트 데몬",
+    "model": "선택한 외부 모델 제공업체",
+    "tools": "파일·명령 및 설정한 도구",
+    "diagramLabel": "Desktop, TUI와 설정한 채팅은 로컬 에이전트 데몬에 연결됩니다. 데몬은 선택한 외부 모델 제공업체와 사용 가능한 도구를 이용합니다."
   },
   "install": {
     "title": "Dinobot 시작하기.",
@@ -127,7 +107,7 @@ export const ko = {
     "privacyHref": "/ko/privacy/",
     "license": "소스 공개 · PolyForm Noncommercial",
     "legal": "©2026 Dinobot",
-    "tagline": "지금 해야 할 일에, 함께하는 에이전트."
+    "tagline": "AI와 파일을 읽고 수정하고, 명령어를 실행하세요."
   },
   "privacy": {
     "title": "개인정보 처리방침 · dinobot 대기자 명단",
@@ -185,5 +165,86 @@ export const ko = {
     "body": "링크가 오래됐거나 주소에 오타가 있을 수 있어요. 다운로드는 홈에 있습니다.",
     "home": "홈으로 가기",
     "mascot": "눈이 X로 바뀐 dinobot"
+  },
+  "workflow": {
+    "eyebrow": "요청에서 결과까지",
+    "title": "프로젝트 폴더에서 시작 안내까지",
+    "exampleLabel": "요청 예시",
+    "request": "README를 읽고 GETTING_STARTED.md를 작성한 뒤, node --check app.js를 실행하고 결과를 보여 줘.",
+    "intro": "작은 프로젝트 하나, 파일로 저장한 안내 하나. 실행한 명령과 결과를 직접 확인하세요.",
+    "steps": [
+      {
+        "title": "프로젝트 읽기",
+        "command": "cat README.md",
+        "body": "기존 프로젝트 설명을 읽고 안내를 작성할 준비를 합니다."
+      },
+      {
+        "title": "시작 안내 작성",
+        "command": "GETTING_STARTED.md",
+        "body": "프로젝트 폴더에 짧은 시작 안내 문서를 작성합니다."
+      },
+      {
+        "title": "구문 검사",
+        "command": "node --check app.js",
+        "body": "JavaScript 구문을 검사합니다. 앱을 실행하거나 기능을 테스트한 것은 아닙니다."
+      },
+      {
+        "title": "결과 읽기",
+        "command": "cat GETTING_STARTED.md",
+        "body": "새 안내 파일을 출력해 내용을 검토할 수 있게 합니다."
+      }
+    ],
+    "result": "확인할 수 있는 결과는 데모 실행 명령이 담긴 GETTING_STARTED.md입니다. 앱 자체를 실행한 것은 아닙니다.",
+    "detail": "실제 파일·명령 실행 결과"
+  },
+  "features": {
+    "eyebrow": "작업에서 달라지는 점",
+    "title": "답변을 넘어, 프로젝트 안에서",
+    "rows": [
+      {
+        "title": "파일과 명령어 작업",
+        "problem": "답변을 프로젝트에 옮기는 것도 작업입니다.",
+        "body": "선택한 모델이 읽기·쓰기·수정·명령 도구를 사용합니다. 제안만 받는 대신 바뀐 파일과 명령 출력을 확인할 수 있어요.",
+        "example": "이 시연에서는 GETTING_STARTED.md를 새로 만들고 내용을 출력했습니다."
+      },
+      {
+        "title": "모델과 도구 선택",
+        "problem": "모델을 실제 작업 환경에 연결해야 합니다.",
+        "body": "제공업체에 로그인하고 이용 가능한 모델을 선택하세요. 필요한 작업에 맞게 추가 도구를 설정할 수 있어요. 다운로드에 모델 사용량이 포함되지는 않습니다.",
+        "example": "/login과 /model로 시작하세요. MCP는 모델 제공업체가 아니라 도구 연결 방식입니다."
+      },
+      {
+        "title": "팀 채팅의 작업 요청",
+        "problem": "팀의 요청은 터미널 밖에서도 시작됩니다.",
+        "body": "Slack, Discord, Telegram의 인증 정보와 접근 권한을 설정하면 허용된 사람이 연결한 채널에서 작업을 요청할 수 있어요.",
+        "example": "채팅은 별도 설정이 필요합니다. 인터페이스 사이에서 대화가 자동 이전되는 것은 아닙니다."
+      }
+    ]
+  },
+  "configuration": {
+    "eyebrow": "첫 요청 전에",
+    "title": "모델과 작업 환경 설정",
+    "rows": [
+      {
+        "title": "로그인과 모델 선택",
+        "body": "/login으로 제공업체에 연결하고 /model로 이용 가능한 모델을 선택하세요. 인증 정보와 제공업체 사용 요금은 사용자가 관리합니다."
+      },
+      {
+        "title": "필요한 연결만 설정",
+        "body": "파일·명령 도구는 기본입니다. 브라우저, 컴퓨터 제어, MCP 연결에는 각각 설정·의존성·계정이 필요할 수 있어요. 채팅에는 인증 정보와 접근 설정이 필요합니다."
+      },
+      {
+        "title": "실행 환경의 경계",
+        "body": "로컬 실행이 격리나 개인정보 보호를 보장하지는 않습니다. 외부 모델과 연결한 서비스로 데이터가 전송될 수 있어요. HTTP API에는 인증이 없으므로 신뢰하는 로컬 계정과 루프백에서만 사용하고 인터넷에 노출하지 마세요."
+      }
+    ],
+    "security": "보안 안내 읽기",
+    "license": "PolyForm Noncommercial 1.0.0으로 소스를 공개합니다. OSI 승인 오픈 소스가 아니며, 상업적 이용에는 별도의 서면 허가가 필요합니다.",
+    "licenseLink": "라이선스 읽기"
+  },
+  "start": {
+    "title": "이제 첫 요청",
+    "body": "프로젝트 폴더에서 Dinobot을 실행하고 /login으로 제공업체에 연결한 뒤 /model로 모델을 선택하세요. 결과를 검토할 수 있는 작은 작업부터 시작해 보세요.",
+    "link": "작업 예시로 돌아가기"
   }
 } satisfies Content;

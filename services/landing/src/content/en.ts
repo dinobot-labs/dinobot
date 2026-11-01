@@ -1,9 +1,8 @@
 /** Product copy; historical privacy semantics preserved. */
-
 export const en = {
   "meta": {
-    "title": "Dinobot — An agent for what’s next.",
-    "description": "Work from your desktop or terminal. Choose your model and connect team chat.",
+    "title": "Dinobot — Work on your files with AI.",
+    "description": "Use your AI model to read and edit project files and run commands from Desktop or the terminal. Connect Slack, Discord or Telegram when your team needs a chat entry point.",
     "ogLocale": "en_US",
     "ogLocaleAlt": "ko_KR",
     "ogImage": "/brand/og-en.png",
@@ -25,52 +24,32 @@ export const en = {
     "cta": "Install"
   },
   "hero": {
-    "eyebrow": "DESKTOP + TERMINAL",
-    "line1": "An agent for",
-    "line2": "what’s next.",
-    "sub1": "Work from your desktop or terminal.",
-    "sub2": "Choose your model and connect team chat.",
+    "eyebrow": "AI for project work",
+    "title": "Work on your files with AI.",
+    "body": "Use your AI model to read and edit project files and run commands from Desktop or the terminal. Connect Slack, Discord or Telegram when your team needs a chat entry point.",
+    "setup": "Your model account is required. Chat channels and optional tools need configuration.",
     "primary": "Get Dinobot",
-    "source": "View source",
-    "demo": "Scripted app demo",
-    "blue": "Blue",
-    "black": "Black",
-    "open": "Open full image",
-    "caption": "Product demo · scripted conversation with a mock provider in the real desktop app.",
-    "altBlue": "Dinobot desktop in blue, with an expanded bash result listing three project files.",
-    "altBlack": "Dinobot desktop in black, with an expanded bash result listing three project files.",
-    "unavailable": "Preview unavailable. Open original image."
-  },
-  "tools": {
-    "title": "Ask in your own words. See the tools at work.",
-    "body": "This demo asks for the files in a small project. The expanded bash result shows the command and its output.",
-    "label": "Tool result detail · scripted app demo"
-  },
-  "workflows": {
-    "title": "Choose how you work.",
-    "rows": [
-      {
-        "title": "Choose a model.",
-        "body": "Sign in to your model provider, then select a model."
-      },
-      {
-        "title": "Add the tools you need.",
-        "body": "Extend Dinobot with MCP, browser and desktop tools."
-      },
-      {
-        "title": "Connect team chat.",
-        "body": "Configure Slack, Discord or Telegram as a channel."
-      }
-    ],
-    "note": "Provider accounts, channel credentials and tool setup are required where applicable."
+    "secondary": "See a workflow",
+    "open": "Open original image",
+    "caption": "Scripted app demo: local mock model, real file and command execution. JavaScript syntax check only—not a full test suite.",
+    "alt": "Dinobot Desktop in its native light theme: a README request, actual bash execution, and the newly written getting-started guide.",
+    "detailAlt": "Actual bash output showing README contents and the generated GETTING_STARTED.md guide after node --check app.js.",
+    "unavailable": "Image unavailable. Use the original image link.",
+    "imageHint": "Real Desktop · README → getting-started guide",
+    "mobileHint": "Scroll the image to read the complete command, or open the original."
   },
   "interfaces": {
-    "title": "Desktop or terminal. Your starting point.",
-    "desktop": "A separate desktop client for Dinobot.",
-    "cli": "The agent daemon and its terminal interface.",
-    "chat": "Team chat",
-    "chatBody": "Slack, Discord and Telegram channels, configured by you.",
-    "privacy": "Dinobot runs on your device. Requests to external models go to the provider you choose."
+    "title": "Different ways to reach the agent",
+    "desktop": "A dedicated graphical client, downloaded separately. Requires a compatible Dinobot daemon.",
+    "cli": "The terminal interface to the local agent daemon. Closing the TUI does not stop that daemon.",
+    "chat": "Configured chat",
+    "chatBody": "Slack, Discord or Telegram adapters for permitted users and destinations—not a hosted shared workspace.",
+    "privacy": "These are entry points to the agent, not a promise that conversations move automatically between them.",
+    "eyebrow": "Desktop · Terminal · Chat",
+    "daemon": "Local agent daemon",
+    "model": "Selected model provider",
+    "tools": "Files, commands & configured tools",
+    "diagramLabel": "Desktop, TUI and configured chat connect to the local agent daemon, which uses a selected external model provider and available tools."
   },
   "install": {
     "title": "Get Dinobot.",
@@ -127,7 +106,7 @@ export const en = {
     "privacyHref": "/privacy/",
     "license": "Source available · PolyForm Noncommercial",
     "legal": "©2026 Dinobot",
-    "tagline": "An agent for what’s next."
+    "tagline": "Work on your files with AI."
   },
   "privacy": {
     "title": "Privacy notice · dinobot waitlist",
@@ -185,6 +164,87 @@ export const en = {
     "body": "The link may be old, or the address has a typo. Downloads are on the home page.",
     "home": "Go to the home page",
     "mascot": "dinobot with crossed-out eyes"
+  },
+  "workflow": {
+    "eyebrow": "A task, from request to result",
+    "title": "From a project folder to a getting-started guide",
+    "exampleLabel": "Example request",
+    "request": "Read the README, write GETTING_STARTED.md, run node --check app.js, and show me the output.",
+    "intro": "One small project. A document written to disk. A command result you can inspect.",
+    "steps": [
+      {
+        "title": "Read the project",
+        "command": "cat README.md",
+        "body": "Read the existing project notes before writing the guide."
+      },
+      {
+        "title": "Write the guide",
+        "command": "GETTING_STARTED.md",
+        "body": "Write a short getting-started document into the project folder."
+      },
+      {
+        "title": "Check syntax",
+        "command": "node --check app.js",
+        "body": "Check JavaScript syntax. This does not run the app or test its behavior."
+      },
+      {
+        "title": "Read the result",
+        "command": "cat GETTING_STARTED.md",
+        "body": "Print the new guide so its contents can be reviewed."
+      }
+    ],
+    "result": "The visible result: GETTING_STARTED.md, with a command to run the demo. The app itself was not run.",
+    "detail": "Actual file and command output"
+  },
+  "features": {
+    "eyebrow": "What changes in your work",
+    "title": "Beyond advice in a chat window",
+    "rows": [
+      {
+        "title": "Work with files and commands",
+        "problem": "Copying an answer into your project is still work.",
+        "body": "Let the selected model use read, write, edit and command tools. Inspect the changed file and command output rather than only a suggested answer.",
+        "example": "In this demo: a new GETTING_STARTED.md and its printed contents."
+      },
+      {
+        "title": "Choose your model and tools",
+        "problem": "Your model needs a connection to your working setup.",
+        "body": "Sign in to a provider and select an available model. Configure additional integrations for the tasks you need; model usage is not included with the download.",
+        "example": "Start with /login and /model. MCP connects tools; it is not a model provider."
+      },
+      {
+        "title": "Bring requests from team chat",
+        "problem": "Team requests often start outside the terminal.",
+        "body": "Configure Slack, Discord or Telegram credentials and access settings so permitted people can request work in a connected channel.",
+        "example": "Chat requires setup. It is not automatic conversation transfer between interfaces."
+      }
+    ]
+  },
+  "configuration": {
+    "eyebrow": "Before the first request",
+    "title": "Your model. Your setup.",
+    "rows": [
+      {
+        "title": "Connect and choose",
+        "body": "Use /login to connect a provider and /model to select an available model. Your credentials and provider usage are your responsibility."
+      },
+      {
+        "title": "Add integrations deliberately",
+        "body": "File and command tools are core. Browser, computer and MCP integrations have their own setup, dependencies and accounts. Chat needs credentials and access configuration."
+      },
+      {
+        "title": "Understand the boundary",
+        "body": "Local execution is not isolation or a promise of privacy. External models and connected services may receive data. The HTTP API is unauthenticated: keep it on loopback with trusted local accounts; do not expose it to the Internet."
+      }
+    ],
+    "security": "Read the security guidance",
+    "license": "Source available under PolyForm Noncommercial 1.0.0, not OSI-approved open source. Commercial use requires separate written permission.",
+    "licenseLink": "Read the license"
+  },
+  "start": {
+    "title": "Then make your first request",
+    "body": "Launch Dinobot in your project folder, connect your provider with /login, choose an available model with /model, and start with a small task you can review.",
+    "link": "Return to the example workflow"
   }
 };
 export type Content = typeof en;

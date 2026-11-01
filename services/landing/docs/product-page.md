@@ -1,4 +1,6 @@
-# Product page implementation
+# Historical product page implementation
+
+**Superseded:** the DOS-led composition below was rejected as a product-message/design failure. Current direction and evidence are in BRIEF.md, reference-brief.md and product-facts.md. The replacement explains project-file/command work, actual bounded workflow, interface roles, configuration and installation. Historical QA below does not certify the replacement.
 
 Implemented locally on 2026-11-01. **Frontend implementation and scoped smoke passed; not deployed or committed.** Independent creative, accessibility, security and publication acceptance remain with the integration owner.
 
