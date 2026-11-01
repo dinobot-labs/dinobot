@@ -1,7 +1,7 @@
 import { afterEach, expect, test } from "bun:test";
 import { mkdir, mkdtemp, realpath, rename, rm, symlink, writeFile } from "node:fs/promises";
 import { memoryConfig } from "../src/core/memory/config.ts";
-import { projectAliasProblems } from "../src/core/memory/project-aliases.ts";
+import { aliasProject, projectAliasProblems } from "../src/core/memory/project-aliases.ts";
 import { find, mutate, type MemoryState } from "../src/core/memory/store.ts";
 import { addAgreement, visibleAgreements, type AgreementsState } from "../src/core/memory/agreements.ts";
 import { tmpdir } from "node:os";
@@ -78,6 +78,43 @@ test("a moved repository and old junction retain pre-move memory and agreements;
 	await mkdir(join(sibling, ".dinobot"));
 	await writeFile(join(sibling, ".dinobot", "project.json"), JSON.stringify({ identity: before }));
 	expect(await projectKeyFor(sibling)).toBe(sibling);
+});
+
+test.each(["nested-git", "plain-child"])("subtree migration preserves %s without flattening", async (kind) => {
+	const base = await directory();
+	const old = join(base, "old"), moved = join(base, "moved");
+	await mkdir(join(old, "child", "src"), { recursive: true });
+	if (kind === "nested-git") {
+		await git(old, "init", "-q");
+		await git(join(old, "child"), "init", "-q");
+		await mkdir(join(old, "parent-src"));
+		expect(await projectKeyFor(join(old, "parent-src"))).toBe(old);
+	}
+	const cwd = join(old, "child", "src");
+	const before = await projectKeyFor(cwd);
+	await rename(old, moved);
+	const after = join(moved, "child", "src");
+	const exact = [{ path: moved, identity: old }];
+	expect(await projectKeyFor(after, exact)).not.toBe(before);
+	expect(await projectKeyFor(after, [{ ...exact[0]!, descendants: true }])).toBe(before);
+	expect(await projectKeyFor(after, exact)).not.toBe(before);
+	expect(await projectKeyFor(after, [{ ...exact[0]!, descendants: false }])).not.toBe(before);
+	const subtree = [{ ...exact[0]!, descendants: true }];
+	if (kind === "nested-git") expect(await projectKeyFor(join(moved, "parent-src"), subtree)).toBe(old);
+	const sibling = moved + "-other";
+	await mkdir(sibling);
+	expect(await projectKeyFor(sibling, subtree)).toBe(sibling);
+	for (const invalid of [
+		[...subtree, { path: join(moved, "child"), identity: join(base, "third") }],
+		[...subtree, { path: old, identity: moved }],
+	]) await expect(projectKeyFor(after, invalid)).rejects.toThrow();
+});
+
+test.skipIf(process.platform !== "win32")("subtree matching handles Windows case and separators without losing suffix case", () => {
+	const aliases = [{ path: "E:/Moved/Repo/", identity: "C:\\Users\\Owner\\Repo", descendants: true }];
+	expect(aliasProject("e:\\moved\\REPO\\Wiki\\Src", aliases)).toBe("C:\\Users\\Owner\\Repo\\Wiki\\Src");
+	expect(aliasProject("e:/moved/REPO", aliases)).toBe(aliases[0]!.identity);
+	expect(aliasProject("e:/moved/repo-other/Wiki", aliases)).toBe("e:/moved/repo-other/Wiki");
 });
 
 test("aliases reject relative/root paths, duplicates, overlaps, chains and cycles without partial application", async () => {

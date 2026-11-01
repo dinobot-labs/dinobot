@@ -128,11 +128,20 @@ test("tools: project scope is per repository, team scope is shared, list and sea
 	expect((await memory(bot))?.forgotten?.[workspace]).toEqual([key]);
 });
 
-test("migration aliases reach real memory tools and agreement sections in resumed and new conversations", async () => {
+test.each(["exact", "nested-git", "plain-child"])("migration aliases reach real memory tools and agreement sections in resumed and new conversations: %s", async (kind) => {
 	const base = await directory();
 	const old = join(base, "old"), moved = join(base, "moved"), sibling = join(base, "moved-sibling");
 	await mkdir(old);
 	await mkdir(sibling);
+	const suffix = kind === "exact" ? "" : "child";
+	const originalCwd = join(old, suffix), movedCwd = join(moved, suffix);
+	await mkdir(originalCwd, { recursive: true });
+	if (kind === "nested-git") {
+		for (const cwd of [old, originalCwd]) {
+			const child = Bun.spawn(["git", "init", "-q"], { cwd, stdout: "ignore", stderr: "pipe" });
+			expect(await child.exited).toBe(0);
+		}
+	}
 	const databasePath = join(base, "migration.sqlite");
 	const storage = await openNodeSqliteStorage(databasePath);
 	const calls: { name: string; args: JsonObject }[] = [];
@@ -150,18 +159,22 @@ test("migration aliases reach real memory tools and agreement sections in resume
 		return JSON.parse((result.content[0] as { text: string }).text);
 	};
 	const first = await start({ workspace: base, storage, main, memory: DISABLED_MEMORY });
-	expect(await run(first.bot, "existing", old, "memory_write", { key: "migration", content: "original", scope: "project" })).toMatchObject({ scope: "project" });
-	await run(first.bot, "existing", old, "agreements_write", { text: "Keep historical project identity.", scope: "project" });
+	expect(await run(first.bot, "existing", originalCwd, "memory_write", { key: "migration", content: "original", scope: "project" })).toMatchObject({ scope: "project" });
+	await run(first.bot, "existing", originalCwd, "agreements_write", { text: "Keep historical project identity.", scope: "project" });
 	await first.bot.close(context);
 	bots.splice(bots.indexOf(first.bot), 1);
 	await rename(old, moved);
 	await symlink(moved, old, process.platform === "win32" ? "junction" : "dir");
-	const next = await start({ workspace: base, storage: await openNodeSqliteStorage(databasePath), main, memory: { ...DISABLED_MEMORY, projectAliases: [{ path: moved, identity: old }] } });
-	for (const [thread, cwd] of [["existing", old], ["new", moved]] as const) {
+	const next = await start({ workspace: base, storage: await openNodeSqliteStorage(databasePath), main, memory: { ...DISABLED_MEMORY, projectAliases: [{ path: moved, identity: old, ...(kind === "exact" ? {} : { descendants: true }) }] } });
+	for (const [thread, cwd] of [["existing", originalCwd], ["new", movedCwd]] as const) {
 		expect(await run(next.bot, thread, cwd, "memory_read", { key: "migration", scope: "project" })).toMatchObject({ found: true, content: "original" });
 		expect(JSON.stringify(await run(next.bot, thread, cwd, "agreements_list", {}))).toContain("Keep historical project identity.");
 	}
 	expect(next.mainRequests.some((request) => request.includes("Keep historical project identity."))).toBe(true);
+	if (kind !== "exact") {
+		expect(await run(next.bot, "parent", moved, "memory_read", { key: "migration", scope: "project" })).toMatchObject({ found: false });
+		expect(JSON.stringify(await run(next.bot, "parent", moved, "agreements_list", {}))).not.toContain("Keep historical project identity.");
+	}
 	expect(await run(next.bot, "other", sibling, "memory_read", { key: "migration", scope: "project" })).toMatchObject({ found: false });
 	expect(JSON.stringify(await run(next.bot, "other", sibling, "agreements_list", {}))).not.toContain("Keep historical project identity.");
 });

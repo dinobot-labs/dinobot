@@ -4,10 +4,11 @@ import { projectAliasProblems, type ProjectAlias } from "./project-aliases.ts";
 
 /** Manifest `memory` block. Every field is optional; see `memoryConfig` for the defaults. */
 export const MemoryShape = Type.Object({
-	/** Owner-configured exact canonical root -> historical project key. */
+	/** Owner-configured canonical root -> historical key; subtree mapping is opt-in. */
 	projectAliases: Type.Optional(Type.Array(Type.Object({
 		path: Type.String({ minLength: 1 }),
 		identity: Type.String({ minLength: 1 }),
+		descendants: Type.Optional(Type.Boolean()),
 	}, { additionalProperties: false }), { maxItems: 128 })),
 	auto: Type.Optional(Type.Object({
 		enabled: Type.Optional(Type.Boolean()),

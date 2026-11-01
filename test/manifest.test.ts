@@ -73,7 +73,13 @@ test("owner project aliases survive YAML serialization and reject unsafe mapping
 	const raw = { ...manifest(), memory: { projectAliases } };
 	const serialized = Bun.YAML.stringify(raw);
 	expect((await parseManifest(Bun.YAML.parse(serialized), catalogs)).memory.projectAliases).toEqual(projectAliases);
+	for (const descendants of [true, false]) {
+		const aliases = [{ ...projectAliases[0]!, descendants }];
+		const yaml = Bun.YAML.stringify({ ...manifest(), memory: { projectAliases: aliases } });
+		expect((await parseManifest(Bun.YAML.parse(yaml), catalogs)).memory.projectAliases).toEqual(aliases);
+	}
 	for (const aliases of [
+		[{ ...projectAliases[0]!, descendants: "true" }],
 		[{ path: "relative", identity: resolve("historical") }],
 		[{ path: resolve("moved"), identity: resolve("moved") }],
 		[{ ...projectAliases[0], arbitrary: true }],
