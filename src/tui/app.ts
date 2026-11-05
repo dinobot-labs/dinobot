@@ -242,6 +242,8 @@ export class ChatApp {
 	private applying = false;
 	private setupHinted = false;
 	private started = false;
+	/** Last status reported to the host through OSC 7501, so an unchanged state is not re-emitted. */
+	private lastHerdrStatus?: string;
 	private readonly updateCheck = new AbortController();
 	private readonly checkUpdate: ChatAppHooks["checkUpdate"];
 	private readonly openUrl: (url: string) => void;
@@ -304,6 +306,46 @@ export class ChatApp {
 		this.screen.requestRender();
 	}
 
+	/**
+	 * Tell the host (Herdr) what this session is doing with OSC 7501, so a tab shows `idle`, `working`, `blocked` or `done`
+	 * instead of the state an external script injected once. Best-effort: a terminal that refuses the sequence must not
+	 * interrupt the session.
+	 */
+	private reportHerdrStatus(state: "idle" | "working" | "blocked" | "done", detail?: { kind?: "permission" | "question" | "auth"; msg?: string }): void {
+		try {
+			const parts = [`state=${state}`, "app=dinobot"];
+			if (detail?.kind) parts.push(`kind=${detail.kind}`);
+			if (detail?.msg) parts.push(`msg=${detail.msg}`);
+			const seq = `\x1b]7501;${parts.join(":")}\x1b\\`;
+			if (this.screen?.tui?.terminal) {
+				this.screen.tui.terminal.write(seq);
+			} else if (process.stdout.isTTY) {
+				process.stdout.write(seq);
+			}
+		} catch {
+			// Terminal status reporting is best-effort.
+		}
+	}
+
+	/** Derive the host status from the session itself and report it when it changed. */
+	private syncHerdrStatus(): void {
+		let nextState: "idle" | "working" | "blocked" = "idle";
+		let kind: "permission" | "question" | "auth" | undefined;
+		if (this.openAsks().length > 0) {
+			nextState = "blocked";
+			kind = "question";
+		} else if (this.state.data.run !== undefined) {
+			nextState = "working";
+		} else {
+			nextState = "idle";
+		}
+		const key = `${nextState}:${kind ?? ""}`;
+		if (this.lastHerdrStatus !== key) {
+			this.lastHerdrStatus = key;
+			this.reportHerdrStatus(nextState, kind ? { kind } : undefined);
+		}
+	}
+
 	start(): void {
 		if (this.started || this.updateCheck.signal.aborted) return;
 		this.started = true;
@@ -313,6 +355,7 @@ export class ChatApp {
 		this.screen.start();
 		this.paste.enable();
 		this.attach(this.thread);
+		this.syncHerdrStatus();
 		void this.loadCommands();
 		void this.loadUpdateNotice();
 	}
@@ -435,6 +478,7 @@ export class ChatApp {
 			if (this.openAsks().some(ask => !this.autoShownAsks.has(ask.id)) && this.screen.modal === undefined
 				&& !this.state.data.run && this.screen.prompt.getText().trim() === ""
 				&& !this.screen.inTakeover && !this.updateCheck.signal.aborted) this.openAskPicker(true);
+			this.syncHerdrStatus();
 		});
 		const controller = new AbortController();
 		this.stream = controller;
@@ -468,6 +512,7 @@ export class ChatApp {
 				if (!controller.signal.aborted && this.modelRevision === revision) this.error(error);
 			},
 		);
+		this.syncHerdrStatus();
 	}
 
 	private async loadCommands(): Promise<void> {
@@ -641,6 +686,8 @@ export class ChatApp {
 		prompt.clearEditHistory();
 		this.syncAttachments();
 		if (text.startsWith("/")) return this.command(text);
+		// Reactivity: the host must see "working" the moment a turn starts, not only on the next state event.
+		this.reportHerdrStatus("working");
 		const pending = { images: staged };
 		this.pendingSend = pending;
 		const state = this.state;
@@ -1468,6 +1515,7 @@ export class ChatApp {
 	/** Stop owned asynchronous UI work without terminating an embedding process. */
 	stop(): void {
 		if (this.updateCheck.signal.aborted) return;
+		this.reportHerdrStatus("done");
 		this.updateCheck.abort();
 		this.unsubscribeAsks?.();
 		this.unsubscribeAsks = undefined;
