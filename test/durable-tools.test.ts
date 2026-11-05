@@ -62,7 +62,12 @@ const textOf = (result: { content: unknown }) => JSON.stringify(result.content);
 test("every public durable tool and every registered capability is available inside codemode", async () => {
 	const { conversation, run } = await setup(await directory());
 	const agent = await conversation.agent(context);
-	const expected = agent.tools.map((tool) => tool.name).filter((name) => name !== "codemode").sort();
+	// Native 1.5 separates model-offered tools from tools callable inside codemode.
+	const expected = agent.callable.map((tool) => tool.name).filter((name) => name !== "codemode").sort();
+	const offered = new Set(agent.tools.map(tool => tool.name));
+	for (const tool of agent.callable) {
+		expect(offered.has(tool.name)).toBe((tool.callers ?? ["model", "tools"]).includes("model"));
+	}
 	// Detect a newly exported tool factory as well as additions to CodingTools on upgrades.
 	for (const [name, factory] of Object.entries(durableTools)) {
 		if (/^create.*Tool$/.test(name) && typeof factory === "function")

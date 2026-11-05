@@ -75,7 +75,7 @@ Windows에서는 SQLite close 뒤에도 메모리 매핑이 프로세스 종료�
 
 ### 통합 실행 결과 (2026-11-05)
 
-- 격리 Linux에서 전체 TypeScript 검사와 관련 63개 테스트 파일: **717 통과, 3 skip, 0 실패**. skip은 Windows ZIP 전용 3개이며 Windows에서 별도로 모두 통과했다. 저장·압축·관찰·도구·하위 작업·DAG·native process crash 검증을 포함한다. 저장소 전체 테스트를 실행했다는 뜻은 아니다.
+- 격리 Linux에서 전체 TypeScript 검사와 관련 63개 테스트 파일: **717 통과, 3 skip, 0 실패**. skip은 Windows ZIP 전용 3개이며 Windows에서 별도로 모두 통과했다. 저장·압축·관찰·도구·하위 작업·DAG·native process crash 검증을 포함한다. 저장소 전체 테스트를 실행했다는 뜻은 아니다. 추가 `durable-tools` 4개도 통과했다. 이 fixture는 1.5의 model-offered 목록과 callable 목록을 구분하고, 실제 codemode 도구 목록의 정확한 일치를 검사한다.
 - Windows와 Linux standalone 빌드 및 각각의 `--version` 실행: `0.8.5`. Windows에서는 Bun 실행 파일의 Unicode 경로 문제를 피하려고 동일 바이트의 Bun을 ASCII 경로에서 직접 `script/build.ts`에 실행했다. 기본 PATH의 Bun으로 실행한 최초 빌드는 실패했으며 이를 제품 빌드 성공으로 세지 않는다.
 - OS 임시 프로젝트의 frozen install 후 자체 patch 대상 17개 파일이 검증된 설치 트리와 byte-identical이고 lockfile도 불변이다. pi-tui 1.0.0 및 oh-my-pi/pi-ai 18.5.0의 버전·패치는 유지했다.
 
@@ -86,7 +86,7 @@ Windows에서는 SQLite close 뒤에도 메모리 매핑이 프로세스 종료�
 - nested key는 native JSON 동등성을 따른다. 0/-0 및 객체 prototype 차이는 새 실행이 아니며, 다른 인수는 거부한다.
 - attachment/wire 보관을 거절해도 이미 발생한 usage는 같은 terminal commit에서 한 번 기록한다. nested ToolTask의 usage를 부모가 중복 계산하지 않는다.
 - watch stop과 listener rejection이 겹치면 listener_error를 보존한다. session close로 미전달 entry가 생길 수 있으면 failed/reconnect로 알리며, 도구 성공·실패를 만들어 내지 않는다. immutable toolResult와 일치할 때만 채널 결과를 확정한다. 종료 후 무손실 전달이나 닫힌 DB 조회를 보장하지 않는다.
-- text block이 thinking/toolCall로 교체되면 공개 draft를 다시 계산한다. 비어 있는 결과는 명시적 draft_clear로 전송하고, 채널은 비어 있지 않은 기존 progress card를 표시한다. 일반 빈 draft 입력은 여전히 거부한다.
+- text block이 thinking/toolCall로 교체되면 공개 draft를 다시 계산한다. 비어 있는 결과는 명시적 draft_clear로 전송하고, 채널은 비어 있지 않은 기존 progress card를 표시한다. 일반 빈 draft 입력은 여전히 거부한다. 별도 다음 generation이 thinking으로 시작할 때는 이전에 공개한 문구를 새 공개 text까지 유지하는 기존 표시 동작을 보존한다. 같은 mapper 입력으로 1.0.2와 1.5 양쪽을 실행해 이 경계를 확인했으며, 같은 generation 안의 block 교체와 구분한다.
 
 ## Foreground 하위 작업의 재시작
 
