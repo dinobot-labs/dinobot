@@ -24,7 +24,9 @@ test("bot projects a real tool receipt through independent durable host work", a
 		if (!watch) throw new Error("Observation watch unavailable");
 		const signal = Promise.withResolvers<void>();
 		const timeout = setTimeout(() => signal.reject(new Error("Observation event timeout")), 5000);
-		watch.start(async (value) => {
+		watch.start(async (call) => {
+            if (call.kind === "failed") { signal.reject(call.error); return; }
+            const value = call.value;
 			if (value?.observations.some((entry) => entry.kind === "load_succeeded" && entry.name === "debugging")) signal.resolve();
 		});
 		try {

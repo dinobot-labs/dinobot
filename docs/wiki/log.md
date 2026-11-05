@@ -1,5 +1,7 @@
 # 변경 기록
 
+- 2026-11-05: [pi-durable 1.5 전환 계약](contracts/pi-durable-1.5.md)에 API 경계, 유지 패치, 압축·저장·대기 불변식과 실제 1.0.2 SQLite 순방향 fixture를 기록했다. definite storage refusal 뒤 같은 Session 재사용은 폐지되고 close/reopen 후 재시도한다. 소스 전환이며 설치·실행 중 데몬 교체를 뜻하지 않는다.
+
 - 2026-10-31: 자동 기억 회수에서 한국어 내부 두 글자 조각 대신 정규화된 어휘 일치를 사용하고, 전달 이력과 무관하게 프로젝트 전체로 IDF를 계산한다. [회수 계약](contracts/memory-recall.md)에 정상 회수·빈 결과·중복/재시작 불변식과 형태소·의미 판별의 한계를 기록했다. 소스 수정이며 설치된 실행 버전 갱신을 뜻하지 않는다.
 
 - 2026-10-31: 코어 예약 도구 `schedule_create/list/update/cancel`을 추가했다. 시간·명시적 목표 완료 조건, 원래 대화 소유권, 재시작 유지, admission 중복 방지·취소 경계·결과 조회를 구현했다. calendar의 host wake/채널 전달 경계를 재사용한다. 조건은 idle이 아니라 성공 final·목표 증거·하위 작업·질문·큐를 함께 확인한다. 외부 채널 간 사용자 권한은 추정하지 않는다. [예약 계약](contracts/scheduling.md)에 제약과 검증 범위를 기록했다.

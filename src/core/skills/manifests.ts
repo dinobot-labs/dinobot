@@ -1,3 +1,4 @@
+import { checkpointEvery256 } from "../document-policy.ts";
 import { createHash } from "node:crypto";
 import { defineDoc, defineDocFamily, ROOT_CONVERSATION_ID, type ConversationId, type ConversationRecord, type Cursor, type Tx } from "@earendil-works/pi-durable";
 import type { SkillPackage, SkillSummary } from "./store.ts";
@@ -37,25 +38,25 @@ export class SkillManifestError extends Error {
 
 // These documents are owned by this module's Tx functions. No independent DB/writer,
 // telemetry arrays, pruning, or physical GC. Families bound each stored record's size.
-export const SkillManifestDoc = defineDocFamily<{ manifest: StoredManifest | null }, null>({
+export const SkillManifestDoc = defineDocFamily<{ manifest: StoredManifest | null }, null>({ checkpointWhen: checkpointEvery256,
 	kind: "dinobot.skill-manifest", version: 1, scope: "session", family: true,
 	initial: () => ({ manifest: null }),
 });
-export const SkillPublicationDoc = defineDocFamily<{ fingerprint: string | null; resultHash: string | null; publication: ManifestPublication | null }, null>({
+export const SkillPublicationDoc = defineDocFamily<{ fingerprint: string | null; resultHash: string | null; publication: ManifestPublication | null }, null>({ checkpointWhen: checkpointEvery256,
 	kind: "dinobot.skill-publication", version: 1, scope: "session", family: true,
 	initial: () => ({ fingerprint: null, resultHash: null, publication: null }),
 });
 export const SkillDefaultDoc = defineDoc<{
 	publication: ManifestPublication | null; legacyClassified: boolean; legacyCount: number;
-}>({
+}>({ checkpointWhen: checkpointEvery256,
 	kind: "dinobot.skill-default", version: 1, scope: "session",
 	initial: () => ({ publication: null, legacyClassified: false, legacyCount: 0 }),
 });
-export const SkillPinDoc = defineDoc<{ pin: SessionSkillPin | null }>({
+export const SkillPinDoc = defineDoc<{ pin: SessionSkillPin | null }>({ checkpointWhen: checkpointEvery256,
 	kind: "dinobot.skill-pin", version: 1, scope: "conversation", history: "latest", fork: "current",
 	initial: () => ({ pin: null }),
 });
-export const SkillRetentionDoc = defineDoc<{ manifestHash: string | null; closed: boolean; legacyRegistered: boolean }>({
+export const SkillRetentionDoc = defineDoc<{ manifestHash: string | null; closed: boolean; legacyRegistered: boolean }>({ checkpointWhen: checkpointEvery256,
 	kind: "dinobot.skill-retention", version: 1, scope: "conversation", history: "latest", fork: "initial",
 	initial: () => ({ manifestHash: null, closed: false, legacyRegistered: false }),
 });

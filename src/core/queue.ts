@@ -1,3 +1,4 @@
+import { checkpointEvery256 } from "./document-policy.ts";
 import { copyJson, type Context } from "@earendil-works/chord";
 import { type Conversation, type ConversationId, type Harness, type Cursor, type TaskId, type Tx, defineDoc, InboxDoc, LiveDoc, type InboxItem, type InboxState, type SubmissionId, type UserInput } from "@earendil-works/pi-durable";
 import { formatInput, parseInput } from "./input.ts";
@@ -66,7 +67,7 @@ function combine(contents: readonly InputItem["content"][]): UserInput {
 export type SendNowResult = { sent: number; submissionId?: number };
 
 type Transfer = { requestId: string; items: InputItem[]; runnerId?: TaskId };
-const TransferDoc = defineDoc<{ pending: Transfer | null }>({
+const TransferDoc = defineDoc<{ pending: Transfer | null }>({ checkpointWhen: checkpointEvery256,
 	kind: "dinobot.queue-transfer", version: 1, scope: "conversation", history: "latest", fork: "initial",
 	initial: () => ({ pending: null }),
 });

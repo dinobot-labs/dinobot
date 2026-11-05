@@ -1,4 +1,4 @@
-import { Type } from "@earendil-works/pi-ai";
+import { Type } from "typebox";
 import type { Static, TSchema } from "typebox";
 import { httpChannel } from "./http.ts";
 import { SlackConfigSchema, createSlackChannel } from "./slack.ts";

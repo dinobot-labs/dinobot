@@ -1,3 +1,4 @@
+import { checkpointEvery256 } from "./document-policy.ts";
 import type { Context, Draft } from "@earendil-works/chord";
 import { defineDoc, type Harness } from "@earendil-works/pi-durable";
 
@@ -36,7 +37,7 @@ export type Claim = {
 
 export type ClaimsState = { nextToken: number; claims: Claim[] };
 
-export const ClaimsDoc = defineDoc<ClaimsState>({
+export const ClaimsDoc = defineDoc<ClaimsState>({ checkpointWhen: checkpointEvery256,
 	kind: "dinobot.claims",
 	version: 1,
 	scope: "session",

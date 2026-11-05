@@ -1,9 +1,10 @@
+import { watchConversation } from "../src/core/conversation-observer.ts";
 import { afterEach, expect, test } from "bun:test";
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import type { ToolResultMessage } from "@earendil-works/pi-ai";
 import { createModels } from "@earendil-works/pi-ai/models";
 import { fauxAssistantMessage, fauxProvider, fauxToolCall, type FauxResponseFactory } from "@earendil-works/pi-ai/providers/faux";
-import { type ConversationId, MemoryStorage, watchEvents } from "@earendil-works/pi-durable";
+import { type ConversationId, MemoryStorage } from "@earendil-works/pi-durable";
 import { type Bot, openBot } from "../src/core/bot.ts";
 import { AgentsDoc, collectionLine, ProgressDoc } from "../src/extensions/subagents.ts";
 import type { SubagentProgress, TaskDetails, TaskOutputDetails } from "../src/core/ui-contract.ts";
@@ -73,7 +74,7 @@ async function spawnHandle(results: () => Promise<ToolResultMessage[]>): Promise
 
 /** Resolves once the parent's task_message tool has admitted its note (its mid-run details publish). */
 async function waitForMessageAdmission(bot: Bot, parentId: ConversationId) {
-	const stream = await watchEvents(bot.harness, parentId, context);
+	const stream = await watchConversation(bot.harness, parentId, context);
 	const admitted = Promise.withResolvers<void>();
 	await stream.start(async (events) => {
 		for (const event of events) {

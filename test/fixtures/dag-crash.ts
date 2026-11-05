@@ -1,3 +1,5 @@
+import type { Seq, TaskRecord } from "@earendil-works/pi-durable";
+import type { JsonValue } from "@earendil-works/chord";
 import { BACKGROUND_CONTEXT as context } from "@earendil-works/chord/context";
 import { createModels } from "@earendil-works/pi-ai/models";
 import { fauxProvider, fauxAssistantMessage, fauxToolCall } from "@earendil-works/pi-ai/providers/faux";
@@ -9,17 +11,25 @@ const [directory,cut,mode]=process.argv.slice(2);
 const storage=await openNodeSqliteStorage(directory+"/store.sqlite");
 const commit=storage.commit.bind(storage);
 let killed=false;
-if(mode==="crash") storage.commit=async(writes,c)=>{
- const seq=await commit(writes,c);
- const tasks=writes.filter(w=>w.type==="task").map(w=>(w as {value:any}).value);
- const terminal=tasks.some(t=>t.kind==="dinobot.subagent"&&t.state.status==="terminal"&&t.state.outcome.result==="actor output");
- const wake=tasks.some(t=>t.kind==="dinobot.dag-continuation"&&t.state.status==="running"&&t.state.checkpoint.phase==="advance"&&t.state.checkpoint.epoch>0);
- const wait=tasks.some(t=>t.kind==="dinobot.dag-continuation"&&t.state.status==="running"&&t.state.checkpoint.phase==="wait");
- const ack=tasks.some(t=>t.kind==="dinobot.dag-continuation"&&t.state.status==="terminal"&&t.state.outcome.result.includes("[verified]"));
+function runningCheckpoint(task: TaskRecord<JsonValue, JsonValue, JsonValue>) {
+ if(task.state.status!=="running")return undefined;
+ const value=task.state.checkpoint;
+ return value!==null&&typeof value==="object"&&!Array.isArray(value)?value:undefined;
+}
+if(mode==="crash") storage.commit=async(batches,receive,c)=>{
+ let seq: Seq | undefined;
+ const result=await commit(batches,(index,committed)=>{seq=committed;receive(index,committed);},c);
+ const writes=batches.slice(0,result.stored).flat();
+ const tasks=writes.filter(w=>w.type==="task").map(w=>w.value);
+ const terminal=tasks.some(t=>t.kind==="dinobot.subagent"&&t.state.status==="terminal"&&t.state.outcome.status==="completed"&&t.state.outcome.result==="actor output");
+ const wake=tasks.some(t=>{const checkpoint=runningCheckpoint(t);return t.kind==="dinobot.dag-continuation"&&checkpoint?.phase==="advance"&&typeof checkpoint.epoch==="number"&&checkpoint.epoch>0;});
+ const wait=tasks.some(t=>t.kind==="dinobot.dag-continuation"&&runningCheckpoint(t)?.phase==="wait");
+ const ack=tasks.some(t=>t.kind==="dinobot.dag-continuation"&&t.state.status==="terminal"&&t.state.outcome.status==="completed"&&typeof t.state.outcome.result==="string"&&t.state.outcome.result.includes("[verified]"));
  if(!killed&&((cut==="terminal"&&terminal)||(cut==="wake"&&wake)||(cut==="wait"&&wait)||(cut==="ack"&&ack))) {
+  if(seq===undefined)throw new Error("Missing committed crash sequence");
   killed=true;writeFileSync(directory+"/cut.json",JSON.stringify({cut,signal:"SIGKILL",seq,writes},null,2)); console.log("SIGKILL "+cut+" seq="+seq);process.kill(process.pid,"SIGKILL");
  }
- return seq;
+ return result;
 };
 const faux=fauxProvider({provider:"faux",models:[{id:"fixture"}]});
 const plan={nodes:[{id:"actor",kind:"act",writes:["out"]},{id:"v",kind:"verify",reads:["out"],covers:["R"]}],edges:[["actor","v"]],goal:{requirements:["R"]}};

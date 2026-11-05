@@ -1,3 +1,4 @@
+import { checkpointEvery256 } from "./document-policy.ts";
 import type { Context } from "@earendil-works/chord";
 import type { Models, ModelThinkingLevel } from "@earendil-works/pi-ai";
 import { AgentDoc, configure, defineDoc, InboxDoc, LiveDoc, ProviderDoc, type Conversation, type ConversationId, type DocumentReader, type Harness, type ModelRef, type Tx } from "@earendil-works/pi-durable";
@@ -8,7 +9,7 @@ import { hasPendingQueueTransferIn, withConversationAdmission } from "./queue.ts
 import { reasoningState, type ReasoningState } from "./reasoning.ts";
 
 /** Session-wide index from channel thread keys to durable conversations. */
-const ThreadIndex = defineDoc<{ threads: Record<string, number> }>({
+const ThreadIndex = defineDoc<{ threads: Record<string, number> }>({ checkpointWhen: checkpointEvery256,
 	kind: "dinobot.threads",
 	version: 1,
 	scope: "session",
@@ -27,7 +28,7 @@ const ThreadArchive = defineDoc<{
 	archived: Record<string, ArchiveRecord>;
 	lineage: Record<string, number[]>;
 	requests: Record<string, string>;
-}>({
+}>({ checkpointWhen: checkpointEvery256,
 	kind: "dinobot.thread-archive",
 	version: 1,
 	scope: "session",
@@ -35,21 +36,21 @@ const ThreadArchive = defineDoc<{
 });
 
 /** Marks the one-time removal of empty threads as done for this store. */
-const ThreadPrune = defineDoc<{ done: boolean }>({
+const ThreadPrune = defineDoc<{ done: boolean }>({ checkpointWhen: checkpointEvery256,
 	kind: "dinobot.thread-prune",
 	version: 1,
 	scope: "session",
 	initial: () => ({ done: false }),
 });
 
-const ModelPreference = defineDoc<{ model: ModelRef | null }>({
+const ModelPreference = defineDoc<{ model: ModelRef | null }>({ checkpointWhen: checkpointEvery256,
 	kind: "dinobot.model-preference",
 	version: 1,
 	scope: "session",
 	initial: () => ({ model: null }),
 });
 
-const ReasoningPreference = defineDoc<{ thinkingLevel: ModelThinkingLevel | null }>({
+const ReasoningPreference = defineDoc<{ thinkingLevel: ModelThinkingLevel | null }>({ checkpointWhen: checkpointEvery256,
 	kind: "dinobot.reasoning-preference",
 	version: 1,
 	scope: "session",

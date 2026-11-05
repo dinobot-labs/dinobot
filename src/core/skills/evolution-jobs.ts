@@ -1,3 +1,4 @@
+import { checkpointEvery256 } from "../document-policy.ts";
 import { createHash } from "node:crypto";
 import type { Context } from "@earendil-works/chord";
 import { defineDoc, defineDocFamily, type Session, type Tx } from "@earendil-works/pi-durable";
@@ -78,14 +79,14 @@ export type EvolutionReceipt = {
 	readonly lease: EvolutionLease | null;
 };
 type CommandState = { receipt: EvolutionReceipt | null; delivered: boolean };
-export const EvolutionQueueDoc = defineDoc<QueueState>({
+export const EvolutionQueueDoc = defineDoc<QueueState>({ checkpointWhen: checkpointEvery256,
 	kind: "dinobot.skill-evolution.queue", scope: "session", version: 1,
 	initial: () => ({
 		policy: null, mode: "paused", epoch: 0, lastNow: 0, pending: [], reserved: zero(), spent: zero(),
 		coverage: { accepted: 0, coalesced: 0, deferred: 0, dropped: 0 },
 	}),
 });
-export const EvolutionJobDoc = defineDocFamily<EvolutionJobState, string>({
+export const EvolutionJobDoc = defineDocFamily<EvolutionJobState, string>({ checkpointWhen: checkpointEvery256,
 	kind: "dinobot.skill-evolution.job", scope: "session", version: 1, family: true,
 	initial: (id) => ({
 		id, input: null, status: "pending", stage: "authoring", fence: 0, epoch: 0, worker: null,
@@ -93,11 +94,11 @@ export const EvolutionJobDoc = defineDocFamily<EvolutionJobState, string>({
 	}),
 });
 /** Receipt is also the outbox payload. Delivery is at-least-once, never exactly-once. */
-export const EvolutionCommandDoc = defineDocFamily<CommandState, string>({
+export const EvolutionCommandDoc = defineDocFamily<CommandState, string>({ checkpointWhen: checkpointEvery256,
 	kind: "dinobot.skill-evolution.command", scope: "session", version: 1, family: true,
 	initial: () => ({ receipt: null, delivered: false }),
 });
-const EvolutionProblemDoc = defineDocFamily<{ admittedAt: number | null }, null>({
+const EvolutionProblemDoc = defineDocFamily<{ admittedAt: number | null }, null>({ checkpointWhen: checkpointEvery256,
 	kind: "dinobot.skill-evolution.problem", scope: "session", version: 1, family: true,
 	initial: () => ({ admittedAt: null }),
 });

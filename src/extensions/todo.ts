@@ -1,10 +1,11 @@
-import { Type } from "@earendil-works/pi-ai";
+import { checkpointEvery256 } from "../core/document-policy.ts";
+import { Type } from "typebox";
 import { defineDoc, defineExtension, defineTool, section } from "@earendil-works/pi-durable";
 import { TODO_TOOL, type TodoDetails } from "../core/ui-contract.ts";
 import { clone } from "../core/json.ts";
 import type { WorkService } from "../core/verification.ts";
 
-export const TodoDoc = defineDoc<TodoDetails>({
+export const TodoDoc = defineDoc<TodoDetails>({ checkpointWhen: checkpointEvery256,
 	kind: "dinobot.todo",
 	version: 1,
 	scope: "conversation",
@@ -13,7 +14,7 @@ export const TodoDoc = defineDoc<TodoDetails>({
 	initial: () => ({ todos: [] }),
 });
 
-const ReceiptDoc = defineDoc<{ result?: { details: TodoDetails; error?: string } }>({
+const ReceiptDoc = defineDoc<{ result?: { details: TodoDetails; error?: string } }>({ checkpointWhen: checkpointEvery256,
 	kind: "dinobot.todo.receipt",
 	version: 1,
 	scope: "task",
@@ -94,7 +95,7 @@ export function todoExtension(work: WorkService) {
 					return {
 						details: result.details,
 						isError: result.error !== undefined,
-						content: [{
+						output: [{
 							type: "text",
 							text: result.error ?? (result.details.todos.map((todo) => `- [${todo.status}] ${todo.id}: ${todo.content}`).join("\n") || "No tasks currently tracked."),
 						}],

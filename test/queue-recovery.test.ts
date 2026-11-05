@@ -1,6 +1,6 @@
+import { interceptSubmit } from "./fixtures/submit-interceptor.ts";
 import { afterEach, expect, test } from "bun:test";
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { sqliteTest } from "./fixtures/sqlite-test.ts";
 import { join } from "node:path";
 import { BACKGROUND_CONTEXT as context } from "@earendil-works/chord/context";
 import { createModels } from "@earendil-works/pi-ai/models";
@@ -15,7 +15,7 @@ const open = (storage: Storage) => Harness.open(storage, { registry: createRegis
 async function seed(harness: Harness, conversation: Conversation) {
  return harness.commit(async tx => {
   const inbox = await tx.doc(InboxDoc, conversation.id);
-  (await tx.doc(LiveDoc, conversation.id)).run = { taskId: 999 as TaskId, inputs: [] };
+  (await tx.doc(LiveDoc, conversation.id)).run = { turns: 0, taskId: 999 as TaskId, inputs: [] };
   const ids = [];
   for (const content of ["one", "two"]) {
    const record = await tx.createSubmission({ conversationId: conversation.id, type: "input", status: "queued" });
@@ -29,9 +29,7 @@ async function seed(harness: Harness, conversation: Conversation) {
 // Real public Session transactions and SQLite; only abort/admission are fault-controlled.
 // Existing API tests cover the real running-turn behavior and attribution/withdraw compatibility.
 for (const fault of ["before-transfer", "between-withdrawals", "after-transfer", "before-abort", "after-abort", "before-submit", "after-submit", "before-clear", "after-clear"] as const) {
- test("restart/retry recovers at " + fault, async () => {
-  const dir = await mkdtemp(join(tmpdir(), "queue-recovery-"));
-  cleanup.push(() => rm(dir, { recursive: true, force: true }));
+ sqliteTest(import.meta.path, "restart/retry recovers at " + fault, async dir => {
   const db = join(dir, "queue.sqlite");
   let harness = await open(await openNodeSqliteStorage(db));
   cleanup.push(() => harness.close(context));
@@ -98,7 +96,7 @@ for (const fault of ["before-transfer", "between-withdrawals", "after-transfer",
   mockRunner();
   const reopenedCommit = harness.commit.bind(harness);
   const retryHandle = handle();
-  retryHandle.submit = async draft => {
+  retryHandle.submit = interceptSubmit(conversation.submit.bind(conversation), async draft => {
    admissions++;
    const record = await reopenedCommit(async tx => {
     const inbox = await tx.doc(InboxDoc, conversation.id);
@@ -108,7 +106,7 @@ for (const fault of ["before-transfer", "between-withdrawals", "after-transfer",
     return record;
    }, context);
    return (await harness.submission(record.id, context))!;
-  };
+  });
   // After a successful clear, the replacement is itself queued in this fixture. Do not
   // send it again: a new send-now intentionally transfers currently queued input.
   if (fault !== "after-clear") {
@@ -170,10 +168,10 @@ for (const barrier of ["before-abort", "before-submit"] as const) {
    if (++commits === 1 && barrier === "before-abort") { reached.resolve(); await release.promise; }
    return result;
   }) as Harness["commit"];
-  conversation.submit = async (draft, ctx) => {
+  conversation.submit = interceptSubmit(submit, async (draft, ctx) => {
    if (barrier === "before-submit") { reached.resolve(); await release.promise; }
    return submit(draft, ctx);
-  };
+  });
   const sending = sendQueuedNow(harness, conversation, context);
   await reached.promise;
   const arrival = await submit({ type: "input", content: "concurrent", whenBusy: "followUp" }, context);
@@ -187,9 +185,7 @@ for (const barrier of ["before-abort", "before-submit"] as const) {
 }
 
 for (const fault of ["before-abort", "before-submit", "after-submit"] as const) {
- test("real SQLite startup recovers transfer and concurrent input at " + fault, async () => {
-  const dir = await mkdtemp(join(tmpdir(), "queue-real-recovery-"));
-  cleanup.push(() => rm(dir, { recursive: true, force: true }));
+ sqliteTest(import.meta.path, "real SQLite startup recovers transfer and concurrent input at " + fault, async dir => {
   const db = join(dir, "queue.sqlite");
   const faux = fauxProvider({ provider: "faux", models: [{ id: "test" }] });
   const models = createModels();
@@ -215,12 +211,12 @@ for (const fault of ["before-abort", "before-submit", "after-submit"] as const) 
    if (fault === "before-abort") { await arrive(); throw new Error(fault); }
    return abortTask(id, ctx);
   };
-  conversation.submit = async (draft, ctx) => {
+  conversation.submit = interceptSubmit(submit, async (draft, ctx) => {
    await arrive();
    if (fault === "before-submit") throw new Error(fault);
    await submit(draft, ctx);
    throw new Error(fault);
-  };
+  });
   await expect(sendQueuedNow(harness, conversation, context)).rejects.toThrow(fault);
   await harness.close(context);
   harness = await Harness.open(await openNodeSqliteStorage(db), { registry: createRegistry(), models }, context);

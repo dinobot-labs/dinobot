@@ -1,3 +1,4 @@
+import { interceptSubmit } from "./fixtures/submit-interceptor.ts";
 import { afterEach, expect, test } from "bun:test";
 import { mkdir, mkdtemp, realpath, rename, rm, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -457,10 +458,10 @@ for (const accepted of [false, true]) {
 		const logs: string[] = [];
 		const options = { config: ENABLED.recall, workspaceRoot: workspace, getHarness: () => bot.harness, log: (line: string) => { logs.push(line); } };
 		const failed = new Proxy(conversation, { get(target, property, receiver) {
-			if (property === "submit") return (async (submission, ctx) => {
+			if (property === "submit") return interceptSubmit(target.submit.bind(target), async (submission, ctx) => {
 				if (accepted) await target.submit(submission, ctx);
 				throw new Error("injected delivery interruption");
-			}) satisfies Conversation["submit"];
+			});
 			return Reflect.get(target, property, receiver);
 		} });
 		await createMemoryRecall(options).recall(failed, "Vanguard", context);

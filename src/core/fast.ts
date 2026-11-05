@@ -1,3 +1,4 @@
+import { checkpointEvery256 } from "./document-policy.ts";
 import type { Models } from "@earendil-works/pi-ai";
 import type { Provider } from "@earendil-works/pi-ai/models";
 import { AgentDoc, defineDoc, defineExtension, GenerationTask, hook, ProviderDoc, type Extension, type ModelRef } from "@earendil-works/pi-durable";
@@ -26,7 +27,7 @@ export function fastTier(provider: string, modelId: string): FastTier | undefine
 }
 
 /** The thread's stored choice: explicit on, explicit off, or unset (`null`, follow the catalog default). */
-export const FastDoc = defineDoc<{ fast: boolean | null }>({
+export const FastDoc = defineDoc<{ fast: boolean | null }>({ checkpointWhen: checkpointEvery256,
 	kind: "dinobot.fast",
 	version: 1,
 	scope: "conversation",
@@ -36,7 +37,7 @@ export const FastDoc = defineDoc<{ fast: boolean | null }>({
 });
 
 /** The last explicit choice, seeded into new threads. */
-export const FastPreference = defineDoc<{ fast: boolean | null }>({
+export const FastPreference = defineDoc<{ fast: boolean | null }>({ checkpointWhen: checkpointEvery256,
 	kind: "dinobot.fast-preference",
 	version: 1,
 	scope: "session",

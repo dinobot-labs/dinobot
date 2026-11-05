@@ -1,3 +1,4 @@
+import { checkpointEvery256 } from "../document-policy.ts";
 import { defineDoc, defineDocFamily, type Tx } from "@earendil-works/pi-durable";
 import { skillEvaluationHash } from "./evaluation-contract.ts";
 import { skillPackageHash } from "./manifests.ts";
@@ -5,11 +6,11 @@ import type { SkillPackage } from "./store.ts";
 import { readSkillsState } from "./storage.ts";
 
 /** Migration staging only: existing readers/writers still use SkillsDoc. */
-export const RetainedSkillContentDoc = defineDocFamily<{ package: SkillPackage | null }, null>({
+export const RetainedSkillContentDoc = defineDocFamily<{ package: SkillPackage | null }, null>({ checkpointWhen: checkpointEvery256,
 	kind: "dinobot.skill-retention.content", version: 1, scope: "session", family: true,
 	initial: () => ({ package: null }),
 });
-export const SkillContentMigrationDoc = defineDoc<{ sourceDigest: string | null; packageCount: number; phase: "absent" | "staged" }>({
+export const SkillContentMigrationDoc = defineDoc<{ sourceDigest: string | null; packageCount: number; phase: "absent" | "staged" }>({ checkpointWhen: checkpointEvery256,
 	kind: "dinobot.skill-retention.migration", version: 1, scope: "session",
 	initial: () => ({ sourceDigest: null, packageCount: 0, phase: "absent" }),
 });

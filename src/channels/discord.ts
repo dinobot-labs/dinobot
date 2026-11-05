@@ -4,7 +4,7 @@ import { hasUnsafeLinks } from "./rich-text.ts";
 import { NativeCooldown } from "./native-cooldown.ts";
 import { nativeProgress } from "./native-progress.ts";
 import { createPublicKey, verify } from "node:crypto";
-import { Type } from "@earendil-works/pi-ai";
+import { Type } from "typebox";
 import type { Static } from "typebox";
 import { Value } from "typebox/value";
 import { messagingChannel, messagingProperties, type MessagingChannel, type MessagingDependencies } from "./messaging.ts";

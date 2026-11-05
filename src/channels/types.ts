@@ -67,6 +67,7 @@ export type ProgressEvent =
 	| { readonly type: "retry"; readonly attempt: number }
 	| { readonly type: "activity" }
 	| { readonly type: "draft"; readonly text: string }
+	| { readonly type: "draft_clear" }
 	| { readonly type: "steer" }
 	| { readonly type: "heartbeat" };
 

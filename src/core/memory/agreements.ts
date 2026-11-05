@@ -1,3 +1,4 @@
+import { checkpointEvery256 } from "../document-policy.ts";
 import { createHash } from "node:crypto";
 import { defineDoc } from "@earendil-works/pi-durable";
 import { normalizeMemoryText } from "./store.ts";
@@ -38,7 +39,7 @@ export type Agreement = {
 };
 export type AgreementsState = { revision: number; items: Agreement[]; forgotten: string[] };
 
-export const AgreementsDoc = defineDoc<AgreementsState>({
+export const AgreementsDoc = defineDoc<AgreementsState>({ checkpointWhen: checkpointEvery256,
 	kind: "dinobot.agreements", version: 1, scope: "session",
 	initial: () => ({ revision: 0, items: [], forgotten: [] }),
 });

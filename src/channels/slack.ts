@@ -7,7 +7,7 @@ import { createSlackSocket } from "./slack-socket.ts";
 import { slackAttachments, slackMedia, uploadSlackText } from "./slack-media.ts";
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { readPrivateFile } from "../telegram-private-files/index.ts";
-import { Type } from "@earendil-works/pi-ai";
+import { Type } from "typebox";
 import type { Static } from "typebox";
 import { Value } from "typebox/value";
 import { chunks, messagingChannel, messagingProperties, requiredEnv, type MessagingChannel, type Receive } from "./messaging.ts";

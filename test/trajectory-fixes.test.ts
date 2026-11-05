@@ -5,7 +5,11 @@ import { join } from "node:path";
 import { Type } from "typebox";
 import { validateToolArguments } from "@earendil-works/pi-ai/utils/validation";
 import { CodingTools } from "@earendil-works/pi-durable/tools";
-import { createRegistry } from "@earendil-works/pi-durable";
+import { createRegistry, defineExtension, defineTool, Harness, MemoryStorage } from "@earendil-works/pi-durable";
+import { BACKGROUND_CONTEXT as context } from "@earendil-works/chord/context";
+import { createModels } from "@earendil-works/pi-ai/models";
+import { fauxAssistantMessage, fauxProvider, fauxToolCall } from "@earendil-works/pi-ai/providers/faux";
+import { codemodeExtension } from "../src/extensions/codemode.ts";
 import { repairArguments, repairingRegistry, withArgumentRepair } from "../src/core/argument-repair.ts";
 import { runCell } from "../src/core/codemode/worker.ts";
 import { imagesExtension } from "../src/extensions/images.ts";
@@ -23,7 +27,7 @@ const validate = (tool: { name: string; parameters: unknown }, args: unknown) =>
 describe("argument repair", () => {
 	test("a bare string for a single required string field becomes that field (recorded #1226 step 2)", () => {
 		const args = "git log --oneline -20 && git status -sb";
-		expect(() => validate(bash, args)).toThrow(/must be object/);
+		expect(() => validate(bash, args)).toThrow(/root: expected object, got string/);
 		const repaired = repairArguments(bash.parameters as never, args);
 		expect(repaired).toEqual({ command: args });
 		expect(validate(bash, repaired)).toEqual({ command: args });
@@ -31,7 +35,9 @@ describe("argument repair", () => {
 	test("JSON text of the whole object or of an array field is parsed (recorded work_plan sourceIds)", () => {
 		const tool = { name: "work_plan", parameters: plan };
 		const args = { op: "informational", sourceIds: "[\"1696\"]", rationale: "read-only question" };
-		expect(() => validate(tool, args)).toThrow(/Validation failed/);
+		// pi-schema 1.5 coerces a scalar to one array element; repair must parse JSON before that coercion.
+		expect(validate(tool, args)).toEqual({ ...args, sourceIds: [args.sourceIds] });
+		expect(args.sourceIds).toBe("[\"1696\"]");
 		const repaired = repairArguments(plan as never, args);
 		expect(repaired).toEqual({ op: "informational", sourceIds: ["1696"], rationale: "read-only question" });
 		expect(validate(tool, repaired)).toEqual(repaired);
@@ -65,6 +71,30 @@ describe("argument repair", () => {
 		const installed = registry.snapshot().tools().find(({ tool }) => tool.name === "bash")!.tool;
 		expect(installed.prepareArguments!("pwd")).toEqual({ command: "pwd" });
 	});
+});
+
+for (const mode of ["direct", "codemode"] as const) test(`actual ${mode} execution repairs JSON array text before native scalar coercion`, async () => {
+	const seen: unknown[] = [];
+	const tool = defineTool({ name: "array_probe", description: "argument order fixture", callers: ["model", "tools"], parameters: plan, execute: async args => {
+		seen.push(args);
+		return { output: [{ type: "text", text: JSON.stringify(args) }] };
+	} });
+	const registry = repairingRegistry(createRegistry());
+	registry.install(defineExtension({ name: "argument-order-fixture", tools: [tool] }));
+	let harness!: Harness;
+	registry.install(codemodeExtension(() => harness, new Set()));
+	const models = createModels();
+	const faux = fauxProvider({ provider: "faux", models: [{ id: "one" }] });
+	models.setProvider(faux.provider);
+	const args = { op: "informational", sourceIds: "[\"1696\"]", rationale: "read-only question" };
+	faux.setResponses([fauxAssistantMessage(mode === "direct" ? fauxToolCall(tool.name, args) : fauxToolCall("codemode", { code: `text(await tools.array_probe(${JSON.stringify(args)}));` }), { stopReason: "toolUse" }), fauxAssistantMessage("done")]);
+	harness = await Harness.open(new MemoryStorage(), { registry, models }, context);
+	try {
+		const conversation = await harness.root(context, { agent: { model: { provider: "faux", modelId: "one" } } });
+		expect((await (await conversation.submit({ type: "input", content: "test arguments" }, context)).wait(context)).status).toBe("done");
+		expect(seen).toEqual([{ op: "informational", sourceIds: ["1696"], rationale: "read-only question" }]);
+		expect(args.sourceIds).toBe("[\"1696\"]");
+	} finally { await harness.close(context); }
 });
 
 describe("codemode cell diagnostics", () => {
@@ -108,7 +138,7 @@ describe("read on a directory", () => {
 			const env = new NodeExecutionEnv({ cwd: root });
 			const result = await tool.execute({ path: "src" } as never, { env } as never, {} as never);
 			expect(result.isError).toBe(true);
-			const text = (result.content?.[0] as { text: string }).text;
+			const text = (result.output?.[0] as { text: string }).text;
 			expect(text).toContain("is a directory");
 			expect(text).toContain("a.ts");
 			expect(text).toContain("core/");

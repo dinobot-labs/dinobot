@@ -90,7 +90,13 @@ async function close(harness: Harness) { await harness.close(context); harnesses
 test.each(["direct", "hybrid", "codemode-only"] as const)("registered %s status tool is available and does not create runtime state", async (mode) => {
 	const f = await fixture({}, mode);
 	const names = (await f.main.agent(context)).tools.map((tool) => tool.name);
-	for (const name of SKILL_EVOLUTION_TOOL_NAMES) expect(names).toContain(name);
+	for (const name of SKILL_EVOLUTION_TOOL_NAMES) {
+		// In codemode-only these remain callable by tools, not offered directly to the model.
+		if (mode === "codemode-only") expect(names).not.toContain(name);
+		else expect(names).toContain(name);
+		const registered = f.registry.snapshot().tools().find(entry => entry.tool.name === name);
+		expect(registered?.tool.name).toBe(name);
+	}
 	const response = mode === "direct"
 		? await call(f, "skill_evolution_status", {})
 		: await call(f, "codemode", { code: "text(await tools.skill_evolution_status({}));" });
@@ -364,7 +370,7 @@ test("builtin author late response cannot save candidate after kill epoch even i
 	const watch = await f.harness.watchDoc(EvolutionQueueDoc, context);
 	if (!watch) throw new Error("Missing queue watch");
 	const fenced = Promise.withResolvers<void>();
-	watch.start(async (value) => { if (value?.mode === "killed") fenced.resolve(); });
+	watch.start(async (call) => { if (call.kind === "failed") throw call.error; if (call.value?.mode === "killed") fenced.resolve(); });
 	if (watch.value?.mode === "killed") fenced.resolve();
 	const killing = f.service.kill("kill", context);
 	await fenced.promise;

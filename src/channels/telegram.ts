@@ -8,7 +8,7 @@ import { telegramMenu } from "./telegram-menu.ts";
 import { telegramPolling } from "./telegram-polling.ts";
 import { telegramAttachment, telegramMedia, telegramMediaNotice } from "./telegram-media.ts";
 import { timingSafeEqual } from "node:crypto";
-import { Type } from "@earendil-works/pi-ai";
+import { Type } from "typebox";
 import type { Static } from "typebox";
 import { Value } from "typebox/value";
 import { notStarted, type ApiPermits, type SyncStart, TELEGRAM_GATE_POLICY, validGatePolicy } from "./api-gate.ts";

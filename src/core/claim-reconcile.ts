@@ -1,3 +1,4 @@
+import { checkpointEvery256 } from "./document-policy.ts";
 import { createHash } from "node:crypto";
 import type { Context } from "@earendil-works/chord";
 import { defineDoc, type ConversationId, type Cursor, type Harness, type TaskId, type Tx } from "@earendil-works/pi-durable";
@@ -42,7 +43,7 @@ export type ReconcileResult =
 	| { status: "refused"; error: string; blockers: string[]; required?: TokenRef[]; calls: QuarantinedCall[] };
 
 /** Session audit trail of operator reconciliations, newest last. */
-export const ClaimReconcileAuditDoc = defineDoc<{ entries: { at: number; actor: string; note: string; snapshot?: string; released: Claim[]; unfenced?: Claim[]; retained: Claim[]; calls: { conversationId: number; taskId: string; evidence: { nonce: string; evidence: string }[] }[] }[] }>({
+export const ClaimReconcileAuditDoc = defineDoc<{ entries: { at: number; actor: string; note: string; snapshot?: string; released: Claim[]; unfenced?: Claim[]; retained: Claim[]; calls: { conversationId: number; taskId: string; evidence: { nonce: string; evidence: string }[] }[] }[] }>({ checkpointWhen: checkpointEvery256,
 	kind: "dinobot.claims.reconcile-audit", version: 1, scope: "session", initial: () => ({ entries: [] }),
 });
 
@@ -301,7 +302,7 @@ export async function reconcileTokenlessCalls(harness: Harness, request: Tokenle
 /** Deliberately not a quiescence assertion. Only the offline maintenance command exposes this operation. */
 export const ABANDONMENT_ACCEPTANCE = "I accept unproven historical process and computer-use effects; abandon this exact quarantine without claiming quiescence";
 export type AbandonRequest = ReconcileRequest & { snapshot: string; acceptance: string };
-export const ClaimAbandonAuditDoc = defineDoc<{ entries: { at: number; actor: string; note: string; snapshot: string; acceptance: string; waived: string[]; released: Claim[]; calls: { conversationId: number; call: NativeCall }[] }[] }>({ kind: "dinobot.claims.abandon-audit", version: 1, scope: "session", initial: () => ({ entries: [] }) });
+export const ClaimAbandonAuditDoc = defineDoc<{ entries: { at: number; actor: string; note: string; snapshot: string; acceptance: string; waived: string[]; released: Claim[]; calls: { conversationId: number; call: NativeCall }[] }[] }>({ checkpointWhen: checkpointEvery256, kind: "dinobot.claims.abandon-audit", version: 1, scope: "session", initial: () => ({ entries: [] }) });
 const isExternalReason = (reason: string) => reason.startsWith("UNKNOWN native external:") && reason.endsWith(" provenance");
 const legacyReason = (reason: string) => NATIVE_QUARANTINE_REASONS.includes(reason) || isExternalReason(reason);
 

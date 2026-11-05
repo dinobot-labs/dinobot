@@ -6,8 +6,9 @@ import type { Extension, ToolRegistration } from "@earendil-works/pi-durable";
  *  2. an array/object field arrives as its JSON text (e.g. sourceIds: "[\"1\"]").
  *
  * Invariant (identity on valid input): a value is changed only at a position whose current JSON type is
- * rejected by every schema branch that defines that position. Such input already fails validation,
- * so repair(x) = x for every schema-valid x, and repair(repair(x)) = repair(x).
+ * rejected by every schema branch that defines that position before coercion. Thus repair(x) = x
+ * for every schema-valid x, and repair(repair(x)) = repair(x). Repair runs before the native
+ * validator: its scalar-to-array coercion is not a substitute for parsing an encoded JSON array.
  * Validation still runs after repair; repair never widens what a tool accepts.
  */
 type Schema = Record<string, unknown>;

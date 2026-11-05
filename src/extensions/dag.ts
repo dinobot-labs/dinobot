@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import type { Context } from "@earendil-works/chord";
-import { Type, type Models } from "@earendil-works/pi-ai";
+import { type Models } from "@earendil-works/pi-ai";
+import { Type } from "typebox";
 import { type ConversationId, defineExtension, defineTool, LiveDoc, section, type ToolExecutionApi } from "@earendil-works/pi-durable";
 import { AUTHORITY_DEFAULT, type AskRecord, AsksDoc, askId, describeAsk, expireAsks, HUMAN_DEADLINE_MS, openAsksFrom, resolveAsk } from "../core/ask.ts";
 import {
@@ -18,7 +19,7 @@ import { AgentsDoc, ProgressDoc, resolveModel, type SubagentSpawner } from "./su
 export const DAG_RUN_TOOL = "dag_run";
 export const DAG_STEP_TOOL = "dag_step";
 export const DAG_STATUS_TOOL = "dag_status";
-const text = (value: string, isError = false) => ({ isError, content: [{ type: "text" as const, text: value }] });
+const text = (value: string, isError = false) => ({ isError, output: [{ type: "text" as const, text: value }] });
 const ownedError = "Research-owned run: use research_status or research_cancel; only the mission controller may advance it.";
 
 const predicate = Type.Union([
@@ -121,7 +122,7 @@ export type DagAdvanceHooks = {
 	settle?: (run: RunState, outcomes: readonly DagOutcome[], context: Context) => Promise<void>;
 };
 
-export async function activeDag(api: DagApi, context: Context, runId?: string): Promise<RunState | undefined> {
+export async function activeDag(api: Pick<DagApi, "snapshot" | "conversationId">, context: Context, runId?: string): Promise<RunState | undefined> {
 	const doc = await api.snapshot(RunDoc, api.conversationId, context);
 	return doc?.runs.find((run) => run.id === (runId ?? doc.activeId));
 }
@@ -505,7 +506,7 @@ export function dagExtension(work: WorkService, spawner: { current?: SubagentSpa
 					const run = result.run!;
 					await markSeen(api, run, context);
 					const body = [summarize(run), ...(result.error ? [`replan rejected: ${result.error}`, ...(result.diagnostics ?? []).map((d) => `  ✗ ${d.check}: ${d.message}`)] : []), ...(result.invalidated?.length ? [`invalidated: ${result.invalidated.join(", ")}`] : [])].join("\n");
-					return { isError: result.error !== undefined || run.status === "blocked", content: [{ type: "text", text: body }], details: { run } };
+					return { isError: result.error !== undefined || run.status === "blocked", output: [{ type: "text", text: body }], details: { run } };
 				},
 			}),
 			defineTool({
@@ -523,7 +524,7 @@ export function dagExtension(work: WorkService, spawner: { current?: SubagentSpa
 						run = result.run;
 						await markSeen(api, run, context);
 						const lines = [summarize(run), ...result.unstopped.map((u) => `  ! child not confirmed stopped: ${u}`)];
-						return { content: [{ type: "text", text: lines.join("\n") }], details: { run } };
+						return { output: [{ type: "text", text: lines.join("\n") }], details: { run } };
 					}
 					const result = await advanceDag(api, runId, context, { dispatch: async (current, node) => {
 						const id = node.id;
@@ -591,7 +592,7 @@ export function dagExtension(work: WorkService, spawner: { current?: SubagentSpa
 							? `ask node ${node} needs human authority for ${ask.refs.join(", ")}: relay the question; after the human replies call answer({ask_id: "${ask.id}", answer: "approve" or "deny", quote}) then dag_step. Only an explicit human approval runs them; deny or no answer by the deadline fails the node.`
 							: `ask node ${node} needs your decision: call answer({ask_id: "${ask.id}", answer}) then dag_step.`, describeAsk(ask));
 					}
-					return { content: [{ type: "text", text: lines.join("\n") }], details: { run, asks: [...result.asks, ...result.askNodes.map((p) => p.ask)] }, isError: run.status === "blocked" };
+					return { output: [{ type: "text", text: lines.join("\n") }], details: { run, asks: [...result.asks, ...result.askNodes.map((p) => p.ask)] }, isError: run.status === "blocked" };
 				},
 			}),
 			defineTool({
@@ -601,7 +602,7 @@ export function dagExtension(work: WorkService, spawner: { current?: SubagentSpa
 					const run = await activeDag(api, context, run_id);
 					if (!run) return text("No run.", true);
 					await markSeen(api, run, context);
-					return { content: [{ type: "text", text: summarize(run) }], details: { run } };
+					return { output: [{ type: "text", text: summarize(run) }], details: { run } };
 				},
 			}),
 		],

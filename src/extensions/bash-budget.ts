@@ -1,5 +1,5 @@
 import { defineExtension, wrapTool, type ToolRegistration } from "@earendil-works/pi-durable";
-import { createBashTool } from "@earendil-works/pi-durable/tools";
+import { createBashTool, createPowerShellTool } from "@earendil-works/pi-durable/tools";
 import { Type } from "typebox";
 
 /**
@@ -69,6 +69,6 @@ export function wrapBashWithBudget(tool: ToolRegistration, budget: BashBudget = 
 export function bashBudgetExtension(budget: BashBudget = BASH_BUDGET) {
 	return defineExtension({
 		name: "bash-budget",
-		wraps: [wrapTool(createBashTool() as ToolRegistration, (tool) => wrapBashWithBudget(tool, budget))],
+		wraps: [createBashTool(), createPowerShellTool()].map(tool => wrapTool(tool as ToolRegistration, tool => wrapBashWithBudget(tool, budget))),
 	});
 }

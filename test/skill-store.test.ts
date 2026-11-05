@@ -1,20 +1,17 @@
+import { sqliteTest } from "./fixtures/sqlite-test.ts";
 import { afterEach, expect, test } from "bun:test";
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { BACKGROUND_CONTEXT as context, withCancel } from "@earendil-works/chord/context";
 import { createModels } from "@earendil-works/pi-ai/models";
 import { fauxProvider } from "@earendil-works/pi-ai/providers/faux";
-import { createRegistry, Harness, MemoryStorage, StorageRejected, type Storage } from "@earendil-works/pi-durable";
+import { createRegistry, Harness, MemoryStorage, type Storage } from "@earendil-works/pi-durable";
 import { NodeExecutionEnv } from "@earendil-works/pi-durable/env/node";
 import { openNodeSqliteStorage } from "@earendil-works/pi-durable/storage/sqlite/node";
 import { regressed, successRate, SkillStore, SkillsDoc, type SkillPackage } from "../src/core/skills/store.ts";
 
 const harnesses: Harness[] = [];
-const dirs: string[] = [];
 afterEach(async () => {
 	for (const harness of harnesses.splice(0)) await harness.close(context);
-	for (const dir of dirs.splice(0)) await rm(dir, { recursive: true, force: true });
 });
 const original: SkillPackage = {
 	name: "example", description: "Original description", body: "Original body\n", source: "bundled:example",
@@ -173,8 +170,7 @@ test("L == U aligns origin without activation and external sources cannot adopt 
 	await expect(store.initialize([{ ...original, source: "external:other" }], context)).rejects.toThrow("identity collision");
 });
 
-test("new bundled skill collision preserves the agent package across SQLite restart and explicit publication", async () => {
-	const dir = await mkdtemp(join(tmpdir(), "skill-bundle-collision-")); dirs.push(dir);
+sqliteTest(import.meta.path, "new bundled skill collision preserves the agent package across SQLite restart and explicit publication", async dir => {
 	const path = join(dir, "skills.sqlite");
 	const { store, harness } = await setup(await openNodeSqliteStorage(path));
 	const created = await store.propose(edit(0, "create-local"), "agent", context);
@@ -245,8 +241,7 @@ test("history is immutable to callers and digest corruption fails closed", async
 	await expect(store.load("example", initial.version, context)).rejects.toThrow("hash/bytes mismatch");
 });
 
-test("SQLite restart retains complete packages, approvals, upstream dedupe and publication receipts", async () => {
-	const dir = await mkdtemp(join(tmpdir(), "dinobot-skills-")); dirs.push(dir);
+sqliteTest(import.meta.path, "SQLite restart retains complete packages, approvals, upstream dedupe and publication receipts", async dir => {
 	const path = join(dir, "state.sqlite");
 	const first = await setup(await openNodeSqliteStorage(path));
 	await first.store.initialize([original], context);
@@ -288,26 +283,29 @@ test("serialized store limit refuses growth without pruning or partial receipts"
 	expect((await store.load("example", undefined, context)).body).toBe(original.body);
 });
 
-test("storage rejection before commit rolls back activation, version, history, proposal and receipt together", async () => {
-	class FailingStorage extends MemoryStorage {
-		fail = false;
-		override async commit(...args: Parameters<MemoryStorage["commit"]>) {
-			if (this.fail) throw new StorageRejected("Injected storage failure before durable effects");
-			return super.commit(...args);
-		}
-	}
-	const storage = new FailingStorage();
-	const { store, harness } = await setup(storage);
-	await store.initialize([original], context);
-	const a = await store.propose(edit(1, "edit"), "agent", context);
-	const before = await harness.snapshot(SkillsDoc, context);
-	storage.fail = true;
-	await expect(store.publish({ proposalId: a.proposalId, requestId: "publication" }, "agent", context)).rejects.toThrow("Injected storage failure");
-	expect(await harness.snapshot(SkillsDoc, context)).toEqual(before);
-	storage.fail = false;
-	const result = await store.publish({ proposalId: a.proposalId, requestId: "publication" }, "agent", context);
-	expect(result.generation).toBe(2);
-	expect(await store.history("example", context)).toHaveLength(2);
+sqliteTest(import.meta.path, "storage rejection before commit rolls back activation, version, history, proposal and receipt together", async directory => {
+ const path = join(directory, "store.sqlite");
+ const storage = await openNodeSqliteStorage(path);
+ const commit = storage.commit.bind(storage);
+ let refuse = false;
+ storage.commit = async (batches, receive, ctx) => refuse
+  ? { stored: 0, refused: new Error("Injected storage failure before durable effects") }
+  : commit(batches, receive, ctx);
+ const { store, harness } = await setup(storage);
+ await store.initialize([original], context);
+ const proposal = await store.propose(edit(1, "edit"), "agent", context);
+ const before = await harness.snapshot(SkillsDoc, context);
+ refuse = true;
+ await expect(store.publish({ proposalId: proposal.proposalId, requestId: "publication" }, "agent", context)).rejects.toThrow("Injected storage failure");
+ // 1.5 fences the entire Session after even a definite refusal. Retry starts only after reopen.
+ await expect(harness.snapshot(SkillsDoc, context)).rejects.toThrow("Session failed");
+ await expect(store.publish({ proposalId: proposal.proposalId, requestId: "publication-again" }, "agent", context)).rejects.toThrow("Session failed");
+ await harness.close(context);
+ const reopened = await setup(await openNodeSqliteStorage(path));
+ expect(await reopened.harness.snapshot(SkillsDoc, context)).toEqual(before);
+ const result = await reopened.store.publish({ proposalId: proposal.proposalId, requestId: "publication" }, "agent", context);
+ expect(result.generation).toBe(2);
+ expect(await reopened.store.history("example", context)).toHaveLength(2);
 });
 
 test("digit-leading names and path boundaries preserve the portable package contract", async () => {

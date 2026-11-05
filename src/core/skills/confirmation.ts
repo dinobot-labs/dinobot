@@ -1,3 +1,4 @@
+import { checkpointEvery256 } from "../document-policy.ts";
 import type { Context } from "@earendil-works/chord";
 import { defineDoc, defineDocFamily, type Harness } from "@earendil-works/pi-durable";
 import type { AuthoredSkillCandidate } from "./author.ts";
@@ -14,11 +15,11 @@ type Finalization = {
 	jobId: string; evidenceId: string; status: "published" | "not-published";
 	reason: string | null; publicationId: string | null;
 };
-export const SkillFinalizationDoc = defineDocFamily<{ result: Finalization | null }, null>({
+export const SkillFinalizationDoc = defineDocFamily<{ result: Finalization | null }, null>({ checkpointWhen: checkpointEvery256,
 	kind: "dinobot.skill-confirmation.finalization", version: 1, scope: "session", family: true,
 	initial: () => ({ result: null }),
 });
-export const SkillFinalizationSummaryDoc = defineDoc<{ latest: Finalization | null }>({
+export const SkillFinalizationSummaryDoc = defineDoc<{ latest: Finalization | null }>({ checkpointWhen: checkpointEvery256,
 	kind: "dinobot.skill-confirmation.latest", version: 1, scope: "session",
 	initial: () => ({ latest: null }),
 });

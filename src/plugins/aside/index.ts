@@ -1,4 +1,4 @@
-import { Type } from "@earendil-works/pi-ai";
+import { Type } from "typebox";
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { posix, win32 } from "node:path";

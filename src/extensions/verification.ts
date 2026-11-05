@@ -1,13 +1,14 @@
-import { Type } from "@earendil-works/pi-ai";
+import { checkpointEvery256 } from "../core/document-policy.ts";
+import { Type } from "typebox";
 import type { Context } from "@earendil-works/chord";
 import { type ConversationId, defineDoc, defineExtension, defineTool, GenerationTask, ToolTask, hook, section, type ToolRegistration, type Wrap } from "@earendil-works/pi-durable";
 import { PlanValidationError, type AcceptanceContract, type CheckMethod, type RegisterPlan, type WorkService } from "../core/verification.ts";
 import { digest } from "../core/verification-execution.ts";
 
 // Advisory only: never suppress authorized effects or weaken certification.
-const PlanRecoveryDoc = defineDoc<{ sources: string; failures: number }>({ kind: "dinobot.plan-recovery", version: 1, scope: "conversation", history: "latest", fork: "initial", initial: () => ({ sources: "", failures: 0 }) });
-const PlanRecoveryReceipt = defineDoc<{ failures?: number }>({ kind: "dinobot.plan-recovery-receipt", version: 1, scope: "task", initial: () => ({}) });
-const text = (value: unknown) => ({ content: [{ type: "text" as const, text: JSON.stringify(value) }] });
+const PlanRecoveryDoc = defineDoc<{ sources: string; failures: number }>({ checkpointWhen: checkpointEvery256, kind: "dinobot.plan-recovery", version: 1, scope: "conversation", history: "latest", fork: "initial", initial: () => ({ sources: "", failures: 0 }) });
+const PlanRecoveryReceipt = defineDoc<{ failures?: number }>({ checkpointWhen: checkpointEvery256, kind: "dinobot.plan-recovery-receipt", version: 1, scope: "task", initial: () => ({}) });
+const text = (value: unknown) => ({ output: [{ type: "text" as const, text: JSON.stringify(value) }] });
 const strings = Type.Array(Type.String({ minLength: 1 }), { minItems: 1, uniqueItems: true });
 const methodSchema = Type.Object({
 	command: Type.String({ minLength: 1 }), cwd: Type.String({ minLength: 1 }), runner: Type.Union([Type.Literal("process"), Type.Literal("bun")]),
@@ -21,11 +22,11 @@ const contractSchema = Type.Object({
 }, { additionalProperties: false });
 const exempt = new Set(["codemode", "task", "task_output", "kill_task", "todo_write", "work_plan", "work_status", "verify_run", "work_finish", "search_tools"]);
 /** Wrap only effectful capabilities, never orchestration: nested calls resolve these same bodies. */
-export function verificationExtension(service: WorkService, managedToolNames: readonly string[] = ["write", "edit", "bash"], onOutcome?: (conversationId: ConversationId, outcome: "verified" | "blocked", context: Context) => Promise<unknown>) {
+export function verificationExtension(service: WorkService, managedToolNames: readonly string[] = ["write", "edit", "bash", "powershell"], onOutcome?: (conversationId: ConversationId, outcome: "verified" | "blocked", context: Context) => Promise<unknown>) {
 	return defineExtension({
 		name: "verification", tasks: [service.checkTask],
 		sections: [section("verification", () => service.enforced ? `${service.gated ? "Tool execution is gated: register work_plan with immutable required acceptance, scenarios and complete check coverage before managed edits, shell or plugin effects." : "YOLO tool execution: no tool is blocked by a missing work_plan, lease or certificate."} Verification is enforced: register coding work with work_plan (immutable required acceptance, scenarios and complete check coverage) and certify it with work_finish. Registered work without a current certificate is reported honestly: the host replaces the final answer with its unmet/blocked summary, and todo or subagent completion linked to that work needs a certificate. Source IDs and state are in work_status. Classify purely informational input with work_plan informational and rationale; do not create dummy checks. verify_run executes real checks. Bun methods use command=bun, args=test paths/selectors (without the test subcommand); host supplies a JUnit reporter. Locators identify exact file and testcase names for immutable scenarios. Only work_finish certifies current sources. Repair mistakes with repair_method and rationale without lowering acceptance; every repair invalidates all prior checks. Unknown process effects block until operator resolution. Raw answers and todo completion are provisional, not certificates.` : `${service.gated ? "Tool execution is gated: register work_plan with required acceptance and check coverage before managed edits, shell or plugin effects. Verification is not enforced: certificates and verification blockers do not gate answers, todos or subagent completion." : "YOLO mode: execute authorized tools immediately; work_plan, verify_run and work_finish are optional. Missing plans, verification blockers and certificates do not gate tools, answers, todos or subagent completion."} Use real checks appropriate to the task and report their results honestly. If you opt into certification, work_finish still requires actual current evidence; a normal completed answer is not a verification certificate.`)],
-		wraps: [...new Set(["write", "edit", "bash", ...managedToolNames])].filter(name => !exempt.has(name)).map((name): Wrap => ({ tool: name, wrap: (tool: ToolRegistration): ToolRegistration => ({ ...tool, execute: (args, api, context) => service.mutate(api, context, guardedApi => tool.execute(args, guardedApi, context), name === "bash" ? "process" : name === "write" || name === "edit" ? "filesystem" : "external") }) })),
+		wraps: [...new Set(["write", "edit", "bash", "powershell", ...managedToolNames])].filter(name => !exempt.has(name)).map((name): Wrap => ({ tool: name, wrap: (tool: ToolRegistration): ToolRegistration => ({ ...tool, execute: (args, api, context) => service.mutate(api, context, guardedApi => tool.execute(args, guardedApi, context), name === "bash" || name === "powershell" ? "process" : name === "write" || name === "edit" ? "filesystem" : "external") }) })),
 		hooks: [hook(GenerationTask, {
 			beforeRequest: async (_request, api, context) => { await service.reconcileSources(api.conversationId, [], context); },
 			onYield: async (answer, api, context) => { await service.captureDisplayInputs(api.conversationId, context); const continuation = await service.coach(api.conversationId, `${api.taskId}:${digest(answer)}`, context); return continuation ? { continue: continuation } : undefined; },

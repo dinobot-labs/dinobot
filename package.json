@@ -16,9 +16,10 @@
     "bench:tui:cadence": "bun script/bench/tui-cadence.ts"
   },
   "dependencies": {
-    "@earendil-works/chord": "1.0.2",
-    "@earendil-works/pi-ai": "1.0.2",
-    "@earendil-works/pi-durable": "1.0.2",
+    "@earendil-works/chord": "1.5.0",
+    "@earendil-works/pi-ai": "1.5.0",
+    "@earendil-works/pi-durable": "1.5.0",
+    "@earendil-works/pi-schema": "1.5.0",
     "@earendil-works/pi-tui": "1.0.0",
     "@modelcontextprotocol/client": "2.3.1",
     "@oh-my-pi/pi-ai": "18.5.0",
@@ -36,8 +37,8 @@
   },
   "patchedDependencies": {
     "@earendil-works/pi-tui@1.0.0": "patches/@earendil-works%2Fpi-tui@1.0.0.patch",
-    "@earendil-works/pi-durable@1.0.2": "patches/@earendil-works%2Fpi-durable@1.0.2.patch",
-    "@oh-my-pi/pi-ai@18.5.0": "patches/@oh-my-pi%2Fpi-ai@18.5.0.patch"
+    "@oh-my-pi/pi-ai@18.5.0": "patches/@oh-my-pi%2Fpi-ai@18.5.0.patch",
+    "@earendil-works/pi-durable@1.5.0": "patches/@earendil-works%2Fpi-durable@1.5.0.patch"
   },
   "license": "PolyForm-Noncommercial-1.0.0",
   "description": "Source-available agent daemon and terminal UI",

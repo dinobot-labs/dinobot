@@ -1,3 +1,4 @@
+import { checkpointEvery256 } from "../src/core/document-policy.ts";
 import { afterEach, expect, test } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -26,7 +27,7 @@ const pkg: SkillPackage = {
 	name: "fixture", description: "Fixture", body: "origin body", files: { "ref.txt": "origin reference" },
 	source: "fixture:origin", originalSkillMd: "---\nname: fixture\n---\noriginal bytes\n",
 };
-const TrustedEvidenceDoc = defineDocFamily<{ witness: NoninferiorityAuthorization | null }, null>({
+const TrustedEvidenceDoc = defineDocFamily<{ witness: NoninferiorityAuthorization | null }, null>({ checkpointWhen: checkpointEvery256,
 	kind: "test.retention.trusted-evidence", version: 1, scope: "session", family: true,
 	initial: () => ({ witness: null }),
 });

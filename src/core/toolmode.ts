@@ -1,4 +1,4 @@
-import { Type } from "@earendil-works/pi-ai";
+import { Type } from "typebox";
 import {
 	defineExtension,
 	defineTool,
@@ -7,6 +7,7 @@ import {
 	hook,
 	type Harness,
 	type Extension,
+	type ToolRegistration,
 } from "@earendil-works/pi-durable";
 import { InternalCallDoc } from "./codemode/calls.ts";
 import { codemodeExtension } from "../extensions/codemode.ts";
@@ -52,6 +53,7 @@ export function toolExtensions(
 		extensions.push(
 			defineExtension({
 				name: "codemode-routing",
+				wraps: [...names].map(name => ({ tool: name, wrap: (tool: ToolRegistration): ToolRegistration => ({ ...tool, callers: ["tools"] }) })),
 				hooks: [
 					hook(GenerationTask, {
 						// Codemode-only tools are never offered to the provider, so neither their additions nor their removals
@@ -75,7 +77,7 @@ export function toolExtensions(
 					}),
 					hook(ToolTask, {
 						beforeTool: async (call, api, context) => {
-							if (names.has(call.name) && !(await api.snapshot(InternalCallDoc, api.taskId, context))?.parent)
+							if (names.has(call.name) && !call.parent && !(await api.snapshot(InternalCallDoc, api.taskId, context))?.parent)
 								return { block: "Plugin and skill tools must be called through codemode" };
 							return undefined;
 						},
@@ -147,7 +149,7 @@ function directTool(tool: PluginTool, logins: ReadonlySet<string>, providerLogin
 				// The awaited call is over (returned or threw); a crash before this line keeps it UNKNOWN.
 				if (tracked) await settleExternalCall(api, "external:" + tool.name);
 			}
-			return { content: await pluginResultContent(value) };
+			return { output: await pluginResultContent(value) };
 		},
 	});
 }

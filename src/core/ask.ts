@@ -1,3 +1,4 @@
+import { checkpointEvery256 } from "./document-policy.ts";
 import { createHash } from "node:crypto";
 import type { Context } from "@earendil-works/chord";
 import { type ConversationId, defineDoc, type EntryRecord, type Harness } from "@earendil-works/pi-durable";
@@ -45,13 +46,13 @@ export type AskRecord = {
     goalBinding?: { epoch:number; hash:string; conversationId?:string };
 };
 
-export const AsksDoc = defineDoc<{ asks: AskRecord[] }>({
+export const AsksDoc = defineDoc<{ asks: AskRecord[] }>({ checkpointWhen: checkpointEvery256,
 	kind: "dinobot.asks", version: 1, scope: "conversation", history: "latest", fork: "initial",
 	initial: () => ({ asks: [] }),
 });
 
 /** On a child conversation: who orchestrates it. Absent on top-level conversations. */
-export const LinkDoc = defineDoc<{ parent?: ConversationId; runnerId?: string; taskId?: string }>({
+export const LinkDoc = defineDoc<{ parent?: ConversationId; runnerId?: string; taskId?: string }>({ checkpointWhen: checkpointEvery256,
 	kind: "dinobot.subagent.link", version: 1, scope: "conversation", history: "latest", fork: "initial",
 	initial: () => ({}),
 });

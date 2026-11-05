@@ -1,3 +1,4 @@
+import { checkpointEvery256 } from "../document-policy.ts";
 import { defineDoc } from "@earendil-works/pi-durable";
 
 /**
@@ -53,7 +54,7 @@ export type CuratorState = {
 
 export const MAX_RECEIPTS = 64;
 
-export const CuratorDoc = defineDoc<CuratorState>({
+export const CuratorDoc = defineDoc<CuratorState>({ checkpointWhen: checkpointEvery256,
 	kind: "dinobot.memory.curator", version: 1, scope: "conversation", history: "latest", fork: "initial",
 	initial: () => ({ userEntries: [], scannedTo: 0, window: emptyWindow(), receipts: [] }),
 });
@@ -62,7 +63,7 @@ export const CuratorDoc = defineDoc<CuratorState>({
  * Adoption epoch: when the curator last started after not running (first start, or a start after a run with automatic
  * extraction disabled). Turns a conversation gained before the epoch and had not been scanned are adopted, not replayed.
  */
-export const ActivationDoc = defineDoc<{ epoch: number | null; disabled: boolean }>({
+export const ActivationDoc = defineDoc<{ epoch: number | null; disabled: boolean }>({ checkpointWhen: checkpointEvery256,
 	kind: "dinobot.memory.activation", version: 1, scope: "session", initial: () => ({ epoch: null, disabled: false }),
 });
 

@@ -1,5 +1,7 @@
 import type { Context } from "@earendil-works/chord";
-import { type AgentEvent, type ConversationId, type Harness, type SubmissionId, watchEvents } from "@earendil-works/pi-durable";
+import type { ConversationId, Harness, SubmissionId } from "@earendil-works/pi-durable";
+import type { AgentEvent } from "./ui-contract.ts";
+import { watchConversation } from "./conversation-observer.ts";
 import { detailPreview, redactSecrets, safePreview as preview, safeHint } from "../channels/safe-preview.ts";
 import type { ProgressEvent, ProgressSink } from "../channels/types.ts";
 
@@ -54,7 +56,7 @@ function innerCalls(details: unknown): InnerCall[] {
  * Once its codemode cell ends, every inner call it started has ended (an unfinished one, e.g. after an abort, ends as
  * failed), and later updates of that cell report nothing new.
  */
-export function agentProgress(sink: ProgressSink, options: ProgressMappingOptions | (() => number) = {}): (events: readonly AgentEvent[]) => void {
+export function agentProgress(sink: ProgressSink, options: ProgressMappingOptions | (() => number) = {}): ((events: readonly AgentEvent[]) => void) & { flush(): void } {
 	const { now = Date.now, own } = typeof options === "function" ? { now: options } : options;
 	let lastActivity = Number.NEGATIVE_INFINITY;
 	let lastTodos = "";
@@ -63,6 +65,12 @@ export function agentProgress(sink: ProgressSink, options: ProgressMappingOption
 	let lastDraft = "";
 	let lastDraftAt = Number.NEGATIVE_INFINITY;
 	let draftDirty = false;
+	const phaseOf = (message: { content?: unknown }) => {
+		if (!Array.isArray(message.content)) return;
+		const blocks = message.content as { type?: string }[];
+		if (blocks.some(block => block.type === "text")) emit({ type: "phase", phase: "writing" });
+		else if (blocks.some(block => block.type === "thinking")) emit({ type: "phase", phase: "thinking" });
+	};
 	const draft = (force: boolean) => {
 		const text = draftTail(blocks.join(""));
 		if (text === lastDraft) { draftDirty = false; return; }
@@ -71,6 +79,7 @@ export function agentProgress(sink: ProgressSink, options: ProgressMappingOption
 		lastDraftAt = now();
 		draftDirty = false;
 		if (text !== "") emit({ type: "draft", text });
+		else emit({ type: "draft_clear" });
 	};
 	const outer = new Map<string, "running" | "ended">();
 	/** `${toolCallId}/${innerId}` -> reported state. */
@@ -123,7 +132,7 @@ export function agentProgress(sink: ProgressSink, options: ProgressMappingOption
 		runningInner.delete(toolCallId);
 		endedCells.add(toolCallId);
 	};
-	return (events) => {
+	const map = (events: readonly AgentEvent[]) => {
 		for (const event of events) {
 			switch (event.type) {
 				case "tool_execution_start":
@@ -143,21 +152,25 @@ export function agentProgress(sink: ProgressSink, options: ProgressMappingOption
 					break;
 				}
 				case "tool_execution_end": {
-					const result = event.entry?.model?.[0] as { isError?: unknown; details?: unknown } | undefined;
+					const result = event.entry?.model?.find(message => message.role === "toolResult" && message.toolCallId === event.toolCallId);
+					// Disappearance or observer stop is not a tool cancellation/failure receipt.
+					if (!result || result.role !== "toolResult") break;
 					if (event.toolName === "codemode") {
 						reportInner(event.toolCallId, result?.details);
 						endCell(event.toolCallId);
 					}
 					const listed = todos(result?.details);
 					if (listed) emit(listed);
-					if (outer.get(event.toolCallId) === "running") emit({ type: "tool_end", id: event.toolCallId, ok: event.entry !== undefined && result?.isError !== true });
+					if (outer.get(event.toolCallId) === "running") emit({ type: "tool_end", id: event.toolCallId, ok: result.isError !== true });
 					outer.set(event.toolCallId, "ended");
 					break;
 				}
 				case "message_start": {
+					if (event.message.role !== "assistant") break;
 					// The first publication of a generation can already carry text; later deltas append to it.
 					const content = Array.isArray(event.message.content) ? event.message.content : [];
 					blocks = content.map((block) => textOf({ content: [block] }));
+					phaseOf(event.message);
 					lastDraft = "";
 					if (blocks.some((text) => text !== "")) draft(false);
 					break;
@@ -169,8 +182,8 @@ export function agentProgress(sink: ProgressSink, options: ProgressMappingOption
 							emit({ type: "phase", phase: "writing" });
 							blocks[change.contentIndex] = textOf({ content: [change.block] });
 						} else if (change.type === "text_delta") blocks[change.contentIndex] = (blocks[change.contentIndex] ?? "") + change.delta;
-						else if (change.type === "block" && (change.block as { type?: unknown }).type === "text") blocks[change.contentIndex] = textOf({ content: [change.block] });
-						else if (change.type === "message") blocks = [textOf(change.message)];
+						else if (change.type === "block") blocks[change.contentIndex] = textOf({ content: [change.block] });
+						else if (change.type === "message") { blocks = change.message.content.map(block => textOf({ content: [block] })); phaseOf(change.message); }
 					}
 					draft(false);
 					emit({ type: "activity" });
@@ -183,14 +196,14 @@ export function agentProgress(sink: ProgressSink, options: ProgressMappingOption
 					break;
 				}
 				case "submission":
-					if (event.record.type === "input" && event.record.status === "placed" && event.record.id !== own) emit({ type: "steer" });
+					if (event.record.type === "input" && (event.record.status === "placed" || event.record.status === "done") && event.record.id !== own) emit({ type: "steer" });
 					break;
 				case "auto_retry_start":
 					emit({ type: "retry", attempt: event.attempt });
 					break;
 				case "snapshot":
 					// A coalesced stream: resynchronize the draft from the generation's partial instead of lost deltas.
-					if (event.generation?.message) { blocks = [textOf(event.generation.message)]; draft(true); }
+					if (event.generation?.message) { blocks = event.generation.message.content.map(block => textOf({ content: [block] })); phaseOf(event.generation.message); draft(true); }
 					break;
 				default:
 					emit({ type: "activity" });
@@ -198,6 +211,7 @@ export function agentProgress(sink: ProgressSink, options: ProgressMappingOption
 		}
 		if (draftDirty) draft(false);
 	};
+	return Object.assign(map, { flush: () => draft(true) });
 }
 
 /**
@@ -206,11 +220,14 @@ export function agentProgress(sink: ProgressSink, options: ProgressMappingOption
  */
 export async function watchProgress(harness: Harness, conversationId: ConversationId, sink: ProgressSink, context: Context, own?: SubmissionId): Promise<() => Promise<void>> {
 	try {
-		const stream = await watchEvents(harness, conversationId, context);
+		const stream = await watchConversation(harness, conversationId, context);
 		const map = agentProgress(sink, own === undefined ? {} : { own });
+		map([stream.snapshot]);
 		stream.start(async (events) => map(events));
+		void stream.closed.then(() => map.flush());
 		return async () => {
 			await stream.stop().catch(() => undefined);
+			map.flush();
 		};
 	} catch {
 		return async () => {};

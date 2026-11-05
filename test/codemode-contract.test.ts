@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { BACKGROUND_CONTEXT as context } from "@earendil-works/chord/context";
-import { Type } from "@earendil-works/pi-ai";
+import { Type } from "typebox";
 import { createModels } from "@earendil-works/pi-ai/models";
 import { fauxProvider, fauxAssistantMessage, fauxToolCall } from "@earendil-works/pi-ai/providers/faux";
 import {
@@ -115,7 +115,7 @@ test.each(["before", "after"] as const)(
 						name: "probe",
 						description: "probe",
 						parameters: Type.Object({}),
-						execute: async () => ({ content: [] }),
+						execute: async () => ({ output: [] }),
 					}),
 				],
 				hooks: [hook(ToolTask, phase === "before" ? { beforeTool: hang } : { afterTool: hang })],

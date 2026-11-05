@@ -1,3 +1,4 @@
+import { checkpointEvery256 } from "../document-policy.ts";
 import type { Context } from "@earendil-works/chord";
 import { defineDoc, defineDocFamily, type Session } from "@earendil-works/pi-durable";
 import { Type, type Static } from "typebox";
@@ -40,34 +41,34 @@ type StoredPublicationPolicy = Omit<PublicationPolicy, "requiredCriticalStrata">
 export const PublicationControlDoc = defineDoc<{
 	policy: StoredPublicationPolicy | null; enabled: boolean; lastNow: number;
 	epochs: { policy: number; environment: number; kill: number; revoke: number };
-}>({
+}>({ checkpointWhen: checkpointEvery256,
 	kind: "dinobot.skill-publication.control", version: 1, scope: "session",
 	initial: () => ({ policy: null, enabled: false, lastNow: 0, epochs: { policy: 0, environment: 0, kill: 0, revoke: 0 } }),
 });
 type Blob = { json: string | null; hash: string | null };
-export const PublicationCampaignDoc = defineDocFamily<Blob & { initialHash: string | null; scope: string | null }, null>({
+export const PublicationCampaignDoc = defineDocFamily<Blob & { initialHash: string | null; scope: string | null }, null>({ checkpointWhen: checkpointEvery256,
 	kind: "dinobot.skill-publication.campaign", version: 1, scope: "session", family: true,
 	initial: () => ({ json: null, hash: null, initialHash: null, scope: null }),
 });
-export const PublicationScopeDoc = defineDocFamily<{ campaignId: string | null }, null>({
+export const PublicationScopeDoc = defineDocFamily<{ campaignId: string | null }, null>({ checkpointWhen: checkpointEvery256,
 	kind: "dinobot.skill-publication.scope", version: 1, scope: "session", family: true, initial: () => ({ campaignId: null }),
 });
-export const PublicationRegistrationDoc = defineDocFamily<Blob, null>({
+export const PublicationRegistrationDoc = defineDocFamily<Blob, null>({ checkpointWhen: checkpointEvery256,
 	kind: "dinobot.skill-publication.registration", version: 1, scope: "session", family: true, initial: () => ({ json: null, hash: null }),
 });
 export const PublicationEvidenceDoc = defineDocFamily<Blob & {
 	reservationJson: string | null; reservationHash: string | null; openedAt: number | null; revoked: boolean;
-}, null>({
+}, null>({ checkpointWhen: checkpointEvery256,
 	kind: "dinobot.skill-publication.evidence", version: 1, scope: "session", family: true,
 	initial: () => ({ json: null, hash: null, reservationJson: null, reservationHash: null, openedAt: null, revoked: false }),
 });
-export const PublicationDatasetDoc = defineDocFamily<{ evidenceId: string | null }, null>({
+export const PublicationDatasetDoc = defineDocFamily<{ evidenceId: string | null }, null>({ checkpointWhen: checkpointEvery256,
 	kind: "dinobot.skill-publication.dataset", version: 1, scope: "session", family: true, initial: () => ({ evidenceId: null }),
 });
-export const PublicationAttemptDoc = defineDocFamily<{ evidenceId: string | null }, null>({
+export const PublicationAttemptDoc = defineDocFamily<{ evidenceId: string | null }, null>({ checkpointWhen: checkpointEvery256,
 	kind: "dinobot.skill-publication.attempt", version: 1, scope: "session", family: true, initial: () => ({ evidenceId: null }),
 });
-export const PublicationReceiptDoc = defineDocFamily<Blob & { fingerprint: string | null }, null>({
+export const PublicationReceiptDoc = defineDocFamily<Blob & { fingerprint: string | null }, null>({ checkpointWhen: checkpointEvery256,
 	kind: "dinobot.skill-publication.receipt", version: 1, scope: "session", family: true,
 	initial: () => ({ json: null, hash: null, fingerprint: null }),
 });

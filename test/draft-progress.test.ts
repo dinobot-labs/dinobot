@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import { createModels } from "@earendil-works/pi-ai/models";
 import { fauxAssistantMessage, fauxProvider, fauxToolCall } from "@earendil-works/pi-ai/providers/faux";
-import type { AgentEvent } from "@earendil-works/pi-durable";
+import type { AgentEvent } from "../src/core/ui-contract.ts";
 import { openNodeSqliteStorage } from "@earendil-works/pi-durable/storage/sqlite/node";
 import { DRAFT_VIEW_UNITS, foldProgress, initialProgress, parseProgressEvent, RECENT_TOOLS, RECENT_TOOLS_DETAILED, renderProgress, tail, VIEW_LIMIT_UNITS, withOutcome } from "../src/channels/progress.ts";
 import { detailPreview, redactSecrets } from "../src/channels/safe-preview.ts";

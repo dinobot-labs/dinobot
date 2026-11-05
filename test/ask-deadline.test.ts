@@ -1,6 +1,7 @@
 import { expect, spyOn, test } from "bun:test";
 import { BACKGROUND_CONTEXT as context } from "@earendil-works/chord/context";
 import type { ToolExecutionApi } from "@earendil-works/pi-durable";
+import { Watch } from "@earendil-works/chord";
 import { AsksDoc, LinkDoc, type AskRecord } from "../src/core/ask.ts";
 import { askExtension } from "../src/extensions/ask.ts";
 
@@ -14,7 +15,8 @@ function fixture() {
  }) as unknown as typeof setTimeout);
  const clear = spyOn(globalThis, "clearTimeout").mockImplementation(((id: number) => {timers.delete(id);}) as typeof clearTimeout);
  const state = {asks: [] as AskRecord[]};
- const listeners = new Set<(value: typeof state) => Promise<void>>();
+ const watches = new Set<Watch<typeof state>>();
+ const listenerErrors: unknown[] = [];
  const controller = new AbortController();
  const ctx = {...context, abortSignal: controller.signal};
  const api = (child: boolean) => ({
@@ -22,12 +24,17 @@ function fixture() {
   snapshot: async (token: unknown) => token === LinkDoc ? (child ? {parent: 1} : {}) : token === AsksDoc ? structuredClone(state) : undefined,
   commit: async (fn: (tx: unknown) => Promise<unknown>) => {
    const result = await fn({doc: async () => state});
-   for (const listener of listeners) await listener(structuredClone(state));
+   for (const watch of watches) {
+    const value = structuredClone(state);
+    watch.advance({kind: "value", value, ops: [["r", value]], retired: false}, ctx);
+   }
    return result;
   },
   watchDoc: async () => {
-   let listener: ((value: typeof state) => Promise<void>) | undefined;
-   return {value: structuredClone(state), start: (fn: typeof listener) => {listener = fn; listeners.add(fn!);}, stop: async () => {if (listener) listeners.delete(listener);}};
+   const watch = new Watch(structuredClone(state), () => {watches.delete(watch);}, error => {listenerErrors.push(error);});
+   watches.add(watch);
+   watch.observeAbort(controller.signal);
+   return watch;
   },
  }) as unknown as ToolExecutionApi;
  const tools = askExtension({} as never, () => ({} as never)).tools!;
@@ -37,7 +44,16 @@ function fixture() {
   ask: (args: Record<string, unknown>, child = true) => ask.execute!({question: "Which?", kind: "clarification", default: "fallback", ...args} as never, api(child), ctx),
   answer: (id: string, value: string) => answer.execute!({ask_id: id, answer: value} as never, api(false), ctx),
   async advance(at: number) {now = at; for (const [id, timer] of [...timers]) if (timer.at <= now) {timers.delete(id); timer.run();} await flush();},
-  async close() {controller.abort(new Error("cleanup")); await flush(); clock.mockRestore(); schedule.mockRestore(); clear.mockRestore();},
+  async close() {
+   const active = [...watches];
+   controller.abort(new Error("cleanup"));
+   try {
+    await Promise.all(active.map(watch => watch.closed));
+    await flush();
+    expect(watches.size).toBe(0);
+    expect(listenerErrors).toEqual([]);
+   } finally {clock.mockRestore(); schedule.mockRestore(); clear.mockRestore();}
+  },
  };
 }
 

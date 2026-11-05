@@ -18,7 +18,7 @@ import {
 	type Submission,
 } from "@earendil-works/pi-durable";
 import { NodeExecutionEnv } from "@earendil-works/pi-durable/env/node";
-import { CodingTools, createBashTool, type BashPrepare } from "@earendil-works/pi-durable/tools";
+import { CodingTools, createBashTool, createPowerShellTool, type BashPrepare } from "@earendil-works/pi-durable/tools";
 import type { BotReply, ChannelAdapter, InboundMessage, ProgressSink } from "../channels/types.ts";
 import { prepareChoice as validateChoice, humanAskPrompts, type PreparedChoice } from "./ask-choice.ts";
 import { watchProgress } from "./progress-events.ts";
@@ -207,6 +207,7 @@ export async function openBot(options: BotOptions, context: Context): Promise<Bo
 	const registry = repairingRegistry(createRegistry());
 	const workspaceRoot = resolve(options.workspaceRoot ?? process.cwd());
 	registry.install(options.bashPrepare ? defineExtension({ ...CodingTools, tools: CodingTools.tools!.map(tool => tool.name === "bash" ? createBashTool({ prepare: options.bashPrepare! }) : tool) }) : CodingTools);
+	registry.install(defineExtension({ name: "powershell", tools: [createPowerShellTool(options.bashPrepare ? { prepare: options.bashPrepare } : {})] }));
 	registry.install(imagesExtension());
 	registry.install(bashBudgetExtension());
 	const memory = options.memory ?? DISABLED_MEMORY;

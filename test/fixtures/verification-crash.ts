@@ -2,7 +2,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { BACKGROUND_CONTEXT as context } from "@earendil-works/chord/context";
 import { createModels } from "@earendil-works/pi-ai/models";
-import { Type } from "@earendil-works/pi-ai";
+import { Type } from "typebox";
 import { fauxAssistantMessage, fauxProvider } from "@earendil-works/pi-ai/providers/faux";
 import { createRegistry, defineExtension, defineTool, Harness, type ConversationId, type TaskId } from "@earendil-works/pi-durable";
 import { NodeExecutionEnv } from "@earendil-works/pi-durable/env/node";
@@ -30,7 +30,7 @@ export async function openFixture(dir: string, cut = "", mode = "state") {
 	registry.install(defineExtension({ name: "fixture", tools: [defineTool({
 		name: "fixture_write", description: "Write a fixture input through the managed mutation boundary.",
 		parameters: Type.Object({ file: Type.String(), value: Type.String() }),
-		execute: async (args, api) => { if (!api.env) throw new Error("Fixture requires NodeExecutionEnv"); await writeFile(resolve(api.env.cwd, args.file), args.value); return { content: [{ type: "text", text: "Written" }] }; },
+		execute: async (args, api) => { if (!api.env) throw new Error("Fixture requires NodeExecutionEnv"); await writeFile(resolve(api.env.cwd, args.file), args.value); return { output: [{ type: "text", text: "Written" }] }; },
 	})] }));
 	registry.install(verificationExtension(service, ["fixture_write"]));
 	const storage = await openNodeSqliteStorage(resolve(runtime, "state.sqlite"));

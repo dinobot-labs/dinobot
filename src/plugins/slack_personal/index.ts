@@ -1,6 +1,6 @@
 import { existsSync, lstatSync, mkdirSync, realpathSync, openSync, closeSync, fstatSync, readSync, constants, writeFileSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
-import { Type } from "@earendil-works/pi-ai";
+import { Type } from "typebox";
 import type { Static, TSchema } from "typebox";
 import { Value } from "typebox/value";
 import { definePlugin, type PluginTool, type PluginToolCall } from "../types.ts";

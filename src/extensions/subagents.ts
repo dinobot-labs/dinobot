@@ -1,9 +1,13 @@
 import type { Context } from "@earendil-works/chord";
 import { BACKGROUND_CONTEXT, withCancel } from "@earendil-works/chord/context";
-import { Type, type JsonObject, type Message, type Tool } from "@earendil-works/pi-ai";
+import { type JsonObject, type Message, type Tool } from "@earendil-works/pi-ai";
+import { Type } from "typebox";
+import { checkpointEvery256 } from "../core/document-policy.ts";
+import { watchConversation } from "../core/conversation-observer.ts";
+import type { SnapshotEvent } from "../core/ui-contract.ts";
 import {
 	configure, ConversationBusy, type ConversationId, defineDoc, defineDocFamily, defineExtension, defineTask, defineTool, type DocumentReader, GenerationTask, hook,
-	type Harness, InboxDoc, LiveDoc, type Tx, type InboxState, type ModelRef, ProviderDoc, type ToolRegistration, type SnapshotEvent, type Submission, type SubmissionRecord, type TaskId, type ToolExecutionApi, watchEvents,
+	type Harness, InboxDoc, LiveDoc, type Tx, type InboxState, type ModelRef, ProviderDoc, type ToolRegistration, type Submission, type SubmissionRecord, type TaskId, type ToolExecutionApi,
 } from "@earendil-works/pi-durable";
 import { type AskRecord, AsksDoc, describeAsk, LinkDoc, openAsksFrom, withdrawAsksFrom } from "../core/ask.ts";
 import { DagSeenDoc, RunDoc, runCanProgress, type RunState, runStateKey, unmet } from "../core/dag.ts";
@@ -60,11 +64,11 @@ export async function loadAgents(dirs: readonly string[]): Promise<AgentDefiniti
 /** `owner`: a DAG run or research mission manages this child through its own protocol; `task_message` cannot steer it. */
 export type AgentRef = { taskId: string; runnerId: TaskId<string>; conversationId: ConversationId; background: boolean; callId?: string; owner?: "dag" | "research" };
 export const AgentsDoc = defineDoc<{ agents: AgentRef[] }>({
-	kind: "dinobot.subagents", version: 1, scope: "conversation", history: "latest", fork: "initial",
+	kind: "dinobot.subagents", version: 1, checkpointWhen: checkpointEvery256, scope: "conversation", history: "latest", fork: "initial",
 	initial: () => ({ agents: [] }),
 });
 const ReceiptDoc = defineDocFamily<{ ref?: AgentRef }, null>({
-	kind: "dinobot.subagent.receipt", version: 2, family: true, scope: "task", initial: () => ({}),
+	kind: "dinobot.subagent.receipt", version: 2, checkpointWhen: checkpointEvery256, family: true, scope: "task", initial: () => ({}),
 });
 
 export type MissionSpawnBinding = { missionId: string; attemptId: string; metadata?: { epoch: number } };
@@ -80,7 +84,7 @@ export type SubagentHostProfile = {
 	registrations?: readonly ToolRegistration[];
 };
 export const MissionSpawnDoc = defineDocFamily<{ ref?: AgentRef; binding?: MissionSpawnBinding }, null>({
-	kind: "dinobot.subagent.mission", version: 1, family: true, scope: "conversation",
+	kind: "dinobot.subagent.mission", version: 1, checkpointWhen: checkpointEvery256, family: true, scope: "conversation",
 	history: "latest", fork: "initial", initial: () => ({}),
 });
 export type SpawnApi = Pick<ToolExecutionApi, "agent" | "commit" | "conversationId" | "taskId"> & { callId?: string };
@@ -88,7 +92,7 @@ export type SpawnInput = { description: string; prompt: string; subagentType?: s
 export type SubagentSpawner = { spawn(input: SpawnInput, api: SpawnApi, context: Context): Promise<AgentRef>; cancel(ref: AgentRef): Promise<void> };
 /** `delivered`: the terminal answer was already returned to this conversation by task or task_output. */
 export const ProgressDoc = defineDocFamily<{ subagent?: SubagentProgress; answer?: string; delivered?: boolean }, null>({
-	kind: "dinobot.subagent.progress", version: 1, family: true,
+	kind: "dinobot.subagent.progress", version: 1, checkpointWhen: checkpointEvery256, family: true,
 	scope: "conversation", history: "latest", fork: "initial", initial: () => ({}),
 });
 /**
@@ -108,7 +112,7 @@ export const TASK_OUTPUT_MAX_TIMEOUT_MS = 5 * 60_000;
  */
 export type WakeDelivery = { requestId: string; since: number; asks: string[]; claimed?: boolean; mergedInto?: number; mergedAt?: number };
 export const WakeDoc = defineDoc<{ task?: TaskId<string>; notified: string[]; /** Woken answers not yet handed to the conversation's channel (ADR 0096). */ deliveries?: WakeDelivery[] }>({
-	kind: "dinobot.subagent.wake", version: 1, scope: "conversation", history: "latest", fork: "initial",
+	kind: "dinobot.subagent.wake", version: 1, checkpointWhen: checkpointEvery256, scope: "conversation", history: "latest", fork: "initial",
 	initial: () => ({ notified: [] }),
 });
 const WAKE_NOTIFIED_LIMIT = 256;
@@ -167,10 +171,12 @@ async function waitForChildrenOrAsk(api: ToolExecutionApi, refs: readonly AgentR
 	wake.promise.catch(() => {});
 	const waiter = withCancel(context);
 	const timer = timeoutMs === undefined ? undefined : setTimeout(() => wake.resolve({ kind: "timeout" }), timeoutMs);
-	watch.start(async (value) => {
-		const asks = openAsksFrom(value, children);
+	watch.start(async (call) => {
+		if (call.kind === "failed") { wake.reject(call.error); return; }
+		const asks = openAsksFrom(call.retired && call.ops.length === 0 ? undefined : call.value, children);
 		if (asks.length) wake.resolve({ kind: "ask", asks });
 	});
+	void watch.closed.then(end => { if (end.kind !== "stopped") wake.reject("error" in end ? end.error : new Error(`Ask watch ${end.kind}`)); });
 	const waits = refs.map((ref) => api.waitForTask(ref.runnerId, waiter.context));
 	(any ? Promise.race(waits) : Promise.all(waits))
 		.then(() => wake.resolve({ kind: "settled" }), (error) => { if (!waiter.context.abortSignal?.aborted) wake.reject(error); });
@@ -330,8 +336,9 @@ async function ownDagEvents(reader: Pick<ToolExecutionApi, "snapshot" | "watchDo
 		try {
 			context.abortSignal?.addEventListener("abort", onAbort, { once: true });
 			if (context.abortSignal?.aborted) onAbort();
-			runs?.start(async (value) => { if (runStates(value) !== runsBefore) changed.resolve(); });
-			asks?.start(async (value) => { if (openAsks(value) !== asksBefore) changed.resolve(); });
+			runs?.start(async (call) => { if (call.kind === "failed") { changed.reject(call.error); return; } if (runStates(call.retired && call.ops.length === 0 ? undefined : call.value) !== runsBefore) changed.resolve(); });
+			asks?.start(async (call) => { if (call.kind === "failed") { changed.reject(call.error); return; } if (openAsks(call.retired && call.ops.length === 0 ? undefined : call.value) !== asksBefore) changed.resolve(); });
+			for (const watch of [runs, asks]) void watch?.closed.then(end => { if (end.kind !== "stopped") changed.reject("error" in end ? end.error : new Error(`DAG watch ${end.kind}`)); });
 			// Changes committed between the scan and the watches are seen by this re-scan.
 			const again = await scanWake(own());
 			if (again.events.some((event) => event.run !== undefined) || !again.runningRuns.length) changed.resolve();
@@ -397,8 +404,8 @@ async function waitForPlacement(api: ToolExecutionApi, conversationId: Conversat
 		const left = Promise.withResolvers<void>();
 		const aborted = abortion(context);
 		if (!queued(watch.value)) left.resolve();
-		watch.start(async (inbox) => { if (!queued(inbox)) left.resolve(); });
-		void watch.closed.then(() => left.resolve(), () => left.resolve());
+		watch.start(async (call) => { if (call.kind === "failed") { left.reject(call.error); return; } if ((call.retired && call.ops.length === 0) || !queued(call.value)) left.resolve(); });
+		void watch.closed.then(end => { if (end.kind !== "stopped") left.reject("error" in end ? end.error : new Error(`Inbox watch ${end.kind}`)); });
 		try { await Promise.race([left.promise, aborted.promise]); }
 		finally { aborted.dispose(); await watch.stop(); }
 	}
@@ -463,9 +470,9 @@ export function subagentsExtension(getHarness: () => Harness, work: WorkService,
 				const refs = await runtime.snapshot(AgentsDoc, runtime.conversationId, context);
 				const ref = refs?.agents.find((ref) => ref.runnerId === task.id);
 				if (!ref) throw new Error("Subagent linkage is missing");
-				const stream = await watchEvents(getHarness(), ref.conversationId, context);
+				const stream = await watchConversation(getHarness(), ref.conversationId, context);
 				applySnapshot(progress, stream.snapshot);
-				let text = stream.snapshot.generation?.message ? assistantText([stream.snapshot.generation.message]) : "";
+				let textBlocks = (stream.snapshot.generation?.message?.content ?? []).map(block => block.type === "text" ? block.text : "");
 				let writing = Promise.resolve();
 				stream.start(async (events) => {
 					const before = JSON.stringify(progress);
@@ -474,15 +481,21 @@ export function subagentsExtension(getHarness: () => Harness, work: WorkService,
 							case "snapshot": applySnapshot(progress, event); break;
 							case "tool_execution_start": progress.currentTool = event.toolName; break;
 							case "tool_execution_end": progress.toolCount++; delete progress.currentTool; break;
-							case "message_start": text = assistantText([event.message]); break;
-							case "message_update":
+							case "message_start":
+								textBlocks = event.message.role === "assistant" ? event.message.content.map(block => block.type === "text" ? block.text : "") : [];
+								break;
+							case "message_update": {
 								for (const change of event.changes) {
-									if (change.type === "text_delta") text += change.delta;
-									if (change.type === "message") text = assistantText([change.message]);
+									if (change.type === "text_delta") textBlocks[change.contentIndex] = (textBlocks[change.contentIndex] ?? "") + change.delta;
+									else if (change.type === "message") textBlocks = change.message.content.map(block => block.type === "text" ? block.text : "");
+									else if ("block" in change) textBlocks[change.contentIndex] = change.block.type === "text" ? change.block.text : "";
 								}
+								const text = textBlocks.join("");
 								if (text) progress.lastText = text.trimEnd().split("\n").at(-1)?.slice(0, 200) ?? "";
 								break;
+							}
 							case "message_end": {
+								textBlocks = [];
 								const answer = assistantText(event.entry.model);
 								if (answer) progress.lastText = answer.trimEnd().split("\n").at(-1)?.slice(0, 200) ?? "";
 								break;
@@ -501,12 +514,14 @@ export function subagentsExtension(getHarness: () => Harness, work: WorkService,
 					}, context);
 					await writing;
 				});
+				const observationFailed = stream.closed.then<never>(end => { throw "error" in end ? end.error : new Error(`Subagent observation ${end.kind}`); });
+				void observationFailed.catch(() => undefined);
 				let answer = "";
 				try {
 					const child = await runtime.conversation(ref.conversationId, context);
 					if (!child) throw new Error("Subagent conversation is missing");
 					let submission = await child.submit({ type: "input", content: task.input.prompt, requestId: `subagent:${task.id}` }, context);
-					let settled = await submission.wait(context);
+					let settled = await Promise.race([submission.wait(context), observationFailed]);
 					// ADR 0096: the answer is final for the parent, so the subagent does not end while its own DAG run still runs
 					// or waits for it: the run is left to its driver, and every stop or ask is handed back to the subagent as a
 					// new turn whose answer replaces this one. Request ids are keyed by the events, so a restart replays them.
@@ -516,8 +531,10 @@ export function subagentsExtension(getHarness: () => Harness, work: WorkService,
 						if (!events.length) break;
 						for (const event of events) announced.add(event.key);
 						submission = await child.submit({ type: "input", content: wakeMessage(events, true), requestId: `subagent:${task.id}:wake:${events.map((event) => event.key).join(",")}` }, context);
-						settled = await submission.wait(context);
+						settled = await Promise.race([submission.wait(context), observationFailed]);
 					}
+					// Receipt success and ordinary-scope quiescence are different facts (afterRun may still own work).
+					await Promise.race([child.waitForIdle(context), observationFailed]);
 					if (settled.type === "input" && settled.status === "done") {
 						await runtime.commit(async (tx) => {
 							answer = assistantText((await tx.entry(settled.answer))?.model);
@@ -539,8 +556,12 @@ export function subagentsExtension(getHarness: () => Harness, work: WorkService,
 					progress.status = "failed";
 					progress.error = error instanceof Error ? error.message : String(error);
 				} finally {
-					await stream.stop();
+					const end = await stream.stop();
 					await writing;
+					if (end.kind === "failed" || end.kind === "listener_error") {
+						progress.status = "failed";
+						progress.error = `Progress observation failed: ${String(end.error)}`;
+					}
 				}
 				progress.endedAt = Date.now();
 				delete progress.currentTool;
@@ -591,7 +612,9 @@ export function subagentsExtension(getHarness: () => Harness, work: WorkService,
 				!isToolRegistration(tool) || !profile.tools.includes(tool.name) || !RESEARCH_READ_TOOLS.has(tool.name)
 				|| profile.role === "author")) throw new Error("Invalid host-selected research tool registrations");
 		}
-		const childTools = (profile?.registrations ?? agent.tools).filter((tool): tool is ToolRegistration =>
+		// Model-only tools (codemode) and nested-only tools are separate native inventories; inherit both, not the registry.
+		const enabledTools = [...new Map([...agent.tools, ...agent.callable].map(tool => [tool.name, tool])).values()];
+		const childTools = (profile?.registrations ?? enabledTools).filter((tool): tool is ToolRegistration =>
 			isToolRegistration(tool) && !CHILD_EXCLUDED_TOOLS.has(tool.name) && (allowed === undefined || allowed.has(tool.name)));
 		if (input.mission && profile) {
 			if (new Set(profile.tools).size !== profile.tools.length) throw new Error("Duplicate research tool names");
@@ -739,9 +762,10 @@ export function subagentsExtension(getHarness: () => Harness, work: WorkService,
 				try {
 					context.abortSignal?.addEventListener("abort", onAbort, { once: true });
 					if (context.abortSignal?.aborted) onAbort();
-					asks?.start(async (value) => asksChanged(value));
-					runs?.start(async (value) => runsChanged(value));
-					handOvers?.start(async (value) => deliveriesChanged(value));
+					asks?.start(async (call) => { if (call.kind === "failed") wake.reject(call.error); else asksChanged(call.retired && call.ops.length === 0 ? undefined : call.value); });
+					runs?.start(async (call) => { if (call.kind === "failed") wake.reject(call.error); else runsChanged(call.retired && call.ops.length === 0 ? undefined : call.value); });
+					handOvers?.start(async (call) => { if (call.kind === "failed") wake.reject(call.error); else deliveriesChanged(call.retired && call.ops.length === 0 ? undefined : call.value); });
+					for (const watch of [asks, runs, handOvers]) void watch?.closed.then(end => { if (end.kind !== "stopped") wake.reject("error" in end ? end.error : new Error(`Wake watch ${end.kind}`)); });
 					for (const runner of on) runtime.waitForTask(runner, waiter.context).then(() => wake.resolve(), () => {});
 					// Asks, runs or settlements committed before the watches started are seen by this re-check.
 					asksChanged(await runtime.snapshot(AsksDoc, id, context));
@@ -862,12 +886,12 @@ export function subagentsExtension(getHarness: () => Harness, work: WorkService,
 				execute: async ({ description, prompt, subagent_type = "general-purpose", run_in_background = false, model: requestedModel }, api, context) => {
 					const definition = definitions.get(subagent_type);
 					if (!definition && subagent_type !== "general-purpose" && subagent_type !== "explore") {
-						return { isError: true, content: [{ type: "text", text: `Unknown subagent type "${subagent_type}". Available: ${["general-purpose", "explore", ...definitions.keys()].join(", ")}` }] };
+						return { isError: true, output: [{ type: "text", text: `Unknown subagent type "${subagent_type}". Available: ${["general-purpose", "explore", ...definitions.keys()].join(", ")}` }] };
 					}
 					const ref = await spawn({ description, prompt, subagentType: subagent_type, background: run_in_background, ...(requestedModel ? { model: requestedModel } : {}) }, api, context);
 					if (run_in_background) {
 						const state = await readProgress(api, ref, context);
-						return { content: [{ type: "text", text: `Started ${ref.taskId}. Use task_output to collect its answer.` }], details: { subagent: state.subagent } };
+						return { output: [{ type: "text", text: `Started ${ref.taskId}. Use task_output to collect its answer.` }], details: { subagent: state.subagent } };
 					}
 					// Own the child through setup and waiting, until background promotion commits.
 					let background = false;
@@ -887,13 +911,15 @@ export function subagentsExtension(getHarness: () => Harness, work: WorkService,
 								}, Math.max(0, lastPush + 100 - Date.now()));
 							}).finally(() => { pending = undefined; });
 							await publish();
-							watch.start(async (state) => {
-								if (state?.subagent) { latest = clone(state.subagent); await publish(); }
+							watch.start(async (call) => {
+								if (call.kind === "failed") throw call.error;
+								if ((!call.retired || call.ops.length > 0) && call.value.subagent) { latest = clone(call.value.subagent); await publish(); }
 							});
 							// Any ask from any child of this conversation returns the wait (ADR 0030), not only the awaited child's:
 							// otherwise a background child's ask silently runs into its default while main waits here.
 							const siblings = (await api.snapshot(AgentsDoc, api.conversationId, context))?.agents ?? [];
-							const wake = await waitForChildrenOrAsk(api, [ref], context, undefined, false, [ref, ...siblings]);
+							const watchFailure = watch.closed.then<never>(end => { throw "error" in end ? end.error : new Error(`Progress watch ${end.kind}`); });
+							const wake = await Promise.race([waitForChildrenOrAsk(api, [ref], context, undefined, false, [ref, ...siblings]), watchFailure]);
 							await watch.stop();
 							if (wake.kind === "ask") {
 								// Promote: the child keeps running as a background subagent while this conversation answers.
@@ -909,7 +935,7 @@ export function subagentsExtension(getHarness: () => Harness, work: WorkService,
 								if (promoted) latest = promoted;
 								if (pending) await pending;
 								await publish();
-								return { content: [{ type: "text", text: askNotice(wake.asks) }], details: { subagent: latest, asks: wake.asks } };
+								return { output: [{ type: "text", text: askNotice(wake.asks) }], details: { subagent: latest, asks: wake.asks } };
 							}
 							const state = await readProgress(api, ref, context);
 							latest = state.subagent;
@@ -917,7 +943,7 @@ export function subagentsExtension(getHarness: () => Harness, work: WorkService,
 							await publish();
 							await markDelivered(api, [ref], context);
 							return {
-								content: [{ type: "text", text: state.answer || `${latest.taskId}: ${latest.status}${latest.error ? ` (${latest.error})` : ""}` }],
+								output: [{ type: "text", text: state.answer || `${latest.taskId}: ${latest.status}${latest.error ? ` (${latest.error})` : ""}` }],
 								details: { subagent: latest }, isError: latest.status !== "completed",
 							};
 						} finally {
@@ -944,7 +970,7 @@ export function subagentsExtension(getHarness: () => Harness, work: WorkService,
 					const known = (await api.snapshot(AgentsDoc, api.conversationId, context))?.agents ?? [];
 					const refs = task_ids ? known.filter((ref) => task_ids.includes(ref.taskId)) : known.filter((ref) => ref.background);
 					const missing = task_ids?.filter((id) => !known.some((ref) => ref.taskId === id)) ?? [];
-					if (missing.length) return { isError: true, content: [{ type: "text", text: `Unknown subagent: ${missing.join(", ")}` }], details: { subagents: [] } };
+					if (missing.length) return { isError: true, output: [{ type: "text", text: `Unknown subagent: ${missing.join(", ")}` }], details: { subagents: [] } };
 					const read = () => Promise.all(refs.map((ref) => readProgress(api, ref, context)));
 					let states = await read();
 					// Wake on the first new event: an uncollected answer already waiting returns at once; otherwise wait for any
@@ -964,7 +990,7 @@ export function subagentsExtension(getHarness: () => Harness, work: WorkService,
 					const lines = states.map((state) => collectionLine(state, include_delivered));
 					await markDelivered(api, refs.filter((_, i) => states[i]!.subagent.status !== "running" && !states[i]!.delivered), context);
 					return {
-						content: [{ type: "text", text: [...(asks.length ? [askNotice(asks)] : []), ...cappedNotice, ...lines].join("\n\n") || "No background subagents." }],
+						output: [{ type: "text", text: [...(asks.length ? [askNotice(asks)] : []), ...cappedNotice, ...lines].join("\n\n") || "No background subagents." }],
 						details: { subagents: states.map((state) => state.subagent), ...(asks.length ? { asks } : {}) },
 					};
 				},
@@ -976,7 +1002,7 @@ export function subagentsExtension(getHarness: () => Harness, work: WorkService,
 				replay: "safe",
 				execute: async ({ task_id }, api, context) => {
 					const ref = (await api.snapshot(AgentsDoc, api.conversationId, context))?.agents.find((ref) => ref.taskId === task_id);
-					if (!ref) return { isError: true, content: [{ type: "text", text: `Unknown subagent: ${task_id}` }], details: { subagents: [] } };
+					if (!ref) return { isError: true, output: [{ type: "text", text: `Unknown subagent: ${task_id}` }], details: { subagents: [] } };
 					// The same admission line as task_message: a note is admitted either before this abort (and withdrawn by it) or after.
 					await withConversationAdmission(getHarness(), ref.conversationId, () => getHarness().abortTask(ref.runnerId, context));
 					await api.waitForTask(ref.runnerId, context);
@@ -985,7 +1011,7 @@ export function subagentsExtension(getHarness: () => Harness, work: WorkService,
 					const state = await readProgress(api, ref, context);
 					// The caller already knows how this child ended; the idle wake must not announce it again.
 					await markDelivered(api, [ref], context);
-					return { content: [{ type: "text", text: `${task_id} [${state.subagent.status}]` }], details: { subagents: [state.subagent] } };
+					return { output: [{ type: "text", text: `${task_id} [${state.subagent.status}]` }], details: { subagents: [state.subagent] } };
 				},
 			}),
 			defineTool({
@@ -998,7 +1024,7 @@ export function subagentsExtension(getHarness: () => Harness, work: WorkService,
 				}),
 				replay: "safe", executionMode: "parallel",
 				execute: async ({ task_id, text, key }, api, context) => {
-					const reject = (message: string, subagents: SubagentProgress[] = []) => ({ isError: true, content: [{ type: "text" as const, text: message }], details: { subagents } });
+					const reject = (message: string, subagents: SubagentProgress[] = []) => ({ isError: true, output: [{ type: "text" as const, text: message }], details: { subagents } });
 					// Ownership: only AgentRefs recorded in this conversation are addressable; other threads' children are invisible here.
 					const ref = (await api.snapshot(AgentsDoc, api.conversationId, context))?.agents.find((item) => item.taskId === task_id);
 					if (!ref) return reject(`Unknown subagent: ${task_id}`);
@@ -1072,7 +1098,7 @@ export function subagentsExtension(getHarness: () => Harness, work: WorkService,
 							|| (original.status === "done" && record.status === "done" && original.answer === record.answer));
 						if (joined) {
 							return {
-								content: [{ type: "text", text: `Message delivered to ${task_id}: it joined its current run. Collect the child's answer with task_output.` }],
+								output: [{ type: "text", text: `Message delivered to ${task_id}: it joined its current run. Collect the child's answer with task_output.` }],
 								details: { subagents: [(await readProgress(api, ref, context)).subagent] },
 							};
 						}
@@ -1083,7 +1109,7 @@ export function subagentsExtension(getHarness: () => Harness, work: WorkService,
 						}
 						const answer = await api.commit(async (tx) => assistantText((await tx.entry(answerEntry))?.model), context);
 						return {
-							content: [{ type: "text", text: `Message reached ${task_id} after its task had finished; the note ran as a new turn and the child answered: ${answer || "(empty answer)"}` }],
+							output: [{ type: "text", text: `Message reached ${task_id} after its task had finished; the note ran as a new turn and the child answered: ${answer || "(empty answer)"}` }],
 							details: { subagents: [(await readProgress(api, ref, context)).subagent] },
 						};
 					} catch (error) {

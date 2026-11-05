@@ -1,4 +1,39 @@
-import type { AgentEvent, SnapshotEvent } from "@earendil-works/pi-durable";
+import type { JsonValue } from "@earendil-works/chord";
+import type { AssistantMessage, Message, Usage, JsonObject } from "@earendil-works/pi-ai";
+import type { AgentState, EntryRecord, SubmissionId, SubmissionRecord, TaskId, ToolSlot, ToolDiagnostic, UsageState, CompactionReason } from "@earendil-works/pi-durable";
+
+/** Dinobot wire protocol. Native state is projected only by conversation-observer. */
+export type MessageChange =
+ | { type: "text_start" | "thinking_start" | "toolcall_start" | "block"; contentIndex: number; block: AssistantMessage["content"][number] }
+ | { type: "text_delta" | "thinking_delta"; contentIndex: number; delta: string }
+ | { type: "toolcall_delta"; contentIndex: number; path: readonly (string | number)[]; delta: string }
+ | { type: "message"; message: AssistantMessage };
+export type QueuedItem = { id: SubmissionId; mode: "steer" | "followUp" | "write" };
+export type SnapshotEvent = {
+ type: "snapshot"; entries: readonly EntryRecord[]; run?: { inputs: readonly SubmissionId[] };
+ generation?: { attempt: number; message?: AssistantMessage; retry?: { at: number; error: string }; deferred?: { pollAt: number } };
+ tools: readonly ToolSlot[]; compactions: readonly { taskId: TaskId; reason: CompactionReason; blocking: boolean; attempt?: number; retry?: { at: number; error: string } }[];
+ inbox: readonly QueuedItem[]; agent: AgentState; usage: UsageState;
+};
+export type AgentEvent = SnapshotEvent
+ | { type: "run_start" | "run_end"; inputs: readonly SubmissionId[] }
+ | { type: "turn_start" | "turn_end" }
+ | { type: "message_start"; message: Message }
+ | { type: "message_update"; usage: Usage; changes: readonly MessageChange[] }
+ | { type: "message_end" | "entry_appended"; entry: EntryRecord }
+ | { type: "tool_execution_start"; toolCallId: string; toolName: string; args: JsonObject }
+ | { type: "tool_execution_update"; toolCallId: string; toolName: string; output?: { trimStart?: number; append?: string } | { set: string }; details?: JsonValue; diagnostics?: readonly ToolDiagnostic[] }
+ | { type: "tool_execution_end"; toolCallId: string; toolName: string; entry?: EntryRecord }
+ | { type: "inbox_update"; items: readonly QueuedItem[] }
+ | { type: "submission"; record: SubmissionRecord }
+ | { type: "auto_retry_start"; attempt: number; at: number; errorMessage: string }
+ | { type: "auto_retry_end"; attempt: number }
+ | { type: "deferred_poll"; pollAt: number }
+ | { type: "agent_changed"; agent: AgentState }
+ | { type: "usage_changed"; usage: UsageState }
+ | { type: "task_failed"; taskId: TaskId; kind: string; message: string }
+ | { type: "compaction_start"; taskId: TaskId; reason: CompactionReason; blocking: boolean }
+ | { type: "compaction_end"; taskId: TaskId; reason: CompactionReason };
 import type { RunStatus } from "./dag.ts";
 import type { NodeKind } from "./plan.ts";
 import type { WorkflowStatus } from "./verification.ts";

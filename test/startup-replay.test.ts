@@ -1,16 +1,15 @@
-import { expect, test } from "bun:test";
-import { mkdtemp, rm } from "node:fs/promises";
+import { sqliteTest } from "./fixtures/sqlite-test.ts";
+import { expect } from "bun:test";
+import { copyFile } from "node:fs/promises";
 import { join } from "node:path";
-import { tmpdir } from "node:os";
 import { BACKGROUND_CONTEXT as context } from "@earendil-works/chord/context";
 import { createModels } from "@earendil-works/pi-ai/models";
-import { createRegistry, Harness, LiveDoc, type DocumentId } from "@earendil-works/pi-durable";
+import { createRegistry, Harness, LiveDoc, type DocumentId, type ConversationId, type TaskId, type SubmissionId } from "@earendil-works/pi-durable";
 import { openNodeSqliteStorage } from "@earendil-works/pi-durable/storage/sqlite/node";
 
 import { Database } from "bun:sqlite";
 
-test("the authenticated historical replay repair preserves the recorded partial", async () => {
- const dir = await mkdtemp(join(tmpdir(), "dinobot-history-"));
+sqliteTest(import.meta.path, "the authenticated historical replay repair preserves the recorded partial", async dir => {
  const path = join(dir, "bot.sqlite");
  const storage = await openNodeSqliteStorage(path);
  await storage.close(context);
@@ -28,6 +27,15 @@ test("the authenticated historical replay repair preserves the recorded partial"
   const restored = await reopened.document(3525 as DocumentId,"current",context);
   expect(restored?.value).toEqual({...value,generation:{...value.generation,message:{content:[{type:"text",text:""},{type:"toolCall",partialJson:"recorded-next",arguments:{code:"recorded-next"}}]}}});
  } finally { await reopened.close(context); }
+ // Hydrate a separate, closed fixture copy: authenticated v1 replay must reach the native v3 migration too.
+ const migratedPath = join(dir, "hydrated.sqlite");
+ await copyFile(path, migratedPath);
+ const hydrated = await Harness.open(await openNodeSqliteStorage(migratedPath), {models:createModels(),registry:createRegistry()},context);
+ try {
+  const live = await hydrated.snapshot(LiveDoc,3524 as ConversationId,context);
+  expect(live?.run).toEqual({taskId:21842 as TaskId,inputs:[18955 as SubmissionId],turns:0});
+  expect(live?.generation?.message?.content[1]).toMatchObject({partialJson:"recorded-next",arguments:{code:"recorded-next"}});
+ } finally { await hydrated.close(context); }
  // Any different identity, revision bytes or subsequent path stays fail-closed.
  for (const statement of [
   "UPDATE documents SET record = json_set(record, '$.scope.conversationId', 3523)",
@@ -48,8 +56,7 @@ test("the authenticated historical replay repair preserves the recorded partial"
  }
 });
 
-test("failed corrupt task cleanup is quarantined without starving timers", async () => {
- const dir = await mkdtemp(join(tmpdir(), "dinobot-scheduler-"));
+sqliteTest(import.meta.path, "failed corrupt task cleanup is quarantined without starving timers", async dir => {
  const child = Bun.spawn([process.execPath, join(import.meta.dir, "fixtures/scheduler-corrupt-replay.ts"), join(dir, "bot.sqlite")], { stdout: "pipe", stderr: "pipe" });
  const timeout = setTimeout(() => child.kill(), 4000);
  try {
@@ -64,11 +71,10 @@ test("failed corrupt task cleanup is quarantined without starving timers", async
   expect(result.healthy).toBe("unanswered");
   expect(result.stableAfterHealthy).toBe(true);
   expect(result.inspected.tasks.some((task: {state:{reason?:string}}) => task.state.reason === "settlement_failed")).toBe(true);
- } finally { clearTimeout(timeout); child.kill(); }
+ } finally { clearTimeout(timeout); child.kill(); await child.exited; }
 }, 6000);
 
-test("a stale independent process cannot overwrite a newer SQLite generation", async () => {
- const dir = await mkdtemp(join(tmpdir(),"dinobot-process-writer-"));
+sqliteTest(import.meta.path, "a stale independent process cannot overwrite a newer SQLite generation", async dir => {
  const path = join(dir,"bot.sqlite");
  const harness = await Harness.open(await openNodeSqliteStorage(path),{models:createModels(),registry:createRegistry()},context);
  const conversation = await harness.createConversation({ownership:{kind:"ownerless"}},context);
@@ -84,11 +90,10 @@ test("a stale independent process cannot overwrite a newer SQLite generation", a
   expect(new TextDecoder().decode(result.value)).toContain("writer is stale");
   expect(await child.exited).toBe(0);
   expect((await harness.snapshot(LiveDoc,conversation.id,context))?.generation?.attempt).toBe(2);
- } finally {clearTimeout(deadline);child.kill();await harness.close(context);}
+ } finally {clearTimeout(deadline);child.kill();await child.exited;await harness.close(context);}
 },6000);
 
-test("a stale SQLite producer cannot commit a partial after another producer replaces generation", async () => {
- const dir = await mkdtemp(join(tmpdir(), "dinobot-replay-"));
+sqliteTest(import.meta.path, "a stale SQLite producer cannot commit a partial after another producer replaces generation", async dir => {
  const path = join(dir, "bot.sqlite");
  const open = async () => Harness.open(await openNodeSqliteStorage(path), { models: createModels(), registry: createRegistry() }, context);
  const first = await open();
@@ -104,8 +109,8 @@ test("a stale SQLite producer cannot commit a partial after another producer rep
   await second.close(context);
   second = await open();
   expect(await second.snapshot(LiveDoc, conversation.id, context)).toEqual(before);
-  await expect(first.commit(async tx => { (await tx.doc(LiveDoc, conversation.id)).generation = {attempt:2}; }, context)).rejects.toThrow("writer is stale");
+  await expect(first.commit(async tx => { (await tx.doc(LiveDoc, conversation.id)).generation = {attempt:2}; }, context)).rejects.toThrow("Session failed");
  } finally {
-  await second?.close(context); await first.close(context); await rm(dir,{recursive:true,force:true,maxRetries:10,retryDelay:100}).catch(error => { if (error.code !== "EBUSY") throw error; });
+  await second?.close(context); await first.close(context);
  }
 });

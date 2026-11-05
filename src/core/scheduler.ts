@@ -1,3 +1,4 @@
+import { checkpointEvery256 } from "./document-policy.ts";
 import { createHash } from "node:crypto";
 import type { Context } from "@earendil-works/chord";
 import { defineDoc, InboxDoc, LiveDoc, type ConversationId, type Harness, type TaskId, type Tx } from "@earendil-works/pi-durable";
@@ -17,10 +18,10 @@ export type Schedule = {
  state: "pending" | "admitted" | "completed" | "failed" | "cancelled";
  reason?: string; admittedAt?: number; result?: string;
 };
-export const SchedulesDoc = defineDoc<{ schedules: Schedule[] }>({
+export const SchedulesDoc = defineDoc<{ schedules: Schedule[] }>({ checkpointWhen: checkpointEvery256,
  kind: "dinobot.schedules", version: 1, scope: "session", initial: () => ({ schedules: [] }),
 });
-const UpdateReceipt = defineDoc<{ result?: Schedule }>({ kind: "dinobot.schedule.update", version: 1, scope: "task", initial: () => ({}) });
+const UpdateReceipt = defineDoc<{ result?: Schedule }>({ checkpointWhen: checkpointEvery256, kind: "dinobot.schedule.update", version: 1, scope: "task", initial: () => ({}) });
 export type ScheduleInput = { key: string; text: string; at?: string; after_thread?: string; continue_goal?: boolean };
 export type ScheduleWake = (request: PluginWake, ready: () => Promise<boolean>) => Promise<PluginWakeResult>;
 export type ScheduleResult = (schedule: Schedule) => Promise<{ state: "completed" | "failed"; result: string } | undefined>;

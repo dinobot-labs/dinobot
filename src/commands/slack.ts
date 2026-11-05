@@ -1,4 +1,4 @@
-import { Type } from "@earendil-works/pi-ai";
+import { Type } from "typebox";
 import type { Static } from "typebox";
 import type { Bot } from "../core/bot.ts";
 import type { LoadedPlugin } from "../plugins/types.ts";

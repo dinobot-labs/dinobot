@@ -1,10 +1,10 @@
-import { Type } from "@earendil-works/pi-ai";
+import { Type } from "typebox";
 import { defineExtension, defineTool, section } from "@earendil-works/pi-durable";
 import type { Scheduler } from "../core/scheduler.ts";
 
 const atParameter = () => Type.String({ description: "RFC3339 with seconds and explicit offset, strictly future, at most 366 days" });
 const textParameter = () => Type.String({ minLength: 1, maxLength: 12000, description: "Authorized instruction, at most 12000 UTF-8 bytes (not characters)" });
-const output = (value: unknown) => ({ content: [{ type: "text" as const, text: JSON.stringify(value) }] });
+const output = (value: unknown) => ({ output: [{ type: "text" as const, text: JSON.stringify(value) }] });
 export function schedulerExtension(scheduler: Scheduler) {
  return defineExtension({
   name: "scheduler",

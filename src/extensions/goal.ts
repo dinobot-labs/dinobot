@@ -1,4 +1,5 @@
-import { Type } from "@earendil-works/pi-ai";
+import { checkpointEvery256 } from "../core/document-policy.ts";
+import { Type } from "typebox";
 import { defineDoc, defineExtension, defineTool, section } from "@earendil-works/pi-durable";
 import { LinkDoc } from "../core/ask.ts";
 import { clone } from "../core/json.ts";
@@ -9,10 +10,10 @@ import {
 export const GOAL_TOOL_NAMES = ["goal_set", "goal_update", "goal_read"] as const;
 
 type Outcome = { text: string; isError?: true; goal?: Goal | null };
-const ReceiptDoc = defineDoc<{ result?: Outcome }>({ kind: "dinobot.goal.receipt", version: 1, scope: "task", initial: () => ({}) });
+const ReceiptDoc = defineDoc<{ result?: Outcome }>({ checkpointWhen: checkpointEvery256, kind: "dinobot.goal.receipt", version: 1, scope: "task", initial: () => ({}) });
 
 const result = (outcome: Outcome) => ({
-	content: [{ type: "text" as const, text: outcome.text }],
+	output: [{ type: "text" as const, text: outcome.text }],
 	...(outcome.isError ? { isError: true } : {}),
 	details: { goal: outcome.goal ?? null },
 });

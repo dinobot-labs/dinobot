@@ -20,7 +20,7 @@ test("late reconciliation of a legacy originating input never turns it into late
   delete run.sourceIds;
   const work = await tx.doc(WorkDoc, f.conversation.id);
   delete work.humanInputs; delete work.inputTimes;
-  (await tx.doc(LiveDoc, f.conversation.id)).run = { taskId: 1 as any, inputs: [Number(sourceId) as any] };
+  (await tx.doc(LiveDoc, f.conversation.id)).run = { turns: 0, taskId: 1 as any, inputs: [Number(sourceId) as any] };
  }, context);
  await Bun.sleep(5);
  await f.bot.work.reconcileSources(f.conversation.id, [], context);

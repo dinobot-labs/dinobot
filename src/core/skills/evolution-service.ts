@@ -1,3 +1,4 @@
+import { checkpointEvery256 } from "../document-policy.ts";
 import { createHash } from "node:crypto";
 import type { Context } from "@earendil-works/chord";
 import type { Api, Model, Models } from "@earendil-works/pi-ai";
@@ -42,7 +43,7 @@ export type EvolutionSloRegistration = {
 };
 type ScheduledHandle = { jobId: string; taskId: TaskId; requestId: string };
 type ServiceState = { slo: EvolutionSloRegistration | null; handles: ScheduledHandle[]; providerReservations: number };
-export const EvolutionServiceDoc = defineDoc<ServiceState>({
+export const EvolutionServiceDoc = defineDoc<ServiceState>({ checkpointWhen: checkpointEvery256,
 	kind: "dinobot.skill-evolution.service", scope: "session", version: 1,
 	initial: () => ({ slo: null, handles: [], providerReservations: 0 }),
 });
@@ -51,7 +52,7 @@ export const EvolutionControlDoc = defineDoc<{
 	mode: "paused" | "killed" | "running"; epoch: number;
 	/** Last explicit operator operation; startup pauses never set it. Absent in older documents. */
 	lastOp?: "pause" | "kill" | "resume" | null;
-}>({
+}>({ checkpointWhen: checkpointEvery256,
 	kind: "dinobot.skill-evolution.operator-control", scope: "session", version: 1,
 	initial: () => ({ mode: "paused", epoch: 0, lastOp: null }),
 });
@@ -64,7 +65,7 @@ export type EvolutionProviderReservation = {
 	readonly maximumProviderAttempts: number;
 	readonly reservedMicroUsd: number;
 };
-const ProviderReservationDoc = defineDocFamily<{ reservation: EvolutionProviderReservation | null }, string>({
+const ProviderReservationDoc = defineDocFamily<{ reservation: EvolutionProviderReservation | null }, string>({ checkpointWhen: checkpointEvery256,
 	kind: "dinobot.skill-evolution.provider-reservation", scope: "session", version: 1, family: true,
 	initial: () => ({ reservation: null }),
 });
@@ -77,19 +78,19 @@ export const EvolutionCandidateDoc = defineDocFamily<{
 	candidate: AuthoredSkillCandidate | null; jobId: string; fence: number; epoch: number;
 	baselineManifest: string; snapshotHash: string; providerReportedUsage: ReportedUsage | null;
 	inputTokenUpperBound: number; conservativelyCharged: EvolutionBudget | null;
-}, string>({
+}, string>({ checkpointWhen: checkpointEvery256,
 	kind: "dinobot.skill-evolution.candidate-draft", scope: "session", version: 1, family: true,
 	initial: () => ({
 		candidate: null, jobId: "", fence: 0, epoch: 0, baselineManifest: "", snapshotHash: "",
 		providerReportedUsage: null, inputTokenUpperBound: 0, conservativelyCharged: null,
 	}),
 });
-const SnapshotDoc = defineDocFamily<{ registration: EvolutionSnapshotRegistration | null }, string>({
+const SnapshotDoc = defineDocFamily<{ registration: EvolutionSnapshotRegistration | null }, string>({ checkpointWhen: checkpointEvery256,
 	kind: "dinobot.skill-evolution.snapshot-registration", scope: "session", version: 1, family: true,
 	initial: () => ({ registration: null }),
 });
 /** Stable capability marker checked by admin tools even if a host later changes agent selection. */
-export const EvolutionWorkerDoc = defineDoc<{ research: boolean }>({
+export const EvolutionWorkerDoc = defineDoc<{ research: boolean }>({ checkpointWhen: checkpointEvery256,
 	kind: "dinobot.skill-evolution.worker", scope: "conversation", history: "latest", fork: "current", version: 1,
 	initial: () => ({ research: true }),
 });
@@ -99,7 +100,7 @@ export type EvolutionOperationResult = {
 	readonly taskId: TaskId | null;
 	readonly abortTaskIds: TaskId[];
 };
-const OperationDoc = defineDocFamily<{ fingerprint: string | null; result: EvolutionOperationResult | null }, string>({
+const OperationDoc = defineDocFamily<{ fingerprint: string | null; result: EvolutionOperationResult | null }, string>({ checkpointWhen: checkpointEvery256,
 	kind: "dinobot.skill-evolution.operation", scope: "session", version: 1, family: true,
 	initial: () => ({ fingerprint: null, result: null }),
 });

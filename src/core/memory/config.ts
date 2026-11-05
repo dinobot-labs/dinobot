@@ -1,4 +1,4 @@
-import { type Static, Type } from "@earendil-works/pi-ai";
+import { type Static, Type } from "typebox";
 import type { ModelRef } from "@earendil-works/pi-durable";
 import { projectAliasProblems, type ProjectAlias } from "./project-aliases.ts";
 

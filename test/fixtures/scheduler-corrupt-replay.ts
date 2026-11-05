@@ -15,8 +15,10 @@ await conversation.submit({ type: "input", content: "offline fixture" }, context
 await harness.close(context);
 const db = new Database(path);
 const row = db.query("SELECT id FROM documents WHERE owner_id = ? AND json_extract(record, '$.kind') = 'pi.live'").get(conversation.id) as { id: number };
+const revision = db.query("SELECT version FROM document_revisions WHERE document_id = ? ORDER BY seq DESC LIMIT 1").get(row.id) as { version: number };
 const meta = db.query("SELECT next_seq FROM durable_metadata").get() as { next_seq: number };
-db.query("INSERT INTO document_revisions VALUES (?, ?, 'delta', 1, ?)").run(row.id, meta.next_seq, JSON.stringify([["s", ["generation", "message", "missing"], "invalid"]]));
+// Corrupt the replay path, not the schema boundary: native pi.live is now v3.
+db.query("INSERT INTO document_revisions VALUES (?, ?, 'delta', ?, ?)").run(row.id, meta.next_seq, revision.version, JSON.stringify([["s", ["generation", "message", "missing"], "invalid"]]));
 db.query("UPDATE durable_metadata SET next_seq = next_seq + 1").run();
 db.close();
 harness = await open();

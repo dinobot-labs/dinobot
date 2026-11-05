@@ -8,12 +8,12 @@ import type { EntryRecord, Harness } from "@earendil-works/pi-durable";
 import { openSessionIndex } from "../src/core/search.ts";
 
 function fixture(path = ":memory:") {
- let listener!: Parameters<Harness["subscribeCommits"]>[0];
+ let observer!: Parameters<Harness["observeCommits"]>[0];
  let stops = 0; let pageHook = (_page: number) => {};
  const history: EntryRecord[] = [];
  const mins: number[] = [];
  const harness = {
-  subscribeCommits(fn: typeof listener) { listener = fn; return () => { stops++; }; },
+  observeCommits(next: typeof observer) { observer = next; return { detach() { stops++; } }; },
   async snapshot() { return { threads: { "tui:test": 1 } }; },
   async conversation() { return { async entries(query: { minEntryId: number }, limit: number, cursor?: { offset: number }) {
    mins.push(query.minEntryId);
@@ -27,7 +27,7 @@ function fixture(path = ":memory:") {
  const add = (id: number, publish = true) => {
   const entry = { id, conversationId: 1, kind: "message", model: [{ role: "user", content: `needle ${id}`, timestamp: id }] } as unknown as EntryRecord;
   history.push(entry);
-  if (publish) listener({ seq: id, changes: [{ type: "entry", value: entry }] } as unknown as Parameters<typeof listener>[0], context);
+  if (publish) observer.advance({ seq: id, changes: [{ type: "entry", value: entry }] } as unknown as Parameters<typeof observer.advance>[0], context);
  };
  const count = () => (db.query("SELECT count(*) AS n FROM entries").get() as { n: number }).n;
  return { db, index, harness, add, count, mins, stops: () => stops, hook(fn: typeof pageHook) { pageHook = fn; } };

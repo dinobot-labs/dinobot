@@ -1,4 +1,5 @@
-import { Type } from "@earendil-works/pi-ai";
+import { checkpointEvery256 } from "../core/document-policy.ts";
+import { Type } from "typebox";
 import { defineDoc, defineExtension, defineTool, type AnyTask, type HookRegistration, section, type ToolExecutionApi } from "@earendil-works/pi-durable";
 import type { Context } from "@earendil-works/chord";
 import { DISABLED_MEMORY } from "../core/memory/config.ts";
@@ -9,10 +10,10 @@ import {
 	MAX_AGREEMENT_CHARS, renderAgreements, visibleAgreements,
 } from "../core/memory/agreements.ts";
 
-const ReceiptDoc = defineDoc<{ result?: Mutation }>({
+const ReceiptDoc = defineDoc<{ result?: Mutation }>({ checkpointWhen: checkpointEvery256,
 	kind: "dinobot.memory.receipt", version: 1, scope: "task", initial: () => ({}),
 });
-const AgreementReceiptDoc = defineDoc<{ result?: AddResult | ChangeResult }>({
+const AgreementReceiptDoc = defineDoc<{ result?: AddResult | ChangeResult }>({ checkpointWhen: checkpointEvery256,
 	kind: "dinobot.agreements.receipt", version: 1, scope: "task", initial: () => ({}),
 });
 const key = Type.String({ minLength: 1, maxLength: 200, pattern: "\\S" });
@@ -29,7 +30,7 @@ const page = {
 	offset: Type.Optional(Type.Integer({ minimum: 0 })),
 	limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 100 })),
 };
-const result = (value: unknown) => ({ content: [{ type: "text" as const, text: JSON.stringify(value) }] });
+const result = (value: unknown) => ({ output: [{ type: "text" as const, text: JSON.stringify(value) }] });
 
 export type MemoryExtensionOptions = {
 	/** Resolves a conversation's working directory to its project. */

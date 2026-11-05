@@ -3,7 +3,6 @@ import { open, opendir } from "node:fs/promises";
 import { extname } from "node:path";
 import type { ImageContent } from "@earendil-works/pi-ai";
 import { defineExtension, wrapTool } from "@earendil-works/pi-durable";
-import { ok } from "@earendil-works/pi-durable/env";
 import { createReadTool } from "@earendil-works/pi-durable/tools";
 
 export const IMAGE_LIMITS = Object.freeze({ maxBytes: 2 * 1024 * 1024, maxPixels: 4096 * 4096, maxCellImages: 4, maxCellBytes: 8 * 1024 * 1024 });
@@ -49,6 +48,11 @@ async function directoryHint(path: string): Promise<string> {
 	return `read requires a regular file; ${path} is a directory. Read one of its entries or list it with bash: ${entries.join(", ") || "(empty)"}${more}`;
 }
 
+/** Private early return from the resolved-path reader: no second image read or weaker upstream decode. */
+class ValidatedImageRead extends Error {
+	constructor(readonly image: ImageContent) { super("validated image"); }
+}
+
 /** Keep durable's path resolution and text reader, replacing only the binary image branch. */
 export function imagesExtension() {
 	return defineExtension({
@@ -60,9 +64,8 @@ export function imagesExtension() {
 			execute: async (args, api, context) => {
 				if (!api.env) return tool.execute(args, api, context);
 				const env = api.env;
-				let image: ImageContent | undefined;
 				const wrappedEnv = Object.create(env) as typeof env;
-				wrappedEnv.readBinaryFile = async (path, ctx) => {
+				wrappedEnv.openBinaryReader = async (path, options, ctx) => {
 					ctx.abortSignal?.throwIfAborted();
 					// The bot installs a local NodeExecutionEnv. Nonblocking open rejects special files without hanging.
 					const file = await open(path, constants.O_RDONLY | constants.O_NONBLOCK);
@@ -75,7 +78,7 @@ export function imagesExtension() {
 						const mime = imageMime(prefix.subarray(0, bytesRead));
 						if (!mime) {
 							if (/^\.(png|jpe?g|gif|webp)$/i.test(extname(path))) throw new Error("Invalid image signature");
-							return env.readBinaryFile(path, ctx);
+							return env.openBinaryReader(path, options, ctx);
 						}
 						if (args.offset !== undefined || args.limit !== undefined) throw new Error("Images do not support offset/limit");
 						if ((await file.stat()).size > IMAGE_LIMITS.maxBytes) throw new Error(`Image exceeds ${IMAGE_LIMITS.maxBytes} byte limit`);
@@ -96,8 +99,7 @@ export function imagesExtension() {
 						const png = await decoder.png().bytes();
 						ctx.abortSignal?.throwIfAborted();
 						if (png.byteLength > IMAGE_LIMITS.maxBytes) throw new Error(`Decoded image exceeds ${IMAGE_LIMITS.maxBytes} byte output limit`);
-						image = { type: "image", mimeType: "image/png", data: Buffer.from(png).toString("base64") };
-						return ok(new Uint8Array());
+						throw new ValidatedImageRead({ type: "image", mimeType: "image/png", data: Buffer.from(png).toString("base64") });
 					} finally {
 						await file.close();
 					}
@@ -105,10 +107,11 @@ export function imagesExtension() {
 				try {
 					const result = await tool.execute(args, { ...api, env: wrappedEnv }, context);
 					context.abortSignal?.throwIfAborted();
-					return image ? { content: [image] } : result;
+					return result;
 				} catch (error) {
 					context.abortSignal?.throwIfAborted();
-					return { isError: true, content: [{ type: "text", text: `read failed: ${error instanceof Error ? error.message : String(error)}` }] };
+					if (error instanceof ValidatedImageRead) return { output: [error.image], structuredOutput: { ...error.image } };
+					return { isError: true, output: [{ type: "text", text: `read failed: ${error instanceof Error ? error.message : String(error)}` }] };
 				}
 			},
 		}))],

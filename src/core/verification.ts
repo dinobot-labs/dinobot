@@ -1,3 +1,4 @@
+import { checkpointEvery256 } from "./document-policy.ts";
 import { randomUUID } from "node:crypto";
 import { mkdir, realpath } from "node:fs/promises";
 import { resolve } from "node:path";
@@ -105,11 +106,11 @@ export type WorkflowStatus = {
 	/** Present whenever a work item is selected; absent for informational or unregistered sources. */
 	plan?: WorkPlan;
 };
-export const WorkDoc = defineDoc<WorkState>({ kind: "dinobot.work", version: 1, scope: "conversation", history: "latest", fork: "initial", initial: () => ({ works: [], sources: {} }) });
-export const EvidenceDoc = defineDoc<{ attempts: Evidence[] }>({ kind: "dinobot.evidence", version: 1, scope: "conversation", history: "latest", fork: "initial", initial: () => ({ attempts: [] }) });
-export const WorkspaceCoordDoc = defineDoc<{ leases: Lease[]; mutations: { root: string; environment: string; epoch: number }[] }>({ kind: "dinobot.workspace-coordination", version: 1, scope: "session", initial: () => ({ leases: [], mutations: [] }) });
-const CheckReceiptDoc = defineDoc<{ taskId?: string }>({ kind: "dinobot.check-call", version: 1, scope: "task", initial: () => ({}) });
-const MutationReceiptDoc = defineDoc<{ phase?: "running" | "settled"; leaseId?: string }>({ kind: "dinobot.mutation", version: 1, scope: "task", initial: () => ({}) });
+export const WorkDoc = defineDoc<WorkState>({ checkpointWhen: checkpointEvery256, kind: "dinobot.work", version: 1, scope: "conversation", history: "latest", fork: "initial", initial: () => ({ works: [], sources: {} }) });
+export const EvidenceDoc = defineDoc<{ attempts: Evidence[] }>({ checkpointWhen: checkpointEvery256, kind: "dinobot.evidence", version: 1, scope: "conversation", history: "latest", fork: "initial", initial: () => ({ attempts: [] }) });
+export const WorkspaceCoordDoc = defineDoc<{ leases: Lease[]; mutations: { root: string; environment: string; epoch: number }[] }>({ checkpointWhen: checkpointEvery256, kind: "dinobot.workspace-coordination", version: 1, scope: "session", initial: () => ({ leases: [], mutations: [] }) });
+const CheckReceiptDoc = defineDoc<{ taskId?: string }>({ checkpointWhen: checkpointEvery256, kind: "dinobot.check-call", version: 1, scope: "task", initial: () => ({}) });
+const MutationReceiptDoc = defineDoc<{ phase?: "running" | "settled"; leaseId?: string }>({ checkpointWhen: checkpointEvery256, kind: "dinobot.mutation", version: 1, scope: "task", initial: () => ({}) });
 export const LIMITATIONS = ["Structural managed verification, not universal semantic proof or a security sandbox.", "Unmanaged writers and detached descendants are outside managed quiescence guarantees.", "Ignored installed dependency bytes are not attested by lockfiles.", "Scenario adequacy and informational classification are model judgments."];
 /** IDs are numeric storage keys; strings are used only in public receipts. */
 function durableId<I extends number>(value: string): I {

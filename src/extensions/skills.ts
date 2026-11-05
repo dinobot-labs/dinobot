@@ -1,4 +1,4 @@
-import { Type } from "@earendil-works/pi-ai";
+import { Type } from "typebox";
 import { defineExtension, defineTool, section, type ToolExecutionApi } from "@earendil-works/pi-durable";
 import type { Context } from "@earendil-works/chord";
 import type { SkillEvidence, SkillStore } from "../core/skills/store.ts";
@@ -12,9 +12,9 @@ const version = Type.String({ minLength: 1, maxLength: 128 });
 const requestId = Type.String({ minLength: 1, maxLength: 200 });
 const proposalId = Type.String({ minLength: 1, maxLength: 200 });
 const generation = Type.Integer({ minimum: 0 });
-const result = (value: unknown) => ({ content: [{ type: "text" as const, text: JSON.stringify(value) }] });
+const result = (value: unknown) => ({ output: [{ type: "text" as const, text: JSON.stringify(value) }] });
 const actor = (api: ToolExecutionApi) => `agent:${api.conversationId}`;
-const failure = (value: unknown) => ({ isError: true, content: [{ type: "text" as const, text: JSON.stringify(value) }] });
+const failure = (value: unknown) => ({ isError: true, output: [{ type: "text" as const, text: JSON.stringify(value) }] });
 
 /**
  * The store automatically approves proposals. All mutations use the durable store.

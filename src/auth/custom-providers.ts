@@ -1,4 +1,5 @@
-import { createProvider, envApiKeyAuth, Type, type AuthInteraction, type Model, type OpenAICompletionsCompat, type Provider } from "@earendil-works/pi-ai";
+import { createProvider, envApiKeyAuth, type AuthInteraction, type Model, type OpenAICompletionsCompat, type Provider } from "@earendil-works/pi-ai";
+import { Type } from "typebox";
 import { openAICompletionsApi } from "@earendil-works/pi-ai/api/openai-completions.lazy";
 import { redactApiKey } from "./alibaba-token-plan.ts";
 import type { LoginProvider } from "./types.ts";

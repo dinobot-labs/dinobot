@@ -1,4 +1,4 @@
-import { Type } from "@earendil-works/pi-ai";
+import { Type } from "typebox";
 import { callDesktop } from "./desktop-bridge.ts";
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";

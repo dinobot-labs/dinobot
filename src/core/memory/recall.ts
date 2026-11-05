@@ -1,3 +1,4 @@
+import { checkpointEvery256 } from "../document-policy.ts";
 import { createHash } from "node:crypto";
 import type { Context } from "@earendil-works/chord";
 import type { UserMessage } from "@earendil-works/pi-ai";
@@ -24,7 +25,7 @@ const MAX_ITEM_CHARS = 300;
 const MAX_NOTED = 2000;
 
 type PendingNote = { requestId: string; text: string; items: { key: string; revision: number }[] };
-const NotedDoc = defineDoc<{ noted: Record<string, number>; pending?: PendingNote | null }>({
+const NotedDoc = defineDoc<{ noted: Record<string, number>; pending?: PendingNote | null }>({ checkpointWhen: checkpointEvery256,
 	kind: "dinobot.memory.noted", version: 1, scope: "conversation", history: "latest", fork: "initial",
 	initial: () => ({ noted: {} }),
 });

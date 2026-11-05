@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { Type } from "@earendil-works/pi-ai";
+import { Type } from "typebox";
 import { channelCatalog } from "../src/channels/index.ts";
 import { type Catalogs, type Manifest, ManifestError, parseManifest } from "../src/manifest.ts";
 import { definePlugin, loadPlugin } from "../src/plugins/types.ts";

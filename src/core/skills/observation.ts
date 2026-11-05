@@ -1,3 +1,4 @@
+import { checkpointEvery256 } from "../document-policy.ts";
 import type { Context, JsonValue } from "@earendil-works/chord";
 import {
 	AssistantEntry, ToolResultEntry, ToolTask, defineDoc, defineDocFamily,
@@ -36,11 +37,11 @@ type ObservationState = {
 	maxBytes: number | null;
 };
 /** One globally bounded event store in the separate observation Session. */
-export const SkillObservationDoc = defineDoc<ObservationState>({
+export const SkillObservationDoc = defineDoc<ObservationState>({ checkpointWhen: checkpointEvery256,
 	kind: "dinobot.skill-observations", version: 1, scope: "session",
 	initial: () => ({ observations: [], bytes: 0, maxObservations: null, maxBytes: null }),
 });
-export const SkillObservationSourceDoc = defineDocFamily<SourceState, null>({
+export const SkillObservationSourceDoc = defineDocFamily<SourceState, null>({ checkpointWhen: checkpointEvery256,
 	kind: "dinobot.skill-observation-source", version: 1, scope: "session", family: true,
 	initial: () => ({ watermark: 0, cursor: null, attempted: null, collected: 0, dropped: 0, unknown: 0 }),
 });

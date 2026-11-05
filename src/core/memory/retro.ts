@@ -1,5 +1,7 @@
+import { checkpointEvery256 } from "../document-policy.ts";
 import type { Context } from "@earendil-works/chord";
-import { type AssistantMessage, Type } from "@earendil-works/pi-ai";
+import { type AssistantMessage } from "@earendil-works/pi-ai";
+import { Type } from "typebox";
 import {
 	type ConversationId, defineDoc, defineTask, type EntryRecord, type Harness, type ModelRef, type NextTaskState, type TaskRuntime,
 } from "@earendil-works/pi-durable";
@@ -89,12 +91,12 @@ export type RetroState = CuratorState & {
 	/** Harness record keys already reviewed (see harnessRecord). */
 	seen: string[];
 };
-export const RetroDoc = defineDoc<RetroState>({
+export const RetroDoc = defineDoc<RetroState>({ checkpointWhen: checkpointEvery256,
 	kind: "dinobot.memory.retro", version: 1, scope: "conversation", history: "latest", fork: "initial",
 	initial: () => ({ userEntries: [], scannedTo: 0, window: emptyWindow(), receipts: [], outcomes: 0, claimedOutcomes: 0, lastInputAt: 0, seen: [] }),
 });
 /** Adoption epoch of the retro loop, like the curator's `ActivationDoc`. */
-export const RetroActivationDoc = defineDoc<{ epoch: number | null; disabled: boolean }>({
+export const RetroActivationDoc = defineDoc<{ epoch: number | null; disabled: boolean }>({ checkpointWhen: checkpointEvery256,
 	kind: "dinobot.memory.retro-activation", version: 1, scope: "session", initial: () => ({ epoch: null, disabled: false }),
 });
 
@@ -503,16 +505,16 @@ export function createMemoryRetro(options: RetroOptions) {
 				}
 				return activation.epoch;
 			}, context);
-			const unsubscribe = harness.subscribeCommits((publication) => {
+			const observation = harness.observeCommits({ advance(publication) {
 				for (const change of publication.changes) {
 					if (change.type === "submission" && change.value.type === "input" && change.value.status === "done") {
 						void schedule(change.value.conversationId, "done", context);
 					}
 				}
-			});
+			}, end() { closed = true; if (timer) clearInterval(timer); } });
 			timer = setInterval(() => void sweep(context).catch((error: unknown) => log(`${TAG} sweep failed: ${String(error)}`)), Math.min(config.idleMs, 60_000));
 			timer.unref?.();
-			harness.subscribeClose(() => { closed = true; unsubscribe(); if (timer) clearInterval(timer); });
+			harness.subscribeClose(() => { closed = true; observation.detach(); if (timer) clearInterval(timer); });
 			void sweep(context, "start").catch((error: unknown) => log(`${TAG} startup check failed: ${String(error)}`));
 		},
 		/** One idle sweep now (the timer runs it every min(idleMs, 1 minute)). */

@@ -1,4 +1,4 @@
-import { Type } from "@earendil-works/pi-ai";
+import { Type } from "typebox";
 import type { ModelRef } from "@earendil-works/pi-durable";
 import { Value } from "typebox/value";
 import type { ChannelDefinition } from "./channels/index.ts";

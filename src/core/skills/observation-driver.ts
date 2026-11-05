@@ -1,8 +1,9 @@
+import { checkpointEvery256 } from "../document-policy.ts";
 import type { Context } from "@earendil-works/chord";
 import { defineDoc, defineTask, type Cursor, type Harness, type TaskId } from "@earendil-works/pi-durable";
 import type { SkillObservationProjector } from "./observation.ts";
 
-export const SkillObservationDriverDoc = defineDoc<{ taskId: TaskId | null; error: string | null }>({
+export const SkillObservationDriverDoc = defineDoc<{ taskId: TaskId | null; error: string | null }>({ checkpointWhen: checkpointEvery256,
 	kind: "dinobot.skill-observation-driver", version: 1, scope: "session",
 	initial: () => ({ taskId: null, error: null }),
 });
@@ -32,8 +33,8 @@ export function createSkillObservationDriver(getProjector: () => SkillObservatio
 				}), context);
 			},
 			sleep: async (record, runtime, context) => {
-				await runtime.sleep(record.state.checkpoint.until, context);
-				await runtime.commit(() => ({ status: "running", checkpoint: { phase: "scan", cursor: null } }), context);
+				// Saved v1 sleep checkpoints retain their absolute deadline across reopening.
+				await runtime.sleepUntil(record.state.checkpoint.until, { phase: "scan", cursor: null }, context);
 			},
 		},
 		abort: async (_record, runtime, context) => {

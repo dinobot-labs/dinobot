@@ -9,7 +9,7 @@ import {
 } from "../src/deps/index.ts";
 import { definePlugin, type ExternalDependency, type Plugin } from "../src/plugins/types.ts";
 import { CUA_DRIVER } from "../src/plugins/computer/driver.ts";
-import { Type } from "@earendil-works/pi-ai";
+import { Type } from "typebox";
 
 async function zipArchive(names: string[], link = false): Promise<Uint8Array> {
 	const dir = await tempDir();

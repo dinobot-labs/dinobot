@@ -1,3 +1,4 @@
+import { checkpointEvery256 } from "../document-policy.ts";
 import { createHash } from "node:crypto";
 import { statfs } from "node:fs/promises";
 import { defineDoc, defineDocFamily, ROOT_CONVERSATION_ID, type ConversationRecord, type Cursor, type Tx } from "@earendil-works/pi-durable";
@@ -31,33 +32,33 @@ type Reference = { id: string; kind: SkillReferenceKind; versions: string[]; exp
 export const SkillLifecycleDoc = defineDocFamily<{
 	status: "active" | "inactive"; revision: number; evidenceId: string | null;
 	dependencies: string[]; catalogIndex: number;
-}, null>({
+}, null>({ checkpointWhen: checkpointEvery256,
 	kind: "dinobot.skill-retention.lifecycle", version: 1, scope: "session", family: true,
 	initial: () => ({ status: "active", revision: 0, evidenceId: null, dependencies: [], catalogIndex: 0 }),
 });
 export const SkillVersionRetentionDoc = defineDocFamily<{
 	phase: "retained" | "tombstone" | "collected"; revision: number;
 	name: string | null; markedAt: number | null; collectAfter: number | null;
-}, null>({
+}, null>({ checkpointWhen: checkpointEvery256,
 	kind: "dinobot.skill-retention.version", version: 1, scope: "session", family: true,
 	initial: () => ({ phase: "retained", revision: 0, name: null, markedAt: null, collectAfter: null }),
 });
 export const SkillReferenceStateDoc = defineDoc<{
 	epoch: number; lastNow: number; references: Reference[];
 	inventoryRevision: string | null; registeredFamilies: string[];
-}>({
+}>({ checkpointWhen: checkpointEvery256,
 	kind: "dinobot.skill-retention.references", version: 1, scope: "session",
 	initial: () => ({ epoch: 0, lastNow: 0, references: [], inventoryRevision: null, registeredFamilies: [] }),
 });
 export const SkillCapacityDoc = defineDoc<{
 	freeBytes: number | null; essentialReserveBytes: number; documentLimitBytes: number; measuredAt: number;
-}>({
+}>({ checkpointWhen: checkpointEvery256,
 	kind: "dinobot.skill-retention.capacity", version: 1, scope: "session",
 	initial: () => ({ freeBytes: null, essentialReserveBytes: 0, documentLimitBytes: 16 * 1024 * 1024, measuredAt: 0 }),
 });
 export const SkillLifecycleReceiptDoc = defineDocFamily<{
 	fingerprint: string | null; publication: ManifestPublication | null;
-}, null>({
+}, null>({ checkpointWhen: checkpointEvery256,
 	kind: "dinobot.skill-retention.receipt", version: 1, scope: "session", family: true,
 	initial: () => ({ fingerprint: null, publication: null }),
 });

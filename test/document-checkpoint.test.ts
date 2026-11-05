@@ -1,15 +1,15 @@
-import { expect, test } from "bun:test";
+import { sqliteTest } from "./fixtures/sqlite-test.ts";
+import { checkpointEvery256 } from "../src/core/document-policy.ts";
+import { expect } from "bun:test";
 import { BACKGROUND_CONTEXT as context } from "@earendil-works/chord/context";
 import { createModels } from "@earendil-works/pi-ai/models";
 import { createRegistry, defineDoc, Harness } from "@earendil-works/pi-durable";
 import { openNodeSqliteStorage } from "@earendil-works/pi-durable/storage/sqlite/node";
-import { mkdtemp, rm } from "node:fs/promises";
 import { DatabaseSync } from "node:sqlite";
-import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const Counter = defineDoc<{ n: number; log: string[] }>({ kind: "test.counter", version: 1, scope: "session", initial: () => ({ n: 0, log: [] }) });
+const Counter = defineDoc<{ n: number; log: string[] }>({ checkpointWhen: checkpointEvery256, kind: "test.counter", version: 1, scope: "session", initial: () => ({ n: 0, log: [] }) });
 const Pinned = defineDoc<{ n: number }>({ kind: "test.pinned", version: 1, scope: "session", initial: () => ({ n: 0 }), checkpointWhen: () => false });
 
 async function open(file: string) {
@@ -27,10 +27,9 @@ function revisions(file: string, kind: string) {
 	}
 }
 
-test("a document without checkpointWhen is rebased, so a load never replays its whole history", async () => {
-	const dir = await mkdtemp(join(tmpdir(), "dinobot-checkpoint-"));
+sqliteTest(import.meta.path, "a host document with checkpointEvery256 is rebased, so a load never replays its whole history", async (dir) => {
 	const file = join(dir, "db.sqlite");
-	try {
+	{
 		const h = await open(file);
 		for (let i = 1; i <= 600; i++) await h.commit(async (tx) => { const doc = await tx.doc(Counter); doc.n = i; doc.log.push("e" + i); }, context);
 		await h.close(context);
@@ -41,15 +40,12 @@ test("a document without checkpointWhen is rebased, so a load never replays its 
 		const value = await again.commit(async (tx) => { const doc = await tx.doc(Counter); return { n: doc.n, length: doc.log.length, last: doc.log[doc.log.length - 1] }; }, context);
 		expect(value).toEqual({ n: 600, length: 600, last: "e600" });
 		await again.close(context);
-	} finally {
-		await rm(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }).catch(() => {}); // Windows keeps the file mapped for a moment
 	}
 });
 
-test("compact-documents turns the newest delta of a long tail into a base and keeps the value", async () => {
-	const dir = await mkdtemp(join(tmpdir(), "dinobot-compact-"));
+sqliteTest(import.meta.path, "compact-documents turns the newest delta of a long tail into a base and keeps the value", async (dir) => {
 	const file = join(dir, "db.sqlite");
-	try {
+	{
 		const h = await open(file);
 		for (let i = 1; i <= 300; i++) await h.commit(async (tx) => { (await tx.doc(Pinned)).n = i; }, context);
 		await h.close(context);
@@ -69,7 +65,5 @@ test("compact-documents turns the newest delta of a long tail into a base and ke
 		const again = await open(file);
 		expect(await again.commit(async (tx) => (await tx.doc(Pinned)).n, context)).toBe(300);
 		await again.close(context);
-	} finally {
-		await rm(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }).catch(() => {}); // Windows keeps the file mapped for a moment
 	}
 });

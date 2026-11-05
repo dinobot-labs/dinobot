@@ -1,6 +1,6 @@
+import { sqliteTest } from "./fixtures/sqlite-test.ts";
+import { checkpointEvery256 } from "../src/core/document-policy.ts";
 import { afterEach, expect, test } from "bun:test";
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { awaitWithContext, BACKGROUND_CONTEXT as context, withAbortSignal } from "@earendil-works/chord/context";
 import type { Context } from "@earendil-works/chord";
@@ -13,7 +13,7 @@ import {
 import { openNodeSqliteStorage } from "@earendil-works/pi-durable/storage/sqlite/node";
 
 // This fixture tests the request boundary, not the separately implemented skill resolver.
-const Pin = defineDoc<{ integrity: "valid" | "corrupt" | "revoked" }>({
+const Pin = defineDoc<{ integrity: "valid" | "corrupt" | "revoked" }>({ checkpointWhen: checkpointEvery256,
 	kind: "test.skill-integrity", version: 1, scope: "conversation", history: "latest", fork: "current",
 	initial: () => ({ integrity: "valid" }),
 });
@@ -23,12 +23,10 @@ class IntegrityError extends Error {
 	}
 }
 const harnesses: Harness[] = [];
-const directories: string[] = [];
 const bounded = () => withAbortSignal(AbortSignal.timeout(5000), context);
 
 afterEach(async () => {
 	for (const harness of harnesses.splice(0)) await harness.close(context);
-	for (const directory of directories.splice(0)) await rm(directory, { recursive: true, force: true });
 });
 
 async function setup(options: Partial<HarnessOptions> = {}, storage: Storage = new MemoryStorage()) {
@@ -69,7 +67,7 @@ test("ordinary section, environment and beforeRequest exceptions do not stop dur
 	const { conversation, faux } = await setup({
 		registry, beforeModelRequest() {},
 		env() { throw new IntegrityError("missing"); },
-		onReport(error) { reports.push(error); },
+		onReport(report) { reports.push(report.error); },
 	});
 	// When the actual harness receives input.
 	const result = await (await conversation.submit({ type: "input", content: "run" }, context)).wait(bounded());
@@ -105,7 +103,7 @@ test("the host guard runs after a swallowed hook failure and sees its committed 
 		name: "revoke-before-dispatch",
 		hooks: [hook(GenerationTask, { async beforeRequest() { await revoke(); throw new IntegrityError("revoked"); } })],
 	}));
-	const { conversation, faux, checked } = await setup({ registry, onReport: error => { reports.push(error); } });
+	const { conversation, faux, checked } = await setup({ registry, onReport: report => { reports.push(report.error); } });
 	revoke = () => conversation.commit(async tx => { (await tx.doc(Pin, conversation.id)).integrity = "revoked"; }, context);
 	// When the normal hook exception is swallowed.
 	const result = await (await conversation.submit({ type: "input", content: "run" }, context)).wait(bounded());
@@ -148,10 +146,8 @@ test("deferred polling rechecks integrity without fetching a revoked response", 
 	expect(faux.state.deferredFetchCount).toBe(0);
 });
 
-test("SQLite recovery rechecks a request checkpoint rather than reusing prior approval", async () => {
+sqliteTest(import.meta.path, "SQLite recovery rechecks a request checkpoint rather than reusing prior approval", async (directory) => {
 	// Given a request parked in its ordinary hook, then shut down before dispatch.
-	const directory = await mkdtemp(join(tmpdir(), "dinobot-integrity-"));
-	directories.push(directory);
 	const path = join(directory, "bot.sqlite");
 	const entered = Promise.withResolvers<void>();
 	const registry = createRegistry();

@@ -1,3 +1,5 @@
+import { Watch } from "@earendil-works/chord";
+import { watchConversation } from "../src/core/conversation-observer.ts";
 import { afterEach, describe, expect, test } from "bun:test";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -6,7 +8,7 @@ import { BACKGROUND_CONTEXT, withCancel } from "@earendil-works/chord/context";
 import type { AssistantMessage, ToolResultMessage } from "@earendil-works/pi-ai";
 import { createModels } from "@earendil-works/pi-ai/models";
 import { fauxAssistantMessage, fauxProvider, fauxToolCall, type FauxResponseFactory } from "@earendil-works/pi-ai/providers/faux";
-import { type Harness, MemoryStorage, type ToolExecutionApi, type ToolRegistration, watchEvents } from "@earendil-works/pi-durable";
+import { type Harness, MemoryStorage, type ToolExecutionApi, type ToolRegistration } from "@earendil-works/pi-durable";
 import { openNodeSqliteStorage } from "@earendil-works/pi-durable/storage/sqlite/node";
 import { type Bot, openBot } from "../src/core/bot.ts";
 import type { TaskDetails, TaskOutputDetails } from "../src/core/ui-contract.ts";
@@ -71,7 +73,7 @@ test("foreground task calls run concurrently with progress and without nested to
 		return fauxAssistantMessage(prompt?.content === tasks[0]?.prompt ? "First answer" : "Second answer");
 	};
 	faux.setResponses([parallelCalls(), childResponse, childResponse, fauxAssistantMessage("Both complete")]);
-	const stream = await watchEvents(bot.harness, parent.id, context);
+	const stream = await watchConversation(bot.harness, parent.id, context);
 	stream.start(async (events) => {
 		for (const event of events) {
 			if (event.type === "tool_execution_update" && event.toolName === "task" && event.details) {
@@ -273,7 +275,7 @@ test.each(["watch", "read", "publish", "promotion", "promoted-publish"] as const
 		} as unknown as Harness;
 		const api = {
 			conversationId: "parent", taskId: "tool",
-			agent: async () => ({ tools: [], extensions: [] }),
+			agent: async () => ({ tools: [], callable: [], extensions: [] }),
 			commit: async () => {
 				if (++commits === 1) return ref;
 				if (boundary === "promotion") await gate();
@@ -282,10 +284,12 @@ test.each(["watch", "read", "publish", "promotion", "promoted-publish"] as const
 			},
 			watchDoc: async (doc: unknown) => {
 				if (doc === ProgressDoc && boundary === "watch") await gate();
-				return {
-					value: { asks: [{ id: "ask", state: "open", from: { conversationId: "child" }, to: "main", question: "Choose?", kind: "decision", refs: [], default: "no", deadlineAt: Date.UTC(2100, 0) }] },
-					start: () => {}, stop: async () => {},
-				};
+				const watch = new Watch(
+					{ asks: [{ id: "ask", state: "open", from: { conversationId: "child" }, to: "main", question: "Choose?", kind: "decision", refs: [], default: "no", deadlineAt: Date.UTC(2100, 0) }] },
+					() => { calls.push("watch-detached"); }, error => { throw error; },
+				);
+				watch.observeAbort(cancellation.context.abortSignal!);
+				return watch;
 			},
 			snapshot: async () => {
 				if (boundary === "read") await gate();
@@ -304,7 +308,8 @@ test.each(["watch", "read", "publish", "promotion", "promoted-publish"] as const
 			cancellation.cancel(failure);
 			release.resolve();
 			expect(await execution).toBe(failure);
-			expect(calls).toEqual(boundary === "promoted-publish" ? [] : ["abort", "settled"]);
+			expect(calls.filter(call => call !== "watch-detached")).toEqual(boundary === "promoted-publish" ? [] : ["abort", "settled"]);
+			if (boundary !== "watch") expect(calls).toContain("watch-detached");
 			expect(progress.background).toBe(boundary === "promoted-publish");
 		} finally {
 			release.resolve();

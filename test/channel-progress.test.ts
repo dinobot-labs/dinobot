@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import { createModels } from "@earendil-works/pi-ai/models";
 import { fauxAssistantMessage, fauxProvider, fauxToolCall } from "@earendil-works/pi-ai/providers/faux";
-import type { AgentEvent } from "@earendil-works/pi-durable";
+import type { AgentEvent } from "../src/core/ui-contract.ts";
 import { openNodeSqliteStorage } from "@earendil-works/pi-durable/storage/sqlite/node";
 import { httpChannel } from "../src/channels/http.ts";
 import { failureNotice } from "../src/channels/messaging.ts";
@@ -454,11 +454,11 @@ describe("agent events to progress", () => {
 		const ev = (event: unknown) => event as AgentEvent;
 		map([
 			ev({ type: "tool_execution_start", toolCallId: "c1", toolName: "write", args: { path: "a.txt", content: "SECRET=1" } }),
-			ev({ type: "tool_execution_end", toolCallId: "c1", toolName: "write", entry: { model: [{ role: "toolResult", isError: false }] } }),
+			ev({ type: "tool_execution_end", toolCallId: "c1", toolName: "write", entry: { model: [{ role: "toolResult", toolCallId: "c1", isError: false }] } }),
 			ev({ type: "tool_execution_start", toolCallId: "c2", toolName: "codemode", args: { code: "await tools.bash({command:'cat .env'})" } }),
 			ev({ type: "tool_execution_update", toolCallId: "c2", toolName: "codemode", details: { codemodeCalls: [{ id: 1, name: "bash", status: "running" }] } }),
 			ev({ type: "tool_execution_update", toolCallId: "c2", toolName: "codemode", details: { codemodeCalls: [{ id: 1, name: "bash", status: "done" }, { id: 2, name: "todo_write", status: "running" }], todos: [{ content: "a", status: "completed" }, { content: "b", status: "in_progress" }, { content: "c", status: "cancelled" }] } }),
-			ev({ type: "tool_execution_end", toolCallId: "c2", toolName: "codemode", entry: { model: [{ role: "toolResult", isError: true, details: { codemodeCalls: [{ id: 1, name: "bash", status: "done" }, { id: 2, name: "todo_write", status: "failed" }] } }] } }),
+			ev({ type: "tool_execution_end", toolCallId: "c2", toolName: "codemode", entry: { model: [{ role: "toolResult", toolCallId: "c2", isError: true, details: { codemodeCalls: [{ id: 1, name: "bash", status: "done" }, { id: 2, name: "todo_write", status: "failed" }] } }] } }),
 			ev({ type: "auto_retry_start", attempt: 2, at: 0, errorMessage: "429" }),
 			ev({ type: "message_update", usage: {}, changes: [{ type: "thinking_start", contentIndex: 0, block: {} }] }),
 		]);
@@ -503,7 +503,7 @@ describe("agent events to progress", () => {
 				const calls = Array.from({ length: Math.floor(random() * 4) }, (_, id) => ({ id, name: "bash", status: STATUSES[Math.floor(random() * STATUSES.length)] }));
 				if (random() < 0.15) {
 					endedCells.add(cell);
-					map([ev({ type: "tool_execution_end", toolCallId: cell, toolName: "codemode", entry: { model: [{ details: { codemodeCalls: calls } }] } })]);
+					map([ev({ type: "tool_execution_end", toolCallId: cell, toolName: "codemode", entry: { model: [{ role: "toolResult", toolCallId: cell, isError: true, details: { codemodeCalls: calls } }] } })]);
 				} else map([ev({ type: "tool_execution_update", toolCallId: cell, toolName: "codemode", details: { codemodeCalls: calls } })]);
 				const starts = new Map<string, number>();
 				const ends = new Map<string, number>();
@@ -527,7 +527,7 @@ describe("agent events to progress", () => {
 		map([
 			ev({ type: "tool_execution_start", toolCallId: "c9", toolName: "codemode", args: {} }),
 			ev({ type: "tool_execution_update", toolCallId: "c9", toolName: "codemode", details: { codemodeCalls: [{ id: 1, name: "bash", status: "running" }] } }),
-			ev({ type: "tool_execution_end", toolCallId: "c9", toolName: "codemode", entry: { model: [{ isError: true, details: { codemodeCalls: [{ id: 1, name: "bash", status: "running" }] } }] } }),
+			ev({ type: "tool_execution_end", toolCallId: "c9", toolName: "codemode", entry: { model: [{ role: "toolResult", toolCallId: "c9", isError: true, details: { codemodeCalls: [{ id: 1, name: "bash", status: "running" }] } }] } }),
 			ev({ type: "tool_execution_update", toolCallId: "c9", toolName: "codemode", details: { codemodeCalls: [{ id: 2, name: "read", status: "running" }] } }),
 		]);
 		let state = initialProgress(0);

@@ -3,7 +3,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
-import { Type } from "@earendil-works/pi-ai";
+import { Type } from "typebox";
 import { createModels } from "@earendil-works/pi-ai/models";
 import { fauxAssistantMessage, fauxProvider, fauxToolCall } from "@earendil-works/pi-ai/providers/faux";
 import { openNodeSqliteStorage } from "@earendil-works/pi-durable/storage/sqlite/node";
@@ -162,7 +162,7 @@ describe("dinobot core", () => {
 		]);
 
 		await bot.handle(message("m1", "hi"), context);
-		expect(offered).toEqual([...expected, "schedule_create", "schedule_list", "schedule_update", "schedule_cancel", "session_export", ...(toolMode === "codemode-only" ? [] : [...SKILL_TOOL_NAMES, ...SKILL_EVOLUTION_TOOL_NAMES, ...RESEARCH_TOOL_NAMES]), "tool_search", "read", "write", "edit", "bash", "lsp", "memory_read", "memory_write", "memory_list", "memory_search", "memory_delete", "agreements_list", "agreements_write", "agreements_delete", "goal_set", "goal_update", "goal_read", "work_plan", "work_status", "verify_run", "work_finish"].sort());
+		expect(offered).toEqual([...expected, "schedule_create", "schedule_list", "schedule_update", "schedule_cancel", "session_export", ...(toolMode === "codemode-only" ? [] : [...SKILL_TOOL_NAMES, ...SKILL_EVOLUTION_TOOL_NAMES, ...RESEARCH_TOOL_NAMES]), "tool_search", "read", "write", "edit", "bash", "powershell", "lsp", "memory_read", "memory_write", "memory_list", "memory_search", "memory_delete", "agreements_list", "agreements_write", "agreements_delete", "goal_set", "goal_update", "goal_read", "work_plan", "work_status", "verify_run", "work_finish"].sort());
 	});
 
 	test("codemode scripts call plugin tools by their prefixed names", async () => {

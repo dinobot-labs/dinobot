@@ -4,7 +4,8 @@
  * render pass the app would run for it). Shared by `bun run bench:tui` and test/tui-perf.test.ts.
  */
 import type { AssistantMessage, ToolResultMessage, Usage, UserMessage } from "@earendil-works/pi-ai";
-import type { AgentEvent, ConversationId, EntryId, EntryRecord } from "@earendil-works/pi-durable";
+import type { ConversationId, EntryId, EntryRecord } from "@earendil-works/pi-durable";
+import type { AgentEvent } from "../../src/core/ui-contract.ts";
 import type { Terminal } from "@earendil-works/pi-tui";
 import type { SubagentProgress, TodoItem } from "../../src/core/ui-contract.ts";
 import { Screen } from "../../src/tui/screen.ts";

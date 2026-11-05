@@ -1,7 +1,7 @@
 import { describe, expect, spyOn, test } from "bun:test";
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import type { ToolExecutionApi, WatchEnd } from "@earendil-works/pi-durable";
-import { CommittedWatch } from "../node_modules/@earendil-works/pi-durable/dist/session/observation.js";
+import { Watch, type WatchCall } from "@earendil-works/chord";
 import { awaitClaim } from "../src/extensions/sessions.ts";
 import { acquire, ClaimsDoc, claimOnce, describeClaim, release, type ClaimsState, type ClaimToolResult } from "../src/core/claims.ts";
 
@@ -30,13 +30,13 @@ function fixture(realWatcher = false) {
  const remove = spyOn(controller.signal, "removeEventListener");
  const state = blocked();
  const receipt: Receipt = {};
- let listener: ((state: ClaimsState) => Promise<void>) | undefined;
+ let listener: ((call: WatchCall<ClaimsState>) => Promise<void>) | undefined;
  let stopped = 0; let commits = 0; let watches = 0;
  let onStart: (() => void) | undefined;
  let onWatch: (() => void) | undefined;
  let afterCommit: (() => void | Promise<void>) | undefined;
  let failCommit = false;
- let watch: CommittedWatch<Readonly<ClaimsState> | null> | undefined;
+ let watch: Watch<Readonly<ClaimsState>> | undefined;
  const api = {
   taskId: "claim-test",
   commit: async (change: (tx: unknown) => Promise<unknown>) => {
@@ -51,12 +51,12 @@ function fixture(realWatcher = false) {
    const value = structuredClone(state);
    onWatch?.();
    if (realWatcher) {
-    watch = new CommittedWatch<Readonly<ClaimsState> | null>(value, () => { stopped++; });
-    watch.observeCancellation(controller.signal);
+    watch = new Watch<Readonly<ClaimsState>>(value, () => { stopped++; }, () => {});
+    watch.observeAbort(controller.signal);
     return watch;
    }
    const closed = Promise.withResolvers<WatchEnd>();
-   return { value, closed: closed.promise, start: (fn: typeof listener) => { listener = fn; onStart?.(); }, stop: async () => { stopped++; listener = undefined; closed.resolve({ reason: "stopped" }); return closed.promise; } };
+   return { value, closed: closed.promise, start: (fn: typeof listener) => { listener = fn; onStart?.(); }, stop: async () => { stopped++; listener = undefined; closed.resolve({ kind: "stopped" }); return closed.promise; } };
   },
  } as unknown as ToolExecutionApi;
  return {
@@ -66,8 +66,8 @@ function fixture(realWatcher = false) {
   set onStart(fn: () => void) { onStart = fn; }, set onWatch(fn: () => void) { onWatch = fn; },
   set afterCommit(fn: () => void | Promise<void>) { afterCommit = fn; }, set failCommit(value: boolean) { failCommit = value; },
   async publish() {
-   if (watch) watch.advance(structuredClone(state), [], context);
-   else await listener?.(structuredClone(state));
+   if (watch) watch.advance({ kind: "value", value: structuredClone(state), ops: [], retired: false }, context);
+   else await listener?.({ kind: "value", value: structuredClone(state), ops: [], retired: false });
    await flush();
   },
   async advance(at: number) {
@@ -101,7 +101,7 @@ describe("real claim watcher faults", () => {
     expect(f.timers.size).toBe(1);
     inject = true;
     await f.publish();
-    expect(await f.watch!.closed).toEqual({ reason: "listener_error", error: failure });
+    expect(await f.watch!.closed).toEqual({ kind: "listener_error", error: failure });
    }
    await flush();
    expect(observed).toBe(failure);
@@ -121,7 +121,7 @@ describe("real claim watcher faults", () => {
    f.restore();
   }
  });
- for (const reason of ["stopped", "cancelled", "session_closed"] as const) test("real watcher " + reason + " ends waiting without a deadline wake", async () => {
+ for (const reason of ["stopped", "aborted", "ended"] as const) test("real watcher " + reason + " ends waiting without a deadline wake", async () => {
   const f = fixture(true);
   let observed: unknown;
   const done = awaitClaim(f.api, request, f.context).then(result => { observed = result; }, error => { observed = error; });
@@ -129,8 +129,8 @@ describe("real claim watcher faults", () => {
    await flush();
    const commits = f.commits;
    if (reason === "stopped") await f.watch!.stop();
-   else if (reason === "cancelled") f.watch!.cancel();
-   else f.watch!.closeSession();
+   else if (reason === "aborted") f.watch!.abort();
+   else f.watch!.end({ kind: "ended" });
    await flush();
    expect(observed).toBeInstanceOf(Error);
    expect((observed as Error).message).toContain(reason);

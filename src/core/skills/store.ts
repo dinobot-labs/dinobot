@@ -1,3 +1,4 @@
+import { checkpointEvery256 } from "../document-policy.ts";
 import { createHash, randomUUID } from "node:crypto";
 import type { Context } from "@earendil-works/chord";
 import { type ConversationId, type Cursor, defineDoc, type Harness, ROOT_CONVERSATION_ID, type Tx } from "@earendil-works/pi-durable";
@@ -58,7 +59,7 @@ export type SkillsState = {
 	/** conversationId → versions it loaded and has not yet been scored for. */
 	loaded?: Record<string, string[]>;
 };
-export const SkillsDoc = defineDoc<SkillsState>({
+export const SkillsDoc = defineDoc<SkillsState>({ checkpointWhen: checkpointEvery256,
 	kind: "dinobot.skills", version: 1, scope: "session",
 	initial: () => ({ skills: [], proposals: [], receipts: [], usage: {}, loaded: {} }),
 });

@@ -3,7 +3,8 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { BACKGROUND_CONTEXT as context } from "@earendil-works/chord/context";
-import { type JsonObject, type ToolResultMessage, Type } from "@earendil-works/pi-ai";
+import { type JsonObject, type ToolResultMessage } from "@earendil-works/pi-ai";
+import { Type } from "typebox";
 import { createModels } from "@earendil-works/pi-ai/models";
 import { fauxAssistantMessage, fauxProvider, fauxToolCall } from "@earendil-works/pi-ai/providers/faux";
 import { MemoryStorage } from "@earendil-works/pi-durable";
@@ -60,6 +61,34 @@ test("opt-in strict work_status pages retained real failure output and named rep
 		if (part === "report") expect(recovered).toContain("adds positive operands");
 	}
 }, 30_000);
+
+/** Decode exactly the public tool wire: direct text JSON, or worker result content containing that text JSON. */
+function toolJson(message: ToolResultMessage, mode: ToolMode) {
+	const object = (value: unknown): Record<string, unknown> => {
+		if (value === null || typeof value !== "object" || Array.isArray(value)) throw new Error("Expected tool JSON object");
+		return value as Record<string, unknown>;
+	};
+	const contentJson = (content: unknown) => {
+		if (!Array.isArray(content) || content.length !== 1) throw new Error("Expected one tool text block");
+		const block = object(content[0]);
+		if (block.type !== "text" || typeof block.text !== "string") throw new Error("Expected tool JSON text");
+		return object(JSON.parse(block.text));
+	};
+	expect(message.toolName).toBe(mode === "direct" ? "work_plan" : "codemode");
+	if (mode === "direct") return { payload: contentJson(message.content), isError: message.isError };
+	const workerResult = contentJson(message.content.slice(0, 1));
+	// A failed inner tool marks the cell failed and appends a separate failure-summary text block.
+	const failed = workerResult.isError === true;
+	expect(message.isError === true).toBe(failed);
+	expect(message.content).toHaveLength(failed ? 2 : 1);
+	if (failed) {
+		const summary = message.content[1]!;
+		if (summary.type !== "text") throw new Error("Expected codemode failure-summary text");
+		expect(summary.text).toStartWith("1 internal call(s) reported errors. Inspect before retrying effects:\n1. work_plan: ");
+	}
+	expect(workerResult.diagnostics).toEqual([]);
+	return { payload: contentJson(workerResult.content), isError: workerResult.isError };
+}
 
 type Step = { tool: string; args: Record<string, unknown> | ((state: WorkState) => Record<string, unknown>) } | string;
 /** Omitted flags exercise default YOLO; strict tests opt into enforcement explicitly. */
@@ -488,16 +517,22 @@ for (const mode of ["direct", "hybrid", "codemode-only"] as const) {
 			{ tool: "work_plan", args: state => ({ ...registration(state), methods: {} }) },
 			{ tool: "write", args: { path: "after-errors.txt", content: "ordinary work still available" } },
 		]);
-		const messages = (await conversation.context(context)).messages.filter(message => message.role === "toolResult");
-		const outputs = messages.map(message => JSON.stringify(message.content));
-		expect(outputs[0]).toContain(root);
-		expect(outputs[0]).toContain("behavioralMethodExample");
-		expect(outputs[1]).toContain("missing_method");
-		expect(outputs[1]).toContain("certification");
-		expect(outputs[2]).toContain('repeatedFailure\\":false');
-		expect(outputs[3]).toContain('repeatedFailure\\":true');
-		expect(outputs[3]).toContain("stop guessing");
-		expect(await readFile(join(root, "after-errors.txt"), "utf8")).toContain("ordinary work");
+		const messages = (await conversation.context(context)).messages.filter((message): message is ToolResultMessage => message.role === "toolResult");
+		expect(messages).toHaveLength(5);
+		const [describe, preflight, firstFailure, repeatedFailure] = messages.slice(0, 4).map(message => toolJson(message, mode));
+		expect(describe!.isError).not.toBe(true);
+		expect(describe!.payload.root).toBe(root);
+		expect(describe!.payload.behavioralMethodExample).toMatchObject({ cwd: root, runner: "bun", adapterVersion: 1 });
+		expect(preflight!.isError).toBe(true);
+		expect(preflight!.payload.valid).toBe(false);
+		expect(preflight!.payload.issues).toEqual(expect.arrayContaining([expect.objectContaining({ code: "missing_method" })]));
+		expect(preflight!.payload.certification).toBe(false);
+		expect(firstFailure!.isError).toBe(true);
+		expect(firstFailure!.payload).toMatchObject({ valid: false, repeatedFailure: false });
+		expect(repeatedFailure!.isError).toBe(true);
+		expect(repeatedFailure!.payload).toMatchObject({ valid: false, repeatedFailure: true });
+		expect(repeatedFailure!.payload.next).toContain("stop guessing");
+		expect(await readFile(join(root, "after-errors.txt"), "utf8")).toBe("ordinary work still available");
 		expect((await bot.work.snapshot(conversation.id, context)).works).toHaveLength(0);
 		expect((await bot.harness.snapshot(EvidenceDoc, conversation.id, context))?.attempts ?? []).toEqual([]);
 	});

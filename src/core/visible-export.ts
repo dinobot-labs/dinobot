@@ -1,3 +1,4 @@
+import { checkpointEvery256 } from "./document-policy.ts";
 import { randomUUID } from "node:crypto";
 import type { Context, JsonValue } from "@earendil-works/chord";
 import { defineDoc, type ConversationId, type Cursor, type Harness, type TaskId, type Tx } from "@earendil-works/pi-durable";
@@ -64,8 +65,8 @@ export type VisibleExportProvenance = {
  };
 };
 export type VisibleExport = { version: 1; snapshotId: string; root: number; goalBinding?: {epoch:number;hash:string}; complete: boolean; entries: JsonValue[]; inventory: { conversationIds: number[]; entryIds: number[]; content: { path: string; hash: string }[]; allowedSourceContent: { path: string; hash: string }[]; omissions: Omission[]; allowedLeafDiffs: string[]; provenance?: VisibleExportProvenance }; witness: { capturedAt: number; highwater: number; contentHash: string; inventoryHash: string; provenanceHash?: string; provenance: string; historicalState: "UNKNOWN" }; nextCursor: string | null };
-export const VisibleExportsDoc = defineDoc<{ snapshots: VisibleExport[] }>({ kind: "dinobot.visible-exports", version: 1, scope: "conversation", history: "latest", fork: "initial", initial: () => ({ snapshots: [] }) });
-const VisibleExportCallDoc=defineDoc<{snapshotId?:string;argsHash?:string}>({kind:"dinobot.visible-export-call",version:1,scope:"task",initial:()=>({})});
+export const VisibleExportsDoc = defineDoc<{ snapshots: VisibleExport[] }>({ checkpointWhen: checkpointEvery256, kind: "dinobot.visible-exports", version: 1, scope: "conversation", history: "latest", fork: "initial", initial: () => ({ snapshots: [] }) });
+const VisibleExportCallDoc=defineDoc<{snapshotId?:string;argsHash?:string}>({ checkpointWhen: checkpointEvery256,kind:"dinobot.visible-export-call",version:1,scope:"task",initial:()=>({})});
 const privileged = /^(system|systemPrompt|developerPrompt|privilegedPrompt|reasoning|thinking|thinkingSignature|providerSignature|providerOpaque|providerMetadata|encryptedContent|apiKey|accessToken|refreshToken|token|password|secret|authorization|credentials|customerContact|customerContacts|customerEmail|customerPhone|contactEmail|contactPhone|contacts)$/i;
 /** No blanket @ regex: decorators and diff hunk markers are code. */
 export function visibleValue(value: JsonValue, path: string, omissions: Omission[]): JsonValue | undefined {
@@ -165,7 +166,7 @@ export function validateVisibleExport(receipt: VisibleExport, retained: VisibleE
 }
 /** The text + details envelope is also the codemode wire value. Keep sizing and delivery identical. */
 export function visibleExportToolResult(receipt: VisibleExport) {
- return { content: [{ type: "text" as const, text: JSON.stringify(receipt) }], details: receipt };
+ return { output: [{ type: "text" as const, text: JSON.stringify(receipt) }], details: receipt };
 }
 
 // Each array is an independent ordered stream, sliced at the same absolute offset.

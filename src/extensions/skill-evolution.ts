@@ -1,4 +1,4 @@
-import { Type } from "@earendil-works/pi-ai";
+import { Type } from "typebox";
 import { defineExtension, defineTool, type ToolExecutionApi } from "@earendil-works/pi-durable";
 import type { Context } from "@earendil-works/chord";
 import { EvolutionWorkerDoc, type SkillEvolutionService } from "../core/skills/evolution-service.ts";
@@ -11,7 +11,7 @@ export const SKILL_EVOLUTION_TOOL_NAMES = [
 const requestId = Type.String({ minLength: 1, maxLength: 200 });
 const identifier = Type.String({ pattern: "^[a-f0-9]{64}$" });
 const result = (value: unknown, isError = false) => ({
-	isError, content: [{ type: "text" as const, text: JSON.stringify(value) }],
+	isError, output: [{ type: "text" as const, text: JSON.stringify(value) }],
 });
 
 /** Common registry tools; codemode discovers this same extension, not a private tool path. */

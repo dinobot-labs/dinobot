@@ -1,11 +1,12 @@
-import { afterEach, expect, test } from "bun:test";
+import { sqliteTest } from "./fixtures/sqlite-test.ts";
+import { afterEach, expect } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { BACKGROUND_CONTEXT as context } from "@earendil-works/chord/context";
 import { createModels } from "@earendil-works/pi-ai/models";
-import { createRegistry, Harness, StorageRejected, type StorageWrite } from "@earendil-works/pi-durable";
+import { createRegistry, Harness, type StorageWrite } from "@earendil-works/pi-durable";
 import { openNodeSqliteStorage } from "@earendil-works/pi-durable/storage/sqlite/node";
 import { SkillStore, SkillsDoc, type SkillPackage, type SkillsState } from "../src/core/skills/store.ts";
 import { skillPackageHash } from "../src/core/skills/manifests.ts";
@@ -15,6 +16,8 @@ import {
 	SkillLoadedStorageDoc, SkillMetadataStorageDoc, SkillPackageStorageDoc, SkillProposalStorageDoc,
 	SkillReceiptStorageDoc, SkillsStorageArchiveDoc, SkillsStorageIndexDoc, SkillStorageError,
 } from "../src/core/skills/storage.ts";
+
+const test = (name: string, body: () => Promise<void>, timeout = 15_000) => sqliteTest(import.meta.path, name, async () => body(), timeout);
 
 const cleanup: (() => Promise<void>)[] = [];
 afterEach(async () => { for (const close of cleanup.splice(0).reverse()) await close(); });
@@ -28,10 +31,10 @@ async function open(path: string) {
 	const storage = await openNodeSqliteStorage(path);
 	const hooks: StorageHooks = { reject: false, writes: [] };
 	const commit = storage.commit.bind(storage);
-	storage.commit = async (writes, ctx) => {
-		if (hooks.reject) throw new StorageRejected("Injected SQLite storage rejection");
-		const sequence = await commit(writes, ctx);
-		hooks.writes.push(writes);
+	storage.commit = async (batches, receive, ctx) => {
+		if (hooks.reject) return { stored: 0, refused: new Error("Injected SQLite storage rejection") };
+		const sequence = await commit(batches, receive, ctx);
+		hooks.writes.push(...batches.slice(0, sequence.stored));
 		return sequence;
 	};
 	const document = storage.document.bind(storage);
@@ -51,8 +54,8 @@ async function open(path: string) {
 	return { harness, hooks, storage, path, close, store: new SkillStore(harness) };
 }
 async function setup() {
-	const directory = await mkdtemp(join(tmpdir(), "skill-storage-"));
-	cleanup.push(() => rm(directory, { recursive: true, force: true }));
+	const directory = await mkdtemp(join(process.env.DINOBOT_SQLITE_DIR ?? tmpdir(), "skill-storage-"));
+	if (!process.env.DINOBOT_SQLITE_DIR) cleanup.push(() => rm(directory, { recursive: true, force: true }));
 	const state = await open(join(directory, "skills.sqlite"));
 	await state.store.initialize([original], context);
 	const before = await state.store.load(original.name, undefined, context);
@@ -132,8 +135,8 @@ test("atomic cutover roundtrips all heads generations packages proposals receipt
 
 test("empty database cutover installs a v2 archive and active empty index", async () => {
 	// Given
-	const directory = await mkdtemp(join(tmpdir(), "skill-storage-empty-"));
-	cleanup.push(() => rm(directory, { recursive: true, force: true }));
+	const directory = await mkdtemp(join(process.env.DINOBOT_SQLITE_DIR ?? tmpdir(), "skill-storage-empty-"));
+	if (!process.env.DINOBOT_SQLITE_DIR) cleanup.push(() => rm(directory, { recursive: true, force: true }));
 	const { harness } = await open(join(directory, "empty.sqlite"));
 	// When
 	await migrateSkillsStorage(harness, context);
@@ -214,11 +217,14 @@ test("real SQLite storage rejection leaves migration fully retryable", async () 
 	state.hooks.reject = true;
 	// When / Then
 	await expect(migrateSkillsStorage(state.harness, context)).rejects.toThrow("SQLite storage rejection");
-	state.hooks.reject = false;
-	expect(await state.harness.snapshot(SkillsDoc, context)).toEqual(before);
-	expect((await state.harness.snapshot(SkillsStorageIndexDoc, context))?.active ?? false).toBe(false);
-	expect((await migrateSkillsStorage(state.harness, context)).migrated).toBe(true);
-	expect(await snapshot(state.harness)).toEqual(before);
+	await expect(state.harness.snapshot(SkillsDoc, context)).rejects.toThrow("Session failed");
+ await expect(migrateSkillsStorage(state.harness, context)).rejects.toThrow("Session failed");
+ await state.close();
+ const reopened = await open(state.path);
+ expect(await reopened.harness.snapshot(SkillsDoc, context)).toEqual(before);
+ expect((await reopened.harness.snapshot(SkillsStorageIndexDoc, context))?.active ?? false).toBe(false);
+ expect((await migrateSkillsStorage(reopened.harness, context)).migrated).toBe(true);
+ expect(await snapshot(reopened.harness)).toEqual(before);
 });
 
 for (const crash of ["before-commit", "after-commit"] as const) {

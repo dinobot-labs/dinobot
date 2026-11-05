@@ -1,7 +1,7 @@
 import { afterEach, expect, test } from "bun:test";
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import { createModels } from "@earendil-works/pi-ai/models";
-import { Type } from "@earendil-works/pi-ai";
+import { Type } from "typebox";
 import { fauxAssistantMessage, fauxProvider, fauxToolCall } from "@earendil-works/pi-ai/providers/faux";
 import { createRegistry, defineExtension, defineTool, Harness, MemoryStorage, type ConversationId } from "@earendil-works/pi-durable";
 import { NodeExecutionEnv } from "@earendil-works/pi-durable/env/node";
@@ -74,7 +74,7 @@ test("crash-unknown lease remains, status usable and overall todo guard rejects"
 test("registry exposes four verification tools and excludes orchestration from mutation wrappers", async () => {
 	const { registry } = await setup(); const extension = registry.snapshot().extension("verification")!;
 	expect(extension.tools!.map(t => t.name)).toEqual(["work_status", "work_plan", "verify_run", "work_finish"]);
-	expect(extension.wraps!.flatMap(w => "tool" in w ? [w.tool] : [])).toEqual(["write", "edit", "bash"]);
+	expect(extension.wraps!.flatMap(w => "tool" in w ? [w.tool] : [])).toEqual(["write", "edit", "bash", "powershell"]);
 });
 
 test("submit-only informational yield is finalized before a later coding plan", async () => {
@@ -133,7 +133,7 @@ test.each(["terminate", "handoff"] as const)("%s tool controls settle without mi
 		name: "fixture-control",
 		tools: [defineTool({
 			name: "fixture_control", description: "Exercise a native terminal control.", parameters: Type.Object({}),
-			execute: async () => ({ content: [{ type: "text", text: "done" }], control }),
+			execute: async () => ({ output: [{ type: "text", text: "done" }], control }),
 		})],
 	}));
 	faux.setResponses([

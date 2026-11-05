@@ -14,7 +14,7 @@ import { chatgptAccountId, imagesUrl, requestBody, sniffImage } from "../src/plu
 import { imageGenPlugin } from "../src/plugins/image_gen/index.ts";
 import { pluginCatalog } from "../src/plugins/index.ts";
 import { definePlugin, type LoadedPlugin, loadPlugin, PluginContent, type PluginToolCall } from "../src/plugins/types.ts";
-import { Type } from "@earendil-works/pi-ai";
+import { Type } from "typebox";
 
 const context = BACKGROUND_CONTEXT;
 /** A 1x1 PNG. */

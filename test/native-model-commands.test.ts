@@ -119,7 +119,7 @@ test("same-key selection serializes under admission and cancellation while waiti
 test("running and queued states reject changes without admitting a control input", async () => {
  const { bot, handler } = await setup();
  const conversation = await bot.conversation("test", "chat:topic:1", context);
- await bot.harness.commit(async tx => { (await tx.doc(LiveDoc, conversation.id)).run = { taskId: 999 as TaskId, inputs: [] }; }, context);
+ await bot.harness.commit(async tx => { (await tx.doc(LiveDoc, conversation.id)).run = { turns: 0, taskId: 999 as TaskId, inputs: [] }; }, context);
  expect(output(await handler(message("/model faux/plain")))).toContain("busy or queued");
  await bot.harness.commit(async tx => {
   delete (await tx.doc(LiveDoc, conversation.id)).run;

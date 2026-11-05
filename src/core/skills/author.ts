@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
-import { Type, type Api, type Models, type Model } from "@earendil-works/pi-ai";
+import { type Api, type Models, type Model } from "@earendil-works/pi-ai";
+import { Type } from "typebox";
 import type { Static } from "typebox";
 import { Value } from "typebox/value";
 

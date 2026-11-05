@@ -1,3 +1,4 @@
+import { checkpointEvery256 } from "../document-policy.ts";
 import type { Context } from "@earendil-works/chord";
 import { defineDocFamily, defineTask, type Session, type TaskId } from "@earendil-works/pi-durable";
 import { EvolutionJobDoc, EvolutionJobError, EvolutionJobs, type EvolutionBudget, type EvolutionJobInput, type EvolutionLease } from "./evolution-jobs.ts";
@@ -31,7 +32,7 @@ type Checkpoint =
 	| { phase: "finalize"; lease: EvolutionLease; order: EvolutionWorkOrder; result: EvolutionWorkResult };
 type TaskResult = { readonly status: "settled" | "interrupted" | "refused" | "aborted" };
 type Scheduled = { jobId: string; worker: string; taskId: TaskId<TaskResult> | null };
-const ScheduledDoc = defineDocFamily<Scheduled, string>({
+const ScheduledDoc = defineDocFamily<Scheduled, string>({ checkpointWhen: checkpointEvery256,
 	kind: "dinobot.skill-evolution.scheduled", scope: "session", version: 1, family: true,
 	initial: () => ({ jobId: "", worker: "", taskId: null }),
 });

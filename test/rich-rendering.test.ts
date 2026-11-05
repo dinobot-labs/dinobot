@@ -5,7 +5,7 @@ import { safePreview } from "../src/channels/safe-preview.ts";
 import { foldProgress, initialProgress, renderProgress, parseProgressEvent } from "../src/channels/progress.ts";
 import { agentProgress } from "../src/core/progress-events.ts";
 import { nativeProgress } from "../src/channels/native-progress.ts";
-import type { AgentEvent } from "@earendil-works/pi-durable";
+import type { AgentEvent } from "../src/core/ui-contract.ts";
 import type { ProgressEvent } from "../src/channels/types.ts";
 
 const visible = (s:string) => s.replace(/<\/?(?:b|i|s|code|pre)>/g, "").replace(/&lt;/g,"<").replace(/&gt;/g,">").replace(/&amp;/g,"&");
@@ -91,7 +91,7 @@ test("pending codemode calls are not running; inner hints survive updates; abort
  map([ev({type:"tool_execution_update",toolCallId:"cell",toolName:"codemode",details:{codemodeCalls:[{id:1,name:"read",status:"pending"}]}})]);
  expect(events.filter(e=>e.type==="tool_start")).toEqual([]);
  const update=ev({type:"tool_execution_update",toolCallId:"cell",toolName:"codemode",details:{codemodeCalls:[{id:1,name:"read",status:"running",preview:"src/main.ts"}]}});
- map([update,update,ev({type:"tool_execution_end",toolCallId:"cell",toolName:"codemode"}),update]);
+ map([update,update,ev({type:"tool_execution_end",toolCallId:"cell",toolName:"codemode",entry:{model:[{role:"toolResult",toolCallId:"cell",isError:true,diagnostics:[{code:"aborted"}]}]}}),update]);
  expect(events.filter(e=>e.type==="tool_start")).toEqual([{type:"tool_start",id:"cell/1",name:"read",preview:"file (.ts)"}]);
  expect(events.filter(e=>e.type==="tool_end"&&e.id==="cell/1")).toEqual([{type:"tool_end",id:"cell/1",ok:false}]);
 });

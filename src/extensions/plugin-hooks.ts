@@ -1,3 +1,4 @@
+import { checkpointEvery256 } from "../core/document-policy.ts";
 import type { Context } from "@earendil-works/chord";
 import { defineDoc, defineExtension, GenerationTask, type Harness, hook, type HookApi, LiveDoc } from "@earendil-works/pi-durable";
 import { AsksDoc, LinkDoc } from "../core/ask.ts";
@@ -14,7 +15,7 @@ import { AgentsDoc, ProgressDoc, isHostWakeRequest } from "./subagents.ts";
  * Bounded like the goal liveness hook (ADR 0096): at most {@link PLUGIN_CONTINUATION_LIMIT} continuations per human input
  * (host wakes count against the input that started them) and none after a continued turn that made no tool call.
  */
-export const PluginHookDoc = defineDoc<{ run?: string; count: number; progressed: boolean }>({
+export const PluginHookDoc = defineDoc<{ run?: string; count: number; progressed: boolean }>({ checkpointWhen: checkpointEvery256,
 	kind: "dinobot.plugin-hooks", version: 1, scope: "conversation", history: "latest", fork: "initial",
 	initial: () => ({ count: 0, progressed: false }),
 });

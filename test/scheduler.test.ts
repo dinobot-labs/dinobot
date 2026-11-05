@@ -191,7 +191,7 @@ test("completion fails closed for open asks, TODO cancellation, failed/unknown d
  expect(await check()).toContain("question");
  await h.bot.harness.commit(async tx => { (await tx.doc(AsksDoc, h.other.id)).asks = []; const r = createRun("test-run", { nodes: [], edges: [], goal: { requirements: ["x"] } }, epoch); r.status = "cancelled"; (await tx.doc(RunDoc, h.other.id)).runs.push(r); }, context);
  expect(await check()).toContain("DAG");
- await h.bot.harness.commit(async tx => { (await tx.doc(RunDoc, h.other.id)).runs = []; (await tx.doc(LiveDoc, h.other.id)).run = { taskId: 123 as TaskId, inputs: [] }; }, context);
+ await h.bot.harness.commit(async tx => { (await tx.doc(RunDoc, h.other.id)).runs = []; (await tx.doc(LiveDoc, h.other.id)).run = { turns: 0, taskId: 123 as TaskId, inputs: [] }; }, context);
  expect(await check()).toContain("running");
  await h.bot.harness.commit(async tx => { delete (await tx.doc(LiveDoc, h.other.id)).run; (await tx.doc(InboxDoc, h.other.id)).items.push({ id: 123 as SubmissionId, mode: "followUp", content: "queued" }); }, context);
  expect(await check()).toContain("queued");

@@ -1,5 +1,6 @@
 import type { Context } from "@earendil-works/chord";
-import { type AssistantMessage, type Message, Type } from "@earendil-works/pi-ai";
+import { type AssistantMessage, type Message } from "@earendil-works/pi-ai";
+import { Type } from "typebox";
 import {
 	type Conversation, type ConversationId, defineTask, type EntryId, type EntryRecord, type Harness, type ModelRef, type NextTaskState,
 	type TaskRuntime, UserEntry,
@@ -464,14 +465,14 @@ export function createMemoryCurator(options: CuratorOptions) {
 				}
 				return activation.epoch;
 			}, context);
-			const unsubscribe = harness.subscribeCommits((publication) => {
+			const observation = harness.observeCommits({ advance(publication) {
 				for (const change of publication.changes) {
 					if (change.type === "submission" && change.value.type === "input" && change.value.status === "done") {
 						void schedule(change.value.conversationId, context);
 					}
 				}
-			});
-			harness.subscribeClose(() => { closed = true; unsubscribe(); });
+			}, end() { closed = true; } });
+			harness.subscribeClose(() => { closed = true; observation.detach(); });
 			for (const conversationId of new Set(Object.values(await listThreads(harness, context)))) void schedule(conversationId, context);
 		},
 		async settled(): Promise<void> {

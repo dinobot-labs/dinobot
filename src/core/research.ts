@@ -1,3 +1,4 @@
+import { checkpointEvery256 } from "./document-policy.ts";
 import { createHash } from "node:crypto";
 import { isAbsolute, normalize } from "node:path";
 import { defineDoc } from "@earendil-works/pi-durable";
@@ -198,7 +199,7 @@ export type Mission = {
 };
 export type ResearchState = { missions: Mission[]; activeId?: string };
 export const MAX_MISSIONS = 32;
-export const ResearchDoc = defineDoc<ResearchState>({
+export const ResearchDoc = defineDoc<ResearchState>({ checkpointWhen: checkpointEvery256,
 	kind: "dinobot.research",
 	version: 1,
 	scope: "conversation",

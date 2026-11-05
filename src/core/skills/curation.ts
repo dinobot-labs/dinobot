@@ -1,3 +1,4 @@
+import { checkpointEvery256 } from "../document-policy.ts";
 import type { Context } from "@earendil-works/chord";
 import {
 	type ConversationId, type ConversationRecord, type Cursor, defineDoc, defineDocFamily, type Harness,
@@ -20,13 +21,13 @@ import type { SkillsState } from "./store.ts";
 
 export type SkillUse = { count: number; firstAt: number; lastAt: number; version: string };
 /** Per-conversation skills_load record. Written fail-open after a successful execution load. */
-export const SkillUseDoc = defineDoc<{ uses: Record<string, SkillUse> }>({
+export const SkillUseDoc = defineDoc<{ uses: Record<string, SkillUse> }>({ checkpointWhen: checkpointEvery256,
 	kind: "dinobot.skill-curation.use", version: 1, scope: "conversation", history: "latest", fork: "initial",
 	initial: () => ({ uses: {} }),
 });
 /** Written by the conversationCreated hook. Conversations created before curation keep the initial
  * value (root false) and never count as exposures: conservative, no false archive from old data. */
-export const SkillExposureDoc = defineDoc<{ createdAt: number | null; root: boolean }>({
+export const SkillExposureDoc = defineDoc<{ createdAt: number | null; root: boolean }>({ checkpointWhen: checkpointEvery256,
 	kind: "dinobot.skill-curation.exposure", version: 1, scope: "conversation", history: "latest", fork: "initial",
 	initial: () => ({ createdAt: null, root: false }),
 });
@@ -44,7 +45,7 @@ export type SkillCurationRecord = {
 	 * only delays archive. */
 	lifecycleRevision?: number;
 };
-export const SkillCurationDoc = defineDocFamily<SkillCurationRecord, null>({
+export const SkillCurationDoc = defineDocFamily<SkillCurationRecord, null>({ checkpointWhen: checkpointEvery256,
 	kind: "dinobot.skill-curation.record", version: 1, scope: "session", family: true,
 	initial: () => ({ pinned: false, activationGeneration: 0, activatedAt: 0, state: "active", archivedAt: null, reason: null, lastRun: null, head: null, lifecycleRevision: 0 }),
 });
@@ -59,7 +60,7 @@ export type CurationReport = {
 	at: number; run: number; dryRun: boolean; threshold: number; minIdleMs: number; alpha: number; pMax: number;
 	skills: CurationReportSkill[];
 };
-export const SkillCurationStateDoc = defineDoc<{ lastRunAt: number | null; runs: number; lastReport: CurationReport | null }>({
+export const SkillCurationStateDoc = defineDoc<{ lastRunAt: number | null; runs: number; lastReport: CurationReport | null }>({ checkpointWhen: checkpointEvery256,
 	kind: "dinobot.skill-curation.state", version: 1, scope: "session",
 	initial: () => ({ lastRunAt: null, runs: 0, lastReport: null }),
 });

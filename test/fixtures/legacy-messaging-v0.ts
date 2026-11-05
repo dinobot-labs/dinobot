@@ -7,7 +7,7 @@
  */
 import { Database } from "bun:sqlite";
 import { chmodSync } from "node:fs";
-import { Type } from "@earendil-works/pi-ai";
+import { Type } from "typebox";
 import type { Static } from "typebox";
 import { minutes, type ProgressOutcome } from "../../src/channels/progress.ts";
 import type { BotReply, ChannelAdapter, InboundMessage, MessageHandler, ProgressSink } from "../../src/channels/types.ts";

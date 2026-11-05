@@ -23,7 +23,10 @@ for (const cut of ["before-call", "intent", "effect", "receipt", "foreground", "
 		const dir = await mkdtemp(join(tmpdir(), "dinobot-crash-"));
 		const command = (mode: string) => [
 			process.execPath,
-			join(import.meta.dir, "fixtures/codemode-crash.ts"),
+			// Optional real older checkout produces the crash DB; recovery always uses this candidate.
+			mode === "initial" && process.env.DINOBOT_CRASH_INITIAL_FIXTURE
+				? process.env.DINOBOT_CRASH_INITIAL_FIXTURE
+				: join(import.meta.dir, "fixtures/codemode-crash.ts"),
 			dir,
 			mode,
 			cut,
@@ -38,6 +41,10 @@ for (const cut of ["before-call", "intent", "effect", "receipt", "foreground", "
 			const childIds = (
 				beforeDb.query("select id from conversations where owner_task_id is not null").all() as { id: number }[]
 			).map((row) => row.id);
+			if (process.env.DINOBOT_CRASH_INITIAL_FIXTURE && cut === "foreground") {
+				const legacy = beforeDb.query("select record from tasks where json_extract(record, '$.kind')='dinobot.codemode.call'").get() as { record: string };
+				expect(JSON.parse(legacy.record).abandonOnRestart).toBeUndefined();
+			}
 			beforeDb.close();
 			const before = await readFile(join(dir, "effects"), "utf8").catch(() => "");
 			expect(before.split("\n").filter(Boolean).length).toBe(cut === "effect" || cut === "receipt" ? 1 : 0);
@@ -65,9 +72,11 @@ for (const cut of ["before-call", "intent", "effect", "receipt", "foreground", "
 					).map((row) => row.id);
 					expect(childIds).toHaveLength(1);
 					expect(afterIds).toEqual(childIds);
-					const runner = db
+					const runners = db
 						.query("select record from tasks where json_extract(record,'$.kind')='dinobot.subagent'")
-						.get() as { record: string };
+						.all() as { record: string }[];
+					expect(runners).toHaveLength(1);
+					const runner = runners[0]!;
 					// Children are conversation-owned (ADR 0030): a crash of the waiting orchestrator does not discard
 					// their work; the resumed orchestrator collects the durable result with task_output.
 					expect(JSON.parse(runner.record).state.outcome.status).toBe("completed");

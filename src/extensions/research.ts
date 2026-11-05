@@ -1,4 +1,4 @@
-import { Type } from "@earendil-works/pi-ai";
+import { Type } from "typebox";
 import { defineExtension, defineTool } from "@earendil-works/pi-durable";
 import type { ResearchService, ResearchStartArgs } from "../core/research-service.ts";
 import type { Mission } from "../core/research.ts";
@@ -71,7 +71,7 @@ export const researchStartSchema = object({
 		maxArtifactBytes: Type.Optional(Type.Integer({ minimum: 1, maximum: 16_777_216 })),
 	})),
 });
-const text = (value: unknown) => ({ content: [{ type: "text" as const, text: JSON.stringify(value) }] });
+const text = (value: unknown) => ({ output: [{ type: "text" as const, text: JSON.stringify(value) }] });
 /** Explicit bounded projection; full receipts remain durable and in authorized reports. */
 export function researchToolView(result: { mission: Mission | undefined; budget?: unknown }, cursor = 0) {
 	if (!Number.isSafeInteger(cursor) || cursor < 0 || cursor > 128) throw new Error("Invalid research status cursor");

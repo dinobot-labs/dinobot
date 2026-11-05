@@ -1,4 +1,4 @@
-import { Type } from "@earendil-works/pi-ai";
+import { Type } from "typebox";
 import type { PluginTool } from "../types.ts";
 import { type Api, tool } from "./api.ts";
 

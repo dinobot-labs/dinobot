@@ -6,7 +6,8 @@ import { realpath, stat } from "node:fs/promises";
 import { isAbsolute } from "node:path";
 import { AgentDoc, InboxDoc } from "@earendil-works/pi-durable";
 import type { Context } from "@earendil-works/chord";
-import { type ConversationId, type DocumentWatch, watchEvents } from "@earendil-works/pi-durable";
+import { type ConversationId, type DocumentWatch } from "@earendil-works/pi-durable";
+import { watchConversation } from "../core/conversation-observer.ts";
 import { type Commands, type PromptAnswer } from "../commands/index.ts";
 import type { SlashCommand, ThreadModelState } from "../commands/types.ts";
 import type { Bot } from "../core/bot.ts";
@@ -440,7 +441,7 @@ async function eventStream(bot: Bot, conversationId: ConversationId, context: Co
 		const inbox = await bot.harness.watchDoc(InboxDoc, conversationId, context);
 		if (!inbox) throw new Error("Queued input watch is missing");
 		acquired.push(inbox);
-		const events = await watchEvents(bot.harness, conversationId, context);
+		const events = await watchConversation(bot.harness, conversationId, context);
 		acquired.push(events);
 		const initialDag = await currentDag();
 		return { agents, runs, research, initialWorkflow, workflowWatch, inbox, events, initialDag };
@@ -508,7 +509,7 @@ async function eventStream(bot: Bot, conversationId: ConversationId, context: Co
 				}).catch((error) => { if (!stopped) controller.error(error); void stop(); });
 				return workflowSync;
 			};
-			const sync = async (refs: typeof agents.value) => {
+			const sync = async (refs: typeof agents.value | undefined) => {
 				for (const ref of refs?.agents ?? []) {
 					const key = String(ref.runnerId);
 					if (stopped || progressWatches.has(key)) continue;
@@ -516,7 +517,7 @@ async function eventStream(bot: Bot, conversationId: ConversationId, context: Co
 					if (!watch) throw new Error(`Subagent ${ref.taskId} progress watch is missing`);
 					progressWatches.set(key, watch);
 					if (stopped) { await watch.stop(); return; }
-					const publish = (value: typeof watch.value) => {
+					const publish = (value: typeof watch.value | undefined) => {
 						if (!stopped && value?.subagent) send({
 							type: "subagent_progress", subagents: [value.subagent],
 							...(ref.callId === undefined ? {} : { callId: ref.callId }),
@@ -525,7 +526,8 @@ async function eventStream(bot: Bot, conversationId: ConversationId, context: Co
 					publish(watch.value);
 					if (stopped) { await watch.stop(); return; }
 					republish.set(key, () => publish(watch.value));
-					watch.start(async (value) => { publish(value); });
+					watch.start(async (call) => { if (call.kind === "failed") throw call.error; publish(call.retired && call.ops.length === 0 ? undefined : call.value); });
+					void watch.closed.then(end => { if (!stopped && (end.kind === "failed" || end.kind === "listener_error")) { controller.error(end.error); void stop(); } });
 				}
 			};
 			send({ ...events.snapshot, workflow: initialWorkflow, dag: initialDag, queue: initialQueue } satisfies ClientSnapshotEvent);
@@ -552,18 +554,21 @@ async function eventStream(bot: Bot, conversationId: ConversationId, context: Co
 					}
 					await syncWorkflow();
 				});
-				workflowWatch.start(async () => { await syncWorkflow(); });
-				inbox.start(async () => { syncQueue(); });
+				workflowWatch.start(async (call) => { if (call.kind === "failed") throw call.error; await syncWorkflow(); });
+				inbox.start(async (call) => { if (call.kind === "failed") throw call.error; if (call.retired && call.ops.length === 0) { lastQueue = "[]"; send({ type: "queue_status", items: [] }); } else syncQueue(); });
 				syncQueue();
 				if (stopped) return;
-				runs.start(async () => { await syncDag(); });
-				research.start(async () => { await syncDag(); });
+				runs.start(async (call) => { if (call.kind === "failed") throw call.error; await syncDag(); });
+				research.start(async (call) => { if (call.kind === "failed") throw call.error; await syncDag(); });
 				void syncDag();
 				void syncWorkflow();
 				syncing = sync(agents.value);
-				agents.start(async (value) => { await syncing; syncing = sync(value); await syncing; });
+				agents.start(async (call) => { if (call.kind === "failed") throw call.error; await syncing; syncing = sync(call.retired && call.ops.length === 0 ? undefined : call.value); await syncing; });
+				for (const watch of [agents, runs, research, workflowWatch, inbox]) void watch.closed.then(end => {
+					if (!stopped && (end.kind === "failed" || end.kind === "listener_error")) { controller.error(end.error); void stop(); }
+				});
 				void syncing.catch((error) => { controller.error(error); void stop(); });
-				void events.closed.then(() => { if (!stopped) controller.close(); void stop(); }).catch((error) => { if (!stopped) controller.error(error); void stop(); });
+				void events.closed.then((end) => { if (!stopped) { if (end.kind === "failed" || end.kind === "listener_error") controller.error(end.error); else controller.close(); } void stop(); }).catch((error) => { if (!stopped) controller.error(error); void stop(); });
 			}).catch((error) => { controller.error(error); void stop(); });
 		},
 		cancel: stop,
@@ -642,9 +647,14 @@ function sessionsStream(bot: Bot, context: Context): Response {
 					stop();
 				});
 			};
-			unsubscribe = bot.harness.subscribeCommits(() => {
-				if (!stopped && !timer) timer = setTimeout(publish, SESSIONS_DEBOUNCE_MS);
+			const observation = bot.harness.observeCommits({
+				advance: () => { if (!stopped && !timer) timer = setTimeout(publish, SESSIONS_DEBOUNCE_MS); },
+				end: (end) => {
+					if (!stopped) { if ("error" in end) controller.error(end.error); else controller.close(); }
+					stop();
+				},
 			});
+			unsubscribe = () => observation.detach();
 			refresh = setInterval(publish, SESSIONS_REFRESH_MS);
 			publish();
 		},

@@ -154,7 +154,7 @@ test("busy states (run, queue, pending transfer, running subagent) refuse withou
   expect(await bound(bot)).toBe(id);
   expect(await archiveKeys(bot)).toEqual([]);
  };
- await bot.harness.commit(async tx => { (await tx.doc(LiveDoc, id)).run = { taskId: 999 as TaskId, inputs: [] }; }, context);
+ await bot.harness.commit(async tx => { (await tx.doc(LiveDoc, id)).run = { turns: 0, taskId: 999 as TaskId, inputs: [] }; }, context);
  await refuse();
  await bot.harness.commit(async tx => {
   delete (await tx.doc(LiveDoc, id)).run;

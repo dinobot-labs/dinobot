@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { Type } from "@earendil-works/pi-ai";
+import { Type } from "typebox";
 import type { Static, TSchema } from "typebox";
 import { Value } from "typebox/value";
 import { definePlugin, type PluginTool } from "../types.ts";

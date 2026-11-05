@@ -149,7 +149,7 @@ export function openSessionIndex(harness: Harness, path: string, database?: Data
 			else pending = [];
 		}
 	};
-	const unsubscribe = harness.subscribeCommits((publication) => {
+	const observation = harness.observeCommits({ advance(publication) {
 		if (closed || failures >= 3) return;
 		for (const change of publication.changes) {
 			if (change.type !== "entry" || pending.length >= PAGE) continue;
@@ -157,7 +157,7 @@ export function openSessionIndex(harness: Harness, path: string, database?: Data
 			pending.push(...project([change.value]));
 		}
 		if (pending.length > 0 && timer === undefined) timer = setTimeout(flush, 0);
-	});
+	}, end() { clearTimeout(timer); timer = undefined; pending = []; failures = 3; } });
 
 	async function catchUp(context: Context) {
 		if (closed) return;
@@ -264,7 +264,7 @@ export function openSessionIndex(harness: Harness, path: string, database?: Data
 			closed = true;
 			clearTimeout(timer);
 			pending = [];
-			try { unsubscribe(); } finally {
+			try { observation.detach(); } finally {
 				// Finalize retained prepared statements before closing a file-backed index.
 				for (const statement of [insertEntry, insertBody, newest, checkpoint]) statement.finalize();
 				db.close();

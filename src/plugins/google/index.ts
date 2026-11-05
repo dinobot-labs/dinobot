@@ -1,4 +1,4 @@
-import { Type } from "@earendil-works/pi-ai";
+import { Type } from "typebox";
 import { join } from "node:path";
 import { definePlugin, type PluginTool } from "../types.ts";
 import { createApi } from "./api.ts";

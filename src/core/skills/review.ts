@@ -1,3 +1,4 @@
+import { checkpointEvery256 } from "../document-policy.ts";
 import { createHash } from "node:crypto";
 import type { Context } from "@earendil-works/chord";
 import {
@@ -50,7 +51,7 @@ type PendingPublication = {
 	description: string; body: string; files: Record<string, string>;
 };
 /** Receipt-first per-job publication record: `pending` is reserved (and counted) before any effect. */
-export const SkillReviewResultDoc = defineDocFamily<{ result: SkillReviewResult | null; pending: PendingPublication | null }, null>({
+export const SkillReviewResultDoc = defineDocFamily<{ result: SkillReviewResult | null; pending: PendingPublication | null }, null>({ checkpointWhen: checkpointEvery256,
 	kind: "dinobot.skill-review.result", version: 1, scope: "session", family: true,
 	initial: () => ({ result: null, pending: null }),
 });
@@ -72,7 +73,7 @@ export type SkillReviewState = {
 	lastSkip: { at: number; reason: string } | null;
 };
 export type ReviewPlan = { snapshotId: string; enqueueRequestId: string; lastConversationId: number; at: number };
-export const SkillReviewStateDoc = defineDoc<SkillReviewState>({
+export const SkillReviewStateDoc = defineDoc<SkillReviewState>({ checkpointWhen: checkpointEvery256,
 	kind: "dinobot.skill-review.state", version: 1, scope: "session",
 	initial: () => ({
 		lastConversationId: 0, lastSnapshotAt: null, snapshots: 0, job: null, planned: null, publishDay: 0, publishCount: 0,

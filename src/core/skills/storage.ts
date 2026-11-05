@@ -1,3 +1,4 @@
+import { checkpointEvery256 } from "../document-policy.ts";
 import type { Context } from "@earendil-works/chord";
 import { defineDoc, defineDocFamily, type Harness, type Tx } from "@earendil-works/pi-durable";
 import { Type } from "typebox";
@@ -99,7 +100,7 @@ function parseState(input: unknown): SkillsState {
 }
 // Separate v1 token avoids a runtime import cycle when SkillStore uses the facade.
 // Its storage address and initial state exactly match the existing SkillsDoc.
-const LegacySkillsStateDoc = defineDoc<SkillsState>({
+const LegacySkillsStateDoc = defineDoc<SkillsState>({ checkpointWhen: checkpointEvery256,
 	kind: "dinobot.skills", version: 1, scope: "session", initial: emptyState,
 });
 type Archive = { format: "split-archive-v2"; archive: SkillsState; archiveHash: string };
@@ -112,7 +113,7 @@ function archiveOf(input: unknown): Archive {
 /** Same kind, version 2: old binaries' v1 access is rejected by pi-durable.
  * This is a STATIC archive, not privacy erasure or physical space reclamation.
  */
-export const SkillsStorageArchiveDoc = defineDoc<Archive>({
+export const SkillsStorageArchiveDoc = defineDoc<Archive>({ checkpointWhen: checkpointEvery256,
 	kind: "dinobot.skills", version: 2, scope: "session",
 	initial: () => archiveOf(emptyState()),
 	migrate: (value, fromVersion) => {
@@ -125,29 +126,29 @@ type Index = {
 	skills: string[]; proposals: string[]; receipts: string[];
 	usageKeys: string[]; loadedKeys: string[]; hasUsage: boolean; hasLoaded: boolean;
 };
-export const SkillsStorageIndexDoc = defineDoc<Index>({
+export const SkillsStorageIndexDoc = defineDoc<Index>({ checkpointWhen: checkpointEvery256,
 	kind: "dinobot.skills.split-index", version: 1, scope: "session",
 	initial: () => ({
 		active: false, archiveHash: null, checksum: null, skills: [], proposals: [], receipts: [],
 		usageKeys: [], loadedKeys: [], hasUsage: false, hasLoaded: false,
 	}),
 });
-export const SkillPackageStorageDoc = defineDocFamily<{ package: SkillPackage | null }, null>({
+export const SkillPackageStorageDoc = defineDocFamily<{ package: SkillPackage | null }, null>({ checkpointWhen: checkpointEvery256,
 	kind: "dinobot.skills.package", version: 1, scope: "session", family: true, initial: () => ({ package: null }),
 });
-export const SkillMetadataStorageDoc = defineDocFamily<{ metadata: SkillMetadata | null; checksum: string | null }, null>({
+export const SkillMetadataStorageDoc = defineDocFamily<{ metadata: SkillMetadata | null; checksum: string | null }, null>({ checkpointWhen: checkpointEvery256,
 	kind: "dinobot.skills.metadata", version: 1, scope: "session", family: true, initial: () => ({ metadata: null, checksum: null }),
 });
-export const SkillProposalStorageDoc = defineDocFamily<{ proposal: ProposalMetadata | null; checksum: string | null }, null>({
+export const SkillProposalStorageDoc = defineDocFamily<{ proposal: ProposalMetadata | null; checksum: string | null }, null>({ checkpointWhen: checkpointEvery256,
 	kind: "dinobot.skills.proposal", version: 1, scope: "session", family: true, initial: () => ({ proposal: null, checksum: null }),
 });
-export const SkillReceiptStorageDoc = defineDocFamily<{ receipt: Receipt | null; checksum: string | null }, null>({
+export const SkillReceiptStorageDoc = defineDocFamily<{ receipt: Receipt | null; checksum: string | null }, null>({ checkpointWhen: checkpointEvery256,
 	kind: "dinobot.skills.receipt", version: 1, scope: "session", family: true, initial: () => ({ receipt: null, checksum: null }),
 });
-export const SkillUsageStorageDoc = defineDocFamily<{ usage: SkillUsage | null; checksum: string | null }, null>({
+export const SkillUsageStorageDoc = defineDocFamily<{ usage: SkillUsage | null; checksum: string | null }, null>({ checkpointWhen: checkpointEvery256,
 	kind: "dinobot.skills.usage", version: 1, scope: "session", family: true, initial: () => ({ usage: null, checksum: null }),
 });
-export const SkillLoadedStorageDoc = defineDocFamily<{ versions: string[] | null; checksum: string | null }, null>({
+export const SkillLoadedStorageDoc = defineDocFamily<{ versions: string[] | null; checksum: string | null }, null>({ checkpointWhen: checkpointEvery256,
 	kind: "dinobot.skills.loaded", version: 1, scope: "session", family: true, initial: () => ({ versions: null, checksum: null }),
 });
 function indexHash(index: Omit<Index, "checksum">): string { return digest(index); }

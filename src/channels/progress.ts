@@ -91,6 +91,10 @@ export function foldProgress(state: ProgressState, event: ProgressEvent, now: nu
 			return { ...base, retry: event.attempt };
 		case "draft":
 			return { ...base, draft: event.text };
+		case "draft_clear": {
+			const { draft: _draft, ...rest } = base;
+			return rest;
+		}
 		case "steer":
 			return { ...base, steers: state.steers + 1 };
 		case "todos": {
@@ -204,6 +208,7 @@ export function parseProgressEvent(value: unknown): ProgressEvent | undefined {
 	const v = value as Record<string, unknown>;
 	switch (v.type) {
 		case "heartbeat":
+		case "draft_clear":
 		case "activity":
 		case "steer":
 			return { type: v.type };

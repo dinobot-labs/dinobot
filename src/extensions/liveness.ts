@@ -1,3 +1,4 @@
+import { checkpointEvery256 } from "../core/document-policy.ts";
 import type { Context } from "@earendil-works/chord";
 import { defineDoc, defineExtension, GenerationTask, type Harness, hook, type HookApi, LiveDoc } from "@earendil-works/pi-durable";
 import { AsksDoc, LinkDoc } from "../core/ask.ts";
@@ -20,7 +21,7 @@ import { TodoDoc } from "./todo.ts";
  * and none after a continued turn that made no tool call (no progress). A user abort ends the run without onYield, so it is
  * never continued.
  */
-export const LivenessDoc = defineDoc<{ run?: string; count: number; progressed: boolean }>({
+export const LivenessDoc = defineDoc<{ run?: string; count: number; progressed: boolean }>({ checkpointWhen: checkpointEvery256,
 	kind: "dinobot.liveness", version: 1, scope: "conversation", history: "latest", fork: "initial",
 	initial: () => ({ count: 0, progressed: false }),
 });

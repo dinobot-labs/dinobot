@@ -1,3 +1,4 @@
+import { checkpointEvery256 } from "./document-policy.ts";
 import { readVerdict } from "./dag-verification.ts";
 import { createHash } from "node:crypto";
 import { defineDoc } from "@earendil-works/pi-durable";
@@ -95,7 +96,7 @@ export type RunState = {
 	updatedAt: number;
 };
 
-export const RunDoc = defineDoc<{ runs: RunState[]; activeId?: string }>({
+export const RunDoc = defineDoc<{ runs: RunState[]; activeId?: string }>({ checkpointWhen: checkpointEvery256,
 	kind: "dinobot.dag", version: 1, scope: "conversation", history: "latest", fork: "initial",
 	initial: () => ({ runs: [] }),
 });
@@ -106,7 +107,7 @@ export const RunDoc = defineDoc<{ runs: RunState[]; activeId?: string }>({
  * {@link runStateKey} differs from what the model saw, so a run that stopped after the model last looked at it — even
  * while the model was still writing its final answer — is never left unannounced.
  */
-export const DagSeenDoc = defineDoc<{ seen: Record<string, string>; /** Asks a dag_step result listed to the model (latest 256). */ asks?: string[] }>({
+export const DagSeenDoc = defineDoc<{ seen: Record<string, string>; /** Asks a dag_step result listed to the model (latest 256). */ asks?: string[] }>({ checkpointWhen: checkpointEvery256,
 	kind: "dinobot.dag.seen", version: 1, scope: "conversation", history: "latest", fork: "initial",
 	initial: () => ({ seen: {} }),
 });

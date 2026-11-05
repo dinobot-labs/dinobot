@@ -1,5 +1,6 @@
+import { watchEndError } from "../core/watch-errors.ts";
 import type { Context } from "@earendil-works/chord";
-import { Type } from "@earendil-works/pi-ai";
+import { Type } from "typebox";
 import { type ConversationId, defineExtension, defineTool, type Harness, section, type ToolExecutionApi } from "@earendil-works/pi-durable";
 import { askNodeKeys, askNodeRefs, RunDoc } from "../core/dag.ts";
 import { clone } from "../core/json.ts";
@@ -12,46 +13,50 @@ import type { WorkService } from "../core/verification.ts";
 export const ASK_TOOL = "ask";
 export const ANSWER_TOOL = "answer";
 
-const text = (value: string, isError = false) => ({ isError, content: [{ type: "text" as const, text: value }] });
+const text = (value: string, isError = false) => ({ isError, output: [{ type: "text" as const, text: value }] });
 
 /** Wait until the record is terminal or its deadline passes; the deadline is enforced by CAS, so a restart cannot skip it. */
 export async function awaitResolution(api: Pick<ToolExecutionApi, "watchDoc" | "snapshot" | "commit">, owner: ConversationId, id: string, deadlineAt: number, context: Context): Promise<AskRecord> {
 	const watch = await api.watchDoc(AsksDoc, owner, context);
 	if (!watch) throw new Error("Ask record store is missing");
 	const settled = Promise.withResolvers<AskRecord>();
-	const found = watch.value?.asks.find((ask) => ask.id === id);
-	if (found && isTerminal(found)) { await watch.stop(); return clone(found); }
 	let timer: ReturnType<typeof setTimeout> | undefined;
 	const onAbort = () => settled.reject(context.abortSignal?.reason ?? new Error("aborted"));
-	context.abortSignal?.addEventListener("abort", onAbort, { once: true });
-	watch.start(async (value) => {
-		const record = value?.asks.find((ask) => ask.id === id);
+	const observe = (value: typeof watch.value | undefined) => {
+		const record = value?.asks.find(ask => ask.id === id);
 		if (record && isTerminal(record)) settled.resolve(clone(record));
-	});
-	// A resolution committed between acquisition and start is observed by this re-read.
-	const current = (await api.snapshot(AsksDoc, owner, context))?.asks.find((ask) => ask.id === id);
-	if (current && isTerminal(current)) settled.resolve(clone(current));
-	const expire = async () => {
-		try {
-			const record = await api.commit(async (tx) => {
-				const doc = await tx.doc(AsksDoc, owner);
-				expireAsks(doc, Date.now());
-				return clone(doc.asks.find((ask) => ask.id === id));
-			}, context);
-			if (record && isTerminal(record)) settled.resolve(record);
-			else if (!record) settled.reject(new Error(`Ask ${id} disappeared`));
-			else timer = setTimeout(expire, Math.max(1, record.deadlineAt - Date.now()));
-		} catch (error) {
-			settled.reject(error);
-		}
 	};
-	timer = setTimeout(expire, Math.max(0, deadlineAt - Date.now()));
+	const closed = watch.closed.then(end => settled.reject(watchEndError(end, "Ask watch")));
 	try {
+		context.abortSignal?.addEventListener("abort", onAbort, { once: true });
+		if (context.abortSignal?.aborted) onAbort();
+		watch.start(async call => {
+			if (call.kind === "failed") { settled.reject(call.error); return; }
+			if (call.retired) { settled.reject(new Error("Ask store retired")); return; }
+			observe(call.value);
+		});
+		observe(watch.value);
+		// A resolution committed between acquisition and start is observed by this re-read.
+		observe(await api.snapshot(AsksDoc, owner, context));
+		const expire = async () => {
+			try {
+				const record = await api.commit(async tx => {
+					const doc = await tx.doc(AsksDoc, owner);
+					expireAsks(doc, Date.now());
+					return clone(doc.asks.find(ask => ask.id === id));
+				}, context);
+				if (record && isTerminal(record)) settled.resolve(record);
+				else if (!record) settled.reject(new Error(`Ask ${id} disappeared`));
+				else timer = setTimeout(expire, Math.max(1, record.deadlineAt - Date.now()));
+			} catch (error) { settled.reject(error); }
+		};
+		timer = setTimeout(expire, Math.max(0, deadlineAt - Date.now()));
 		return await settled.promise;
 	} finally {
 		if (timer) clearTimeout(timer);
 		context.abortSignal?.removeEventListener("abort", onAbort);
 		await watch.stop();
+		await closed;
 	}
 }
 
@@ -108,7 +113,7 @@ export function askExtension(work: WorkService, getHarness: () => Pick<Harness, 
 						}, context);
 						const record = await awaitResolution(api, parent, id, deadlineAt, context);
 						return {
-							content: [{ type: "text", text: `${record.state}: ${record.answer ?? record.default}` }],
+							output: [{ type: "text", text: `${record.state}: ${record.answer ?? record.default}` }],
 							details: { ask: record },
 						};
 					}
@@ -151,7 +156,7 @@ export function askExtension(work: WorkService, getHarness: () => Pick<Harness, 
 						return clone(record);
 					}, context);
 					return {
-						content: [{ type: "text", text: `${describeAsk(record)}\nRelay this question to the human in your reply. When they answer, call answer({ask_id: "${record.id}", answer}). Without an answer it resolves to the default at the deadline.` }],
+						output: [{ type: "text", text: `${describeAsk(record)}\nRelay this question to the human in your reply. When they answer, call answer({ask_id: "${record.id}", answer}). Without an answer it resolves to the default at the deadline.` }],
 						details: { ask: record },
 					};
 				},
@@ -191,7 +196,7 @@ export function askExtension(work: WorkService, getHarness: () => Pick<Harness, 
 					if (result.error !== undefined) return { ...text(result.error, true), ...(result.record ? { details: { ask: result.record } } : {}) };
 					const lines = [describeAsk(result.record)];
 					if (result.relayed) lines.push(result.relayedChanged ? `relayed → ${describeAsk(result.relayed)}` : `relayed ask ${result.relayed.id} was already ${result.relayed.state}`);
-					return { content: [{ type: "text", text: lines.join("\n") }], details: { ask: result.record, ...(result.relayed ? { relayed: result.relayed } : {}) } };
+					return { output: [{ type: "text", text: lines.join("\n") }], details: { ask: result.record, ...(result.relayed ? { relayed: result.relayed } : {}) } };
 				},
 			}),
 		],

@@ -1,4 +1,4 @@
-import { Type } from "@earendil-works/pi-ai";
+import { Type } from "typebox";
 import { randomBytes } from "node:crypto";
 import { lstat, mkdir, open, readFile, stat } from "node:fs/promises";
 import { isAbsolute, resolve } from "node:path";

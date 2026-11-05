@@ -1,32 +1,32 @@
+import { createTaskToolInvocation, settleHostNestedCalls } from "../core/tool-execution.ts";
+import { watchEndError } from "../core/watch-errors.ts";
+import { checkpointEvery256 } from "../core/document-policy.ts";
 import { createHash } from "node:crypto";
 import type { Context } from "@earendil-works/chord";
-import { defineDoc, defineExtension, defineTask, GenerationTask, hook, type ConversationId, type Harness, type TaskId, type ToolExecutionApi, type Tx, type DocumentWatch } from "@earendil-works/pi-durable";
+import { defineDoc, defineExtension, defineTask, GenerationTask, hook, type ConversationId, type Harness, type TaskId, type Tx, type DocumentWatch } from "@earendil-works/pi-durable";
 import { RunDoc, frontier, summarize } from "../core/dag.ts";
 import { activeDag, admitDagTx, closeTerminalDag, HOST_DRIVEN } from "./dag.ts";
 import { awaitResolution } from "./ask.ts";
 import { AsksDoc } from "../core/ask.ts";
 
 /** Durable scheduler ownership. RunDoc remains the sole owner of semantic node transitions. */
-export const DagContinuationDoc = defineDoc<{ tasks: Record<string, TaskId<string>> }>({kind:"dinobot.dag-continuation",version:1,scope:"conversation",history:"latest",fork:"initial",initial:()=>({tasks:{}})});
+export const DagContinuationDoc = defineDoc<{ tasks: Record<string, TaskId<string>> }>({ checkpointWhen: checkpointEvery256,kind:"dinobot.dag-continuation",version:1,scope:"conversation",history:"latest",fork:"initial",initial:()=>({tasks:{}})});
 const digest=(value:unknown)=>createHash("sha256").update(JSON.stringify(value)??"null").digest("hex");
 export function dagContinuation(getHarness: () => Harness) {
  const task = defineTask<{runId:string; parent?:TaskId}, {phase:"advance"; epoch:number} | {phase:"wait"; on:TaskId[]; epoch:number; asksKey:string; runKey:string} | {phase:"ask"; id:string; deadlineAt:number}, string>({
   name:"dinobot.dag-continuation",version:1,initial:()=>({phase:"advance",epoch:0}),
   phases:{advance:async(record,runtime,context)=>{
    if(record.input.parent) await runtime.waitForTask(record.input.parent,context);
-   const api: ToolExecutionApi = {
-    ...runtime, env:await runtime.env(context), callId:record.input.runId,
-    output:()=>{}, diagnostic:()=>{}, details:async()=>{},
-    commit:async(change,c)=>{let value:Awaited<ReturnType<typeof change>>; await runtime.commit(async tx=>{value=await change(tx); return undefined;},c); return value!;},
-    createTask:async(def,input,options,c)=>{let id:TaskId<any>; await runtime.commit(async tx=>{id=await tx.createTask(def,input,{...options,conversationId:runtime.conversationId});return undefined;},c); return id!;},
-   };
-   HOST_DRIVEN.add(api); // Its dag_step results are not shown to the model (ADR 0096).
-   let run=await activeDag(api,context,record.input.runId);
+   let run=await activeDag({conversationId:runtime.conversationId,snapshot:runtime.snapshot},context,record.input.runId);
    if(!run || run.owner) { await runtime.commit(()=>({status:"terminal",outcome:{status:"completed",result:"not ordinary"}}),context);return; }
-   const step=runtime.registry.tools().find(x=>x.tool.name==="dag_step")!.tool;
+   const step=(await runtime.agent(context)).callable.find(x=>x.name==="dag_step");
+   if(!step) throw new Error("dag_step is not callable in this conversation");
+   const invocation = await createTaskToolInvocation(runtime, record.input.runId, step, context);
+   const api = invocation.api;
+   HOST_DRIVEN.add(api); // Its dag_step results are not shown to the model (ADR 0096).
    const asksKey=digest(await runtime.snapshot(AsksDoc,runtime.conversationId,context));
-   await step.execute({run_id:run.id},api,context);
-   run=(await activeDag(api,context,run.id))!;
+   try { await step.execute({run_id:run.id},api,context); } finally { await invocation.close(); }
+   run=(await activeDag({conversationId:runtime.conversationId,snapshot:runtime.snapshot},context,run.id))!;
    if(run.status==="running") {
     const on=Object.values(run.nodes).flatMap(s=>(s.status==="running"||s.status==="waiting")&&s.runnerId?[Number(s.runnerId) as TaskId]:[]);
     if(on.length) { await runtime.commit(()=>({status:"running",checkpoint:{phase:"wait",on,epoch:record.state.checkpoint.epoch,asksKey,runKey:digest(run)}}),context);return; }
@@ -54,12 +54,15 @@ export function dagContinuation(getHarness: () => Harness) {
    try {
     context.abortSignal?.addEventListener("abort",abort,{once:true});
     if(context.abortSignal?.aborted) abort();
-    graph.start(async value=>{settled(value);});asks?.start(async value=>{changedAsks(value);});runs?.start(async value=>{changedRun(value);});
+    graph.start(async call=>{if(call.kind==="failed") {wake.reject(call.error);return;} settled(call.value);});
+    asks?.start(async call=>{if(call.kind==="failed") {wake.reject(call.error);return;} if(call.retired) wake.resolve(); else changedAsks(call.value);});
+    runs?.start(async call=>{if(call.kind==="failed") {wake.reject(call.error);return;} if(call.retired) wake.resolve(); else changedRun(call.value);});
+    for (const watch of [graph, asks, runs]) if (watch) void watch.closed.then(end=>wake.reject(watchEndError(end,"DAG watch")));
     settled(graph.value);
     if(runs?.value?.runs.find(r=>r.id===record.input.runId)?.status!=="running") wake.resolve();
     // Snapshot after start closes acquisition/subscription races for document changes.
     changedAsks(await runtime.snapshot(AsksDoc,runtime.conversationId,context));
-    changedRun(await runtime.snapshot(RunDoc,runtime.conversationId,context)??null);
+    changedRun(await runtime.snapshot(RunDoc,runtime.conversationId,context));
     const deadline=asks?.value?.asks.filter(a=>a.state==="open"&&a.run===record.input.runId).reduce((at,a)=>Math.min(at,a.deadlineAt),Infinity);
     if(deadline!==undefined&&Number.isFinite(deadline)) timer=setTimeout(()=>wake.resolve(),Math.max(0,deadline-Date.now()));
     await wake.promise;
@@ -73,7 +76,7 @@ export function dagContinuation(getHarness: () => Harness) {
    await awaitResolution({...runtime,commit:async(change,c)=>{let value:Awaited<ReturnType<typeof change>>;await runtime.commit(async tx=>{value=await change(tx);return undefined;},c);return value!;}},runtime.conversationId,record.state.checkpoint.id,record.state.checkpoint.deadlineAt,context);
    await runtime.commit(()=>({status:"running",checkpoint:{phase:"advance",epoch:0}}),context);
   }},
-  abort:async(_record,runtime,context)=>{await runtime.commit(()=>({status:"terminal",outcome:{status:"aborted"}}),context);},
+  abort:async(_record,runtime,context)=>{await settleHostNestedCalls(runtime,context);await runtime.commit(()=>({status:"terminal",outcome:{status:"aborted"}}),context);},
  });
  async function enqueue(tx:Tx, conversationId:ConversationId, runId:string, parent?:TaskId) {
   const run=(await tx.doc(RunDoc,conversationId)).runs.find(r=>r.id===runId);

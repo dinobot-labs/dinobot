@@ -1,3 +1,4 @@
+import { checkpointEvery256 } from "./document-policy.ts";
 import { defineDoc } from "@earendil-works/pi-durable";
 import { clone } from "./json.ts";
 
@@ -28,7 +29,7 @@ export type Goal = {
 };
 export type GoalState = { goal?: Goal; history: { revision: number; at: number; objective: string; status: GoalStatus }[] };
 
-export const GoalDoc = defineDoc<GoalState>({
+export const GoalDoc = defineDoc<GoalState>({ checkpointWhen: checkpointEvery256,
 	kind: "dinobot.goal", version: 1, scope: "conversation", history: "latest", fork: "initial",
 	initial: () => ({ history: [] }),
 });

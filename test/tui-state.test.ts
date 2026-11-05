@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import type { AssistantMessage, ToolResultMessage, Usage, UserMessage } from "@earendil-works/pi-ai";
-import type { AgentEvent, ConversationId, EntryId, EntryRecord } from "@earendil-works/pi-durable";
+import type { ConversationId, EntryId, EntryRecord } from "@earendil-works/pi-durable";
+import type { AgentEvent } from "../src/core/ui-contract.ts";
 import type { SubagentProgress } from "../src/core/ui-contract.ts";
 import { ChatState, createChatData, isHiddenTool, reduceEvent, runningSubagents } from "../src/tui/state.ts";
 

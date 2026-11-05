@@ -1,3 +1,4 @@
+import { checkpointEvery256 } from "./document-policy.ts";
 import { defineDoc, type ConversationId, type Cursor, type TaskId, type Tx } from "@earendil-works/pi-durable";
 import { ClaimsDoc, NATIVE_QUARANTINE_REASONS, unfence, type Claim } from "./claims.ts";
 import { WorkDoc, WorkspaceCoordDoc } from "./verification.ts";
@@ -15,7 +16,7 @@ import type { NativeProcessEvent } from "@earendil-works/pi-durable/env";
 export type NativeReconciliation = { at: number; actor: string; note: string; evidence: { nonce: string; evidence: string }[] };
 export type NativeAbandonment = { at: number; actor: string; note: string; snapshot: string; acceptance: string; waived: string[] };
 export type NativeCall = { taskId: string; kind: string; tokens: Claim[]; acquiredTokens?: Claim[]; processes?: { [K in keyof NativeProcessEvent]: NativeProcessEvent[K] }[]; phase: "unknown" | "settled" | "reconciled" | "abandoned"; reconciled?: NativeReconciliation; abandoned?: NativeAbandonment };
-export const NativeProvenanceDoc = defineDoc<{ calls: NativeCall[] }>({ kind: "dinobot.native-provenance", version: 1, scope: "conversation", history: "latest", fork: "initial", initial: () => ({ calls: [] }) });
+export const NativeProvenanceDoc = defineDoc<{ calls: NativeCall[] }>({ checkpointWhen: checkpointEvery256, kind: "dinobot.native-provenance", version: 1, scope: "conversation", history: "latest", fork: "initial", initial: () => ({ calls: [] }) });
 type NativeProcessApi = Pick<ToolExecutionApi, "taskId" | "conversationId" | "env" | "commit">;
 export async function admitUnknownNativeCall(api: NativeProcessApi, context: Context, kind: string): Promise<void> {
  await api.commit(async tx => {
@@ -118,7 +119,7 @@ export async function unfenceSettledTx(tx: Tx, candidates: readonly Claim[], now
  }
 }
 /** Acquisition provenance, not a snapshot of whichever lease happens to exist at cleanup time. */
-export const OwnerClaimsDoc=defineDoc<{claims:{claim:Claim; runId:string; nodeId:string; runnerId:string; attempt:number}[]; cleanup?:string}>({kind:"dinobot.owner-claims",version:1,scope:"conversation",history:"latest",fork:"initial",initial:()=>({claims:[]})});
+export const OwnerClaimsDoc=defineDoc<{claims:{claim:Claim; runId:string; nodeId:string; runnerId:string; attempt:number}[]; cleanup?:string}>({ checkpointWhen: checkpointEvery256,kind:"dinobot.owner-claims",version:1,scope:"conversation",history:"latest",fork:"initial",initial:()=>({claims:[]})});
 export async function trackOwnerClaimsTx(tx:Tx,id:ConversationId,claims:readonly Claim[]) {
  const binding=(await tx.doc(WorkDoc,id)).dagParent;
  const provenance=await tx.doc(NativeProvenanceDoc,id);

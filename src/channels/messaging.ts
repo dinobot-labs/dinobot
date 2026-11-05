@@ -8,7 +8,7 @@
  */
 import { Database } from "bun:sqlite";
 import { chmodSync } from "node:fs";
-import { Type } from "@earendil-works/pi-ai";
+import { Type } from "typebox";
 import type { Static } from "typebox";
 import { ApiGate, notStarted, type ApiPermits, type GatePolicy, type GateClock, type SyncStart } from "./api-gate.ts";
 import { sqliteGateStore } from "./api-gate-store.ts";

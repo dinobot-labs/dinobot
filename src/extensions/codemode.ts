@@ -1,5 +1,5 @@
 import { BACKGROUND_CONTEXT, withCancel } from "@earendil-works/chord/context";
-import { Type } from "@earendil-works/pi-ai";
+import { Type } from "typebox";
 import { validateToolArguments } from "@earendil-works/pi-ai/utils/validation";
 import { BASH_BUDGET, checkBashTimeout } from "./bash-budget.ts";
 import { defineExtension, defineTool, section, LiveDoc, type Harness, type TaskId, type ToolRegistration, type JsonObject } from "@earendil-works/pi-durable";
@@ -33,7 +33,7 @@ export function clampCellWait(name: string, args: unknown, deadlineAt: number, n
 
 /** Resolve the bash budget without executing it; invalid calls keep their normal durable validation receipt. */
 export function bashCallDurationMs(tool: ToolRegistration, args: unknown): number | undefined {
-	if (tool.name !== "bash") return undefined;
+	if (tool.name !== "bash" && tool.name !== "powershell") return undefined;
 	try {
 		// Reuse only the pure registry repair, not arbitrary prepareArguments/beforeTool hooks with effects.
 		const repaired = repairArguments(tool.parameters as unknown as Record<string, unknown>, args);
@@ -103,8 +103,8 @@ export function codemodeExtension(
 		tasks: [CapabilityTask],
 		sections: [
 			section("codemode_tools", ({ agent }) => {
-				const tools = agent.tools.filter((tool) => tool.name !== "codemode" && codemodeOnlyToolNames.has(tool.name));
-				const canSearch = agent.tools.some(tool => tool.name === "tool_search");
+				const tools = agent.callable.filter((tool) => tool.name !== "codemode" && codemodeOnlyToolNames.has(tool.name));
+				const canSearch = agent.callable.some(tool => tool.name === "tool_search");
 				return [
 					"Bun Worker JavaScript. Use the declared tool names, descriptions and argument schemas with tools.NAME(args); they also apply inside codemode. Never invent names. codemode itself cannot be called recursively.",
 					`Cell limits: ${CODEMODE_LIMITS.timeoutMs} ms, ${CODEMODE_LIMITS.maxCalls} calls, at most ${CODEMODE_LIMITS.maxConcurrentCalls} in flight. Use bounded batches; text output is limited to ${CODEMODE_LIMITS.maxOutputBytes} bytes. A blocking task_output inside a cell waits at most until shortly before the cell limit, so it always returns its result. Bash extends the cell for its validated timeout in seconds (default ${BASH_BUDGET.defaultSeconds} s when omitted); the whole cell stays under ${CODEMODE_LIMITS.maxTimeoutMs / 1000} s, even for a longer bash timeout.${longRunningNote}`,
@@ -118,6 +118,7 @@ export function codemodeExtension(
 		tools: [
 			defineTool({
 				name: "codemode",
+				callers: ["model"],
 				description:
 					"Default work surface: execute JavaScript in a fresh Bun Worker, invoking harness tools through tools.NAME(args). Batch independent reads with Promise.allSettled, inspect every failure, sequence dependent calls and mutations. Emit selected text evidence using text(value) or return a JSON value. Read images attach automatically even without text()/return; workers receive markers, not base64. Every tool promise must be awaited. 60-second cell limit (a call to a long-running tool extends it to that tool's declared run time); use task({run_in_background:true}) for durable long work. No variables persist across cells. Interrupted cells are never automatically replayed.",
 				parameters: Type.Object({ code: Type.String() }),
@@ -129,7 +130,7 @@ export function codemodeExtension(
 					}, context);
 					await api.details({ codemodeTaskId: api.taskId }, context);
 					const agent = await api.agent(context);
-					const tools = agent.tools.filter((tool) => tool.name !== "codemode");
+					const tools = agent.callable.filter((tool) => tool.name !== "codemode");
 					// The worker is cut at the cell limit and a cut call returns nothing: clamp waits to the time left.
 					// Long-running calls move the deadline later; this copy tracks the deadline runCell enforces.
 					let deadlineAt = Date.now() + CODEMODE_LIMITS.timeoutMs;
@@ -161,7 +162,7 @@ export function codemodeExtension(
 									const id = await tx.createTask(
 										CapabilityTask,
 										{ parent: api.taskId, rootCallId: api.callId, ordinal, name, args: encode(args) },
-										{ ownership: { kind: "task", taskId: api.taskId } },
+										{ ownership: { kind: "task", taskId: api.taskId }, abandonOnRestart: true },
 									);
 									(await tx.doc(InternalCallDoc, id)).parent = api.taskId;
 									doc.calls.push({ id, ordinal, name, status: "pending" });
@@ -249,7 +250,7 @@ export function codemodeExtension(
 						result.error ??
 						(cleanupError?.status === "rejected" ? `Cleanup failed: ${errorText(cleanupError.reason)}` : undefined);
 					return {
-						content: [
+						output: [
 							...(journal?.calls.slice().sort((a, b) => a.ordinal - b.ordinal).flatMap((call) => call.images ?? []) ?? []),
 							...result.output.map((text) => ({ type: "text" as const, text })),
 							...(result.value === undefined ? [] : [{ type: "text" as const, text: encode(result.value) }]),
@@ -282,7 +283,7 @@ export function codemodeExtension(
 							? await api.snapshot(CellDoc, api.conversationId, String(id), context)
 							: undefined;
 					if (!task || !doc)
-						return { isError: true, content: [{ type: "text", text: "No codemode receipt in this conversation" }] };
+						return { isError: true, output: [{ type: "text", text: "No codemode receipt in this conversation" }] };
 					const calls = await Promise.all(
 						doc.calls.slice(offset, offset + limit).map(async (call) => {
 							const { images = [], ...metadata } = call;
@@ -304,7 +305,7 @@ export function codemodeExtension(
 						}),
 					);
 					return {
-						content: [
+						output: [
 							...doc.calls.slice(offset, offset + limit).flatMap((call) => call.images ?? []),
 							{
 								type: "text",

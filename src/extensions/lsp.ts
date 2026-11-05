@@ -1,4 +1,4 @@
-import { Type } from "@earendil-works/pi-ai";
+import { Type } from "typebox";
 import { defineExtension, defineTool, section } from "@earendil-works/pi-durable";
 import { LSP_OPERATIONS, type LspManager } from "../core/lsp.ts";
 
@@ -28,12 +28,12 @@ export function lspExtension(manager: LspManager) {
 					try {
 						if (!env) throw new Error("LSP requires a local execution environment");
 						const result = await manager.execute(input, env.cwd, context.abortSignal);
-						return { content: [{ type: "text", text: JSON.stringify(result) }] };
+						return { output: [{ type: "text", text: JSON.stringify(result) }] };
 					} catch (error) {
 						context.abortSignal?.throwIfAborted();
 						return {
 							isError: true,
-							content: [{ type: "text", text: error instanceof Error ? error.message : String(error) }],
+							output: [{ type: "text", text: error instanceof Error ? error.message : String(error) }],
 						};
 					}
 				},

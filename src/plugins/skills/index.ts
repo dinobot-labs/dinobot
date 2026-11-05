@@ -1,6 +1,6 @@
 import { lstat, readdir, realpath } from "node:fs/promises";
 import { join, sep } from "node:path";
-import { Type } from "@earendil-works/pi-ai";
+import { Type } from "typebox";
 import type { SkillPackage } from "../../core/skills/store.ts";
 import { definePlugin, loadPlugin, type LoadedPlugin } from "../types.ts";
 import { bundledSkills } from "./bundled.ts";

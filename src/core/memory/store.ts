@@ -1,3 +1,4 @@
+import { checkpointEvery256 } from "../document-policy.ts";
 import { createHash } from "node:crypto";
 import { defineDoc } from "@earendil-works/pi-durable";
 
@@ -38,7 +39,7 @@ export type MemoryEntry = {
 export type MemoryState = { entries: MemoryEntry[]; revision: number; forgotten?: Record<string, string[]> };
 
 /** Shared within one bot storage, across threads and restarts. Not a process-memory cache. */
-export const MemoryDoc = defineDoc<MemoryState>({
+export const MemoryDoc = defineDoc<MemoryState>({ checkpointWhen: checkpointEvery256,
 	kind: "dinobot.memory", version: 1, scope: "session",
 	initial: () => ({ entries: [], revision: 0 }),
 });

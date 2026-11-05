@@ -1,5 +1,7 @@
+import { watchEndError } from "../core/watch-errors.ts";
+import { checkpointEvery256 } from "../core/document-policy.ts";
 import type { Context } from "@earendil-works/chord";
-import { Type } from "@earendil-works/pi-ai";
+import { Type } from "typebox";
 import { type ConversationId, defineDoc, defineExtension, defineTool, type Harness, section, type ToolExecutionApi } from "@earendil-works/pi-durable";
 import { blocks, type Claim, type ClaimReceipt, type ClaimRequest, ClaimsDoc, type ClaimsState, type ClaimToolResult, claimOnce, clampTtl, liveClaims, MAX_CLAIM_WAIT_MS, normalizeKey, overlaps, releaseOnce } from "../core/claims.ts";
 import { autoReconcile } from "../core/claim-reconcile.ts";
@@ -15,13 +17,13 @@ import {
 	SESSION_ANALYZE_TOOL, SESSION_LIST_TOOL, SESSION_READ_TOOL, SESSION_SEARCH_TOOL, WORK_CLAIM_TOOL, WORK_RELEASE_TOOL,
 } from "../core/ui-contract.ts";
 
-const ClaimReceiptDoc = defineDoc<ClaimReceipt>({
+const ClaimReceiptDoc = defineDoc<ClaimReceipt>({ checkpointWhen: checkpointEvery256,
 	kind: "dinobot.claims.receipt",
 	version: 1,
 	scope: "task",
 	initial: () => ({}),
 });
-const ReleaseReceiptDoc = defineDoc<{ released?: Claim[] }>({
+const ReleaseReceiptDoc = defineDoc<{ released?: Claim[] }>({ checkpointWhen: checkpointEvery256,
 	kind: "dinobot.claims.release.receipt",
 	version: 1,
 	scope: "task",
@@ -61,12 +63,14 @@ export async function awaitClaim(api: ToolExecutionApi, request: ClaimRequest & 
 		// Closure is a persistent condition, not just a wake: rearming cannot lose it.
 		// CommittedWatch contains listener exceptions and reports them through closed.
 		closed = watch.closed.then((end) => {
-			watchError = end.reason === "listener_error" ? end.error : new Error(`Claim watch closed: ${end.reason}`);
+			watchError = watchEndError(end, "Claim watch");
 			wake();
 		});
 		let previous = signature(watch.value);
-		watch.start(async (value) => {
-			const next = signature(value);
+		watch.start(async (call) => {
+			if (call.kind === "failed") { watchError = call.error instanceof Error ? call.error : new Error("Claim watch failed", { cause: call.error }); wake(); return; }
+			if (call.retired) { watchError = new Error("Claim store retired"); wake(); return; }
+			const next = signature(call.value);
 			if (next !== previous) { previous = next; wake(); }
 		});
 		while (true) {
@@ -115,7 +119,7 @@ async function holderOf(harness: Harness, conversationId: ConversationId, contex
 }
 
 function text(value: string, isError = false) {
-	return { content: [{ type: "text" as const, text: value }], ...(isError ? { isError } : {}) };
+	return { output: [{ type: "text" as const, text: value }], ...(isError ? { isError } : {}) };
 }
 
 export function sessionsExtension(getHarness: () => Harness, getIndex: () => SessionIndex) {

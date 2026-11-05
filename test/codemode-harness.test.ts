@@ -1,3 +1,4 @@
+import { watchConversation } from "../src/core/conversation-observer.ts";
 import { afterEach, expect, test } from "bun:test";
 import { BACKGROUND_CONTEXT as context } from "@earendil-works/chord/context";
 import { type ToolResultMessage } from "@earendil-works/pi-ai";
@@ -8,7 +9,7 @@ import {
 	fauxToolCall,
 	type FauxResponseFactory,
 } from "@earendil-works/pi-ai/providers/faux";
-import { MemoryStorage, watchEvents } from "@earendil-works/pi-durable";
+import { MemoryStorage } from "@earendil-works/pi-durable";
 import { openBot, type Bot } from "../src/core/bot.ts";
 import { TodoDoc } from "../src/extensions/todo.ts";
 import type { LoadedPlugin } from "../src/plugins/types.ts";
@@ -159,7 +160,7 @@ test("parallel subagents have separate ownership and cannot reach task via their
 test("live and replayed TUI todo state survives a later script failure", async () => {
 	const { bot, faux, conversation, send, results } = await setup();
 	const state = new ChatState();
-	const stream = await watchEvents(bot.harness, conversation.id, context);
+	const stream = await watchConversation(bot.harness, conversation.id, context);
 	state.apply(stream.snapshot, Date.now());
 	stream.start(async (events) => {
 		for (const event of events) state.apply(event, Date.now());
@@ -177,7 +178,7 @@ test("live and replayed TUI todo state survives a later script failure", async (
 		const final = (await results())[0]!;
 		expect(final.isError).toBe(true);
 		const replay = new ChatState();
-		const snapshot = await watchEvents(bot.harness, conversation.id, context);
+		const snapshot = await watchConversation(bot.harness, conversation.id, context);
 		try {
 			replay.apply(snapshot.snapshot, Date.now());
 			expect(replay.data.todos).toEqual(state.data.todos);

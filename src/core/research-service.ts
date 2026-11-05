@@ -1,3 +1,4 @@
+import { checkpointEvery256 } from "./document-policy.ts";
 import { randomUUID } from "node:crypto";
 import { parseReadiness } from "./research-readiness.ts";
 import { researchContext, assertResearchContext } from "./research-context.ts";
@@ -70,7 +71,7 @@ type ServiceRecord = {
 	initialized: boolean;
 	nodes?: Record<string, string>;
 };
-export const ResearchServiceDoc = defineDoc<{ records: Record<string, ServiceRecord> }>({
+export const ResearchServiceDoc = defineDoc<{ records: Record<string, ServiceRecord> }>({ checkpointWhen: checkpointEvery256,
 	kind: "dinobot.research-service",
 	version: 1,
 	scope: "conversation",
@@ -911,8 +912,8 @@ export function createResearchService(
 				);
 			},
 			sleep: async (record, runtime, context) => {
-				await runtime.sleep(record.state.checkpoint.until, context);
-				await runtime.commit(() => ({ status: "running", checkpoint: { phase: "advance" } }), context);
+				// Keep legacy sleep checkpoints readable, retaining their original absolute deadline.
+				await runtime.sleepUntil(record.state.checkpoint.until, { phase: "advance" }, context);
 			},
 		},
 		abort: async (record, runtime, context) => {

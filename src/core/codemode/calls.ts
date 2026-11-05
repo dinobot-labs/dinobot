@@ -1,7 +1,9 @@
+import { checkpointEvery256 } from "../document-policy.ts";
 import { copyJson, type Context, type JsonValue } from "@earendil-works/chord";
 import { awaitWithContext } from "@earendil-works/chord/context";
 import { validateToolArguments } from "@earendil-works/pi-ai/utils/validation";
 import {
+	AssistantEntry,
 	defineDoc,
 	defineDocFamily,
 	defineTask,
@@ -10,8 +12,8 @@ import {
 	UsageDoc,
 	type JsonObject,
 	type ConversationId,
+	type EntryId,
 	type TaskId,
-	type ToolExecutionApi,
 	type ToolExecutionResult,
 	type ToolHooks,
 	type ToolRegistration,
@@ -20,7 +22,8 @@ import {
 } from "@earendil-works/pi-durable";
 import { detailPreview, safePreview } from "../../channels/safe-preview.ts";
 import { encode, errorText } from "./protocol.ts";
-import { ToolOutput } from "./output.ts";
+import { createTaskToolInvocation, settleHostNestedCalls, workerToolResult, type WorkerToolResult } from "../tool-execution.ts";
+import { checkedToolResult, imageMarkers } from "./result.ts";
 import { imageAttachmentsFit } from "../../extensions/images.ts";
 
 export type CallInput = { parent: TaskId; rootCallId: string; ordinal: number; name: string; args: string };
@@ -43,7 +46,7 @@ export type CallRecord = {
 	result?: string;
 	images?: StoredImage[];
 };
-export const CellDoc = defineDocFamily<{ calls: CallRecord[] }, null>({
+export const CellDoc = defineDocFamily<{ calls: CallRecord[] }, null>({ checkpointWhen: checkpointEvery256,
 	kind: "dinobot.codemode.cell",
 	version: 1,
 	family: true,
@@ -53,7 +56,7 @@ export const CellDoc = defineDocFamily<{ calls: CallRecord[] }, null>({
 	initial: () => ({ calls: [] }),
 });
 /** Admission marker distinguishes a durable internal call from a model's direct call. */
-export const InternalCallDoc = defineDoc<{ parent?: number }>({
+export const InternalCallDoc = defineDoc<{ parent?: number }>({ checkpointWhen: checkpointEvery256,
 	kind: "dinobot.codemode.internal",
 	version: 1,
 	scope: "task",
@@ -105,16 +108,17 @@ async function update(
 }
 const failedResult = (error: string): ToolExecutionResult => ({
 	isError: true,
-	content: [{ type: "text", text: error }],
+	output: [{ type: "text", text: error }],
 });
-const jsonResult = (result: ToolExecutionResult): string => encode(copyJson(result, { omitUndefinedProperties: true }));
+const jsonResult = (result: WorkerToolResult): string => encode(copyJson(result, { omitUndefinedProperties: true }));
 async function settle(
 	runtime: Runtime,
 	input: CallInput,
-	result: ToolExecutionResult,
+	executionResult: ToolExecutionResult,
 	context: Context,
 	status: "done" | "failed" | "aborted" = "done",
 ) {
+	let result = workerToolResult(executionResult);
 	await runtime.commit(async (tx) => {
 		const doc = await tx.doc(CellDoc, runtime.conversationId, String(input.parent), null);
 		let images: StoredImage[] = result.content?.filter((block) => block.type === "image")
@@ -122,7 +126,7 @@ async function settle(
 		const existing = doc.calls.filter((call) => call.ordinal !== input.ordinal).flatMap((call) => call.images ?? []);
 		const all = [...existing, ...images];
 		if (!imageAttachmentsFit(all)) {
-			result = failedResult("Codemode image attachment limit exceeded; use a separate cell for more images");
+			result = workerToolResult(failedResult("Codemode image attachment limit exceeded; use a separate cell for more images"));
 			images = [];
 			status = "failed";
 		}
@@ -131,20 +135,23 @@ async function settle(
 			// Binary stays exclusively in the host receipt. Workers get small, printable attachment markers.
 			json = jsonResult({
 				...result,
+				...(result.structuredOutput === undefined ? {} : { structuredOutput: imageMarkers(result.structuredOutput, input.ordinal) }),
 				content: (result.content ?? []).map((block, index) => block.type === "image"
 					? { type: "text", text: `[Image attached to model: call ${input.ordinal}, block ${index}, ${block.mimeType}]` }
 					: block),
 			});
 		} catch (error) {
-			result = failedResult(`Result could not be retained: ${errorText(error)}. Effects may have completed; inspect before retrying.`);
+			result = workerToolResult(failedResult(`Result could not be retained: ${errorText(error)}. Effects may have completed; inspect before retrying.`));
 			json = jsonResult(result);
 			images = [];
 			status = "failed";
 		}
-		if (result.usage) {
+		// Receipt admission may replace presentation, but cannot undo incurred usage.
+		// Charge only this execution; nested ToolTask usage remains owned by pi.tool.
+		if (executionResult.usage) {
 			const totals = (await tx.doc(UsageDoc, runtime.conversationId)).tools;
 			const previous = Object.hasOwn(totals, input.name) ? totals[input.name] : undefined;
-			const usage = JSON.parse(JSON.stringify(result.usage)) as typeof result.usage;
+			const usage = JSON.parse(JSON.stringify(executionResult.usage)) as typeof executionResult.usage;
 			if (previous) {
 				for (const key of ["input", "output", "cacheRead", "cacheWrite", "totalTokens"] as const)
 					usage[key] += previous[key];
@@ -188,7 +195,7 @@ async function settle(
 	}, context);
 }
 async function toolFor(runtime: Runtime, name: string, context: Context) {
-	return (await runtime.agent(context)).tools.find((tool) => tool.name === name && tool.name !== "codemode");
+	return (await runtime.agent(context)).callable.find((tool) => tool.name === name && tool.name !== "codemode");
 }
 async function hooks(runtime: Runtime, context: Context): Promise<Partial<ToolHooks>[]> {
 	return (await runtime.agent(context)).extensions.flatMap((ext) =>
@@ -196,62 +203,9 @@ async function hooks(runtime: Runtime, context: Context): Promise<Partial<ToolHo
 	);
 }
 async function run(runtime: Runtime, input: CallInput, tool: ToolRegistration, args: unknown, context: Context) {
-	const output = new ToolOutput(tool.outputLimits);
-	let details: JsonValue | undefined;
-	const diagnostics: NonNullable<ToolExecutionResult["diagnostics"]>[number][] = [];
-	const assertLive = () => {
-		runtime.signal.throwIfAborted();
-		context.abortSignal?.throwIfAborted();
-	};
-	const api: ToolExecutionApi = {
-		taskId: runtime.taskId,
-		conversationId: runtime.conversationId,
-		callId: input.rootCallId,
-		registry: runtime.registry,
-		agent: runtime.agent,
-		env: await runtime.env(context),
-		snapshot: runtime.snapshot,
-		snapshotAsOf: runtime.snapshotAsOf,
-		watchDoc: runtime.watchDoc,
-		memo: runtime.memo,
-		getTask: runtime.getTask,
-		waitForTask: runtime.waitForTask,
-		conversation: runtime.conversation,
-		output(chunk) {
-			assertLive();
-			output.push(chunk);
-		},
-		diagnostic(value) {
-			assertLive();
-			if (diagnostics.length >= 100) throw new Error("Too many diagnostics");
-			diagnostics.push(value);
-		},
-		async details(value, ctx) {
-			assertLive();
-			const copy = JSON.parse(encode(value)) as JsonValue;
-			await runtime.commit(async (tx) => {
-				await update(tx, input, runtime.conversationId, {}, copy);
-				return undefined;
-			}, ctx);
-			details = copy;
-		},
-		async commit(change, ctx) {
-			let value: unknown;
-			await runtime.commit(async (tx) => {
-				value = await change(tx);
-				return undefined;
-			}, ctx);
-			return value as never;
-		},
-		async createTask(task, value, options, ctx) {
-			let id: TaskId | undefined;
-			await runtime.commit(async (tx) => {
-				id = await tx.createTask(task, value, options);
-				return undefined;
-			}, ctx);
-			return id! as never;
-		},
-	};
+	const invocation = await createTaskToolInvocation(runtime, `${input.rootCallId}/${input.ordinal}`, tool, context, (tx, details) => update(tx, input, runtime.conversationId, {}, details));
+	const { api, output, diagnostics } = invocation;
+	const assertLive = () => { runtime.signal.throwIfAborted(); context.abortSignal?.throwIfAborted(); };
 	const call = {
 		type: "toolCall" as const,
 		id: `${input.rootCallId}/${input.ordinal}`,
@@ -261,31 +215,49 @@ async function run(runtime: Runtime, input: CallInput, tool: ToolRegistration, a
 	let result: ToolExecutionResult;
 	let status: "done" | "failed" = "done";
 	try {
-		result = await awaitWithContext(tool.execute(args, api, context), context);
+		try { result = await awaitWithContext(tool.execute(args, api, context), context); }
+		finally { await invocation.close(); }
 		const retained = output.finish();
 		if (retained.truncated) diagnostics.push({ severity: "info", code: "truncated", message: "Tool output truncated; inspect full_output diagnostics for the complete shell log." });
 		result = {
 			...result,
-			content: result.content ?? (retained.text ? [{ type: "text", text: retained.text }] : []),
-			...(result.details === undefined && details !== undefined ? { details } : {}),
+			output: result.output ?? (retained.text ? [{ type: "text", text: retained.text }] : []),
+			...(result.details === undefined && invocation.details !== undefined ? { details: invocation.details } : {}),
 			diagnostics: [...diagnostics, ...(result.diagnostics ?? [])],
 		};
 		for (const hook of await hooks(runtime, context))
 			result =
 				(await awaitWithContext(Promise.resolve(hook.afterTool?.(call, result, runtime, context)), context)) ?? result;
+		result = checkedToolResult(tool, result);
 		if (result.control) throw new Error("Nested tool controls are unsupported; use the direct control tool");
 	} catch (error) {
 		assertLive();
 		const retained = output.finish();
 		result = {
 			isError: true,
-			content: [{ type: "text", text: [retained.text, errorText(error)].filter(Boolean).join("\n") }],
-			...(details === undefined ? {} : { details }),
+			output: [{ type: "text", text: [retained.text, errorText(error)].filter(Boolean).join("\n") }],
+			...(invocation.details === undefined ? {} : { details: invocation.details }),
 			diagnostics: [...diagnostics, ...(retained.truncated ? [{ severity: "info" as const, code: "truncated", message: "Tool output truncated" }] : [])],
 		};
 		status = "failed";
 	}
 	await settle(runtime, input, result, context, status);
+}
+
+/** Older cells admitted children without abandonOnRestart. Their unsafe waiter must not restart a safe tool body. */
+async function interruptedCell(runtime: Runtime, input: CallInput, restarted: boolean, context: Context): Promise<boolean> {
+	const parent = await runtime.getTask(input.parent, context);
+	if (parent?.kind !== ToolTask.definition.name) return false;
+	const checkpoint = parent.state.checkpoint;
+	const ended = parent.state.status === "completing" || parent.state.status === "terminal";
+	if (!ended && (!(restarted || (parent.restarts ?? 0) > 0) || !checkpoint || typeof checkpoint !== "object"
+		|| Array.isArray(checkpoint) || checkpoint.phase !== "execute" || checkpoint.replay !== "unsafe")) return false;
+	const call = parent.input;
+	if (!call || typeof call !== "object" || Array.isArray(call) || (call.kind !== undefined && call.kind !== "model")
+		|| typeof call.assistant !== "number" || typeof call.callId !== "string") return false;
+	const message = (await runtime.entry(AssistantEntry, call.assistant as EntryId, context))?.model?.[0];
+	return message?.role === "assistant" && message.content.some(part =>
+		part.type === "toolCall" && part.id === call.callId && part.name === "codemode");
 }
 
 /** Each nested call gets its own durable intent, memo namespace and ownership subtree. */
@@ -295,6 +267,10 @@ export const CapabilityTask = defineTask<CallInput, Phase, Result>({
 	initial: () => ({ phase: "call" }),
 	phases: {
 		call: async (task, runtime, context) => {
+			if (await interruptedCell(runtime, task.input, (task.restarts ?? 0) > 0, context)) {
+				await settleHostNestedCalls(runtime, context);
+				return settle(runtime, task.input, failedResult("Interrupted cell did not start this tool; it was not retried"), context, "failed");
+			}
 			const tool = await toolFor(runtime, task.input.name, context);
 			if (!tool)
 				return settle(
@@ -337,8 +313,10 @@ export const CapabilityTask = defineTask<CallInput, Phase, Result>({
 		},
 		execute: async (task, runtime, context) => {
 			const tool = await toolFor(runtime, task.input.name, context);
-			if (task.state.checkpoint.replay === "safe" && tool?.replay === "safe")
+			if (task.state.checkpoint.replay === "safe" && tool?.replay === "safe"
+				&& !await interruptedCell(runtime, task.input, (task.restarts ?? 0) > 0, context))
 				return run(runtime, task.input, tool, JSON.parse(task.state.checkpoint.args), context);
+			await settleHostNestedCalls(runtime, context);
 			await settle(
 				runtime,
 				task.input,
@@ -349,6 +327,7 @@ export const CapabilityTask = defineTask<CallInput, Phase, Result>({
 		},
 	},
 	abort: async (task, runtime, context) => {
+		await settleHostNestedCalls(runtime, context);
 		await settle(
 			runtime,
 			task.input,

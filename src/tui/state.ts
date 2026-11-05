@@ -1,5 +1,6 @@
 import type { AssistantMessage, JsonObject, Message, ToolResultMessage, Usage, UserMessage } from "@earendil-works/pi-ai";
-import type { EntryRecord, MessageChange, SnapshotEvent } from "@earendil-works/pi-durable";
+import type { EntryRecord } from "@earendil-works/pi-durable";
+import type { MessageChange, SnapshotEvent } from "../core/ui-contract.ts";
 import {
 	KILL_TASK_TOOL,
 	type ClientEvent,
