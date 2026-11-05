@@ -106,6 +106,7 @@ These are handled by the TUI itself and never reach the daemon. They appear in t
 | `/agents` | `[id]` | Open a subagent's conversation |
 | `/dag` | — | Show the DAG run's nodes (and research mission entries, when there is a mission) |
 | `/theme` | `[rex\|ptero\|brachio\|tricera]` | Pick a dinosaur theme: the mascot species and brand colors (T-rex Signal, Pterodactyl Dusk, Brachiosaurus Fern, Triceratops Canyon). Saved to `~/.config/dinobot/tui.json`; `DINOBOT_THEME` overrides it for one run |
+| `/background` | `[solid\|transparent]` | Screen background: `solid` paints the Signal surface, `transparent` paints no background at all, so the terminal's own background shows through (a translucent terminal pane). Saved to `~/.config/dinobot/tui.json`; `DINOBOT_TUI_BACKGROUND` overrides it for one run |
 | `/choose` | — | Open the picker for an open question to a person that has 2-4 choices (it also opens once on its own after the turn ends) |
 | `/quit` | — | Quit the TUI (`/exit` also works). The daemon keeps running |
 

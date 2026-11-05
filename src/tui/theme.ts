@@ -116,8 +116,21 @@ const background = (name: PaletteName): string => {
 export const fg = (name: PaletteName, attributes: TextAttributes = {}): Style => (text) => styleTextWithAnsi(text, foreground(name), undefined, attributes);
 const BASE_BG: PaletteName = "bgStorm";
 const RESET = "\x1b[0m";
+
+/** How the TUI paints its screen surface. `solid` fills every row with the Signal surface; `transparent` paints no
+ * background at all, so the terminal's own background (a translucent emulator pane, a wallpaper) shows through. */
+export type BackgroundMode = "solid" | "transparent";
+export const isBackgroundMode = (value: unknown): value is BackgroundMode => value === "solid" || value === "transparent";
+
+let backgroundMode: BackgroundMode = "solid";
+/** Switches the screen surface; renderers re-read it on their next frame. */
+export const setBackgroundMode = (mode: BackgroundMode): void => {
+	backgroundMode = mode;
+};
+export const currentBackgroundMode = (): BackgroundMode => backgroundMode;
+
 /** Inner backgrounds hand back to the screen background instead of the terminal default, so painted rows stay solid. */
-export const bg = (name: PaletteName): Style => (text) => `${background(name)}${text}${background(BASE_BG)}`;
+export const bg = (name: PaletteName): Style => (text) => `${background(name)}${text}${baseBackground()}`;
 
 let activeTheme: ThemeName = "rex";
 /** Swaps the brand roles to `name` and drops every cached color; renderers re-read on their next frame. */
@@ -153,6 +166,11 @@ function dosPalette(blue: boolean): Record<PaletteName, string> {
 }
 export const ansi = { fg: foreground, bg: background, fgReset: "\x1b[39m", bgReset: "\x1b[49m" } as const;
 
+/** The surface every painted row returns to: the Signal surface, or the terminal default when the background is transparent. */
+function baseBackground(): string {
+	return backgroundMode === "transparent" ? ansi.bgReset : background(BASE_BG);
+}
+
 /** Right-pads `text` with spaces to `width` visible columns; text already `width` or wider is returned unchanged. */
 export function pad(text: string, width: number): string {
 	const missing = width - visibleWidth(text);
@@ -161,7 +179,7 @@ export function pad(text: string, width: number): string {
 
 /** Pads one screen row to `width` on the `bg_base` background; a `\x1b[0m` inside the row re-opens that background. */
 export function paint(line: string, width: number): string {
-	const base = background(BASE_BG);
+	const base = baseBackground();
 	const body = line.includes(RESET) ? line.replaceAll(RESET, `${RESET}${base}`) : line;
 	const missing = width - visibleWidth(line);
 	return `${base}${body}${missing > 0 ? " ".repeat(missing) : ""}${ansi.bgReset}`;
