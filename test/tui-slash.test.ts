@@ -140,7 +140,7 @@ test("menu: `/` lists the merged set sorted by name, filters fuzzily with highli
 	const menu = new SlashMenu(source);
 	menu.refresh("/", 1);
 	expect(menu.open).toBe(true);
-	expect(menu.matches.map((row) => row.display)).toEqual(["/agents", "/choose", "/dag", "/help", "/login", "/logout", "/model", "/new", "/plugins", "/quit", "/sessions", "/skills", "/theme", "/thread"]);
+	expect(menu.matches.map((row) => row.display)).toEqual(["/agents", "/background", "/choose", "/dag", "/help", "/login", "/logout", "/model", "/new", "/plugins", "/quit", "/sessions", "/skills", "/theme", "/thread"]);
 	expect(menu.matches.map((row) => row.insert)).toContain("/login ");
 	expect(menu.matches.map((row) => row.insert)).not.toContain("/threads");
 	expect(menu.matches.map((row) => row.insert)).toContain("/sessions");
@@ -208,15 +208,15 @@ test("dropdown at 140x40: Grok panel above the box with the count on the top bor
 	const lines = prompt.render(140);
 	fits(lines, 140);
 	expect(plain(lines)).toEqual([
-		rule(140, "14"),
-		thumbRow("> /agents    Open a subagent's conversation", 140),
-		thumbRow("  /choose    Answer the open question with choices", 140),
-		thumbRow("  /dag       Show the DAG run's nodes", 140),
-		thumbRow("  /help      Show available commands", 140),
-		panelRow("  /login     Log in to a model provider with oh-my-pi's login flows"),
-		panelRow("  /logout    Remove a stored credential"),
-		panelRow("  /model     Show or switch this thread's model"),
-		panelRow("  /new       Start a new thread"),
+		rule(140, "15"),
+		thumbRow("> /agents      Open a subagent's conversation", 140),
+		thumbRow("  /background  Screen background: solid or transparent (the terminal shows through)", 140),
+		thumbRow("  /choose      Answer the open question with choices", 140),
+		thumbRow("  /dag         Show the DAG run's nodes", 140),
+		panelRow("  /help        Show available commands"),
+		panelRow("  /login       Log in to a model provider with oh-my-pi's login flows"),
+		panelRow("  /logout      Remove a stored credential"),
+		panelRow("  /model       Show or switch this thread's model"),
 		rule(140),
 		boxTop(140),
 		boxRow("/", 140),
@@ -229,9 +229,11 @@ test("dropdown at 140x40: Grok panel above the box with the count on the top bor
 	for (let index = 0; index < 13; index++) prompt.handleInput("\x1b[B");
 	const scrolled = plain(prompt.render(140));
 	expect(scrolled[1]).toContain("/model");
-	expect(scrolled[8]).toContain("> /thread");
-	expect(scrolled[8]).toContain("█");
+	expect(scrolled[7]).toContain("> /theme");
+	expect(scrolled[7]).toContain("█");
 	expect(scrolled[1]).not.toContain("█");
+	prompt.handleInput("\x1b[B");
+	expect(plain(prompt.render(140))[8]).toContain("> /thread");
 	prompt.handleInput("\x1b[B");
 	expect(plain(prompt.render(140))[1]).toContain("> /agents");
 });
@@ -242,15 +244,15 @@ test("dropdown at 80x30 and 60 columns: same rows narrower, descriptions truncat
 	const lines = prompt.render(80);
 	fits(lines, 80);
 	expect(plain(lines)).toEqual([
-		rule(80, "14"),
-		thumbRow("> /agents    Open a subagent's conversation", 80),
-		thumbRow("  /choose    Answer the open question with choices", 80),
-		thumbRow("  /dag       Show the DAG run's nodes", 80),
-		thumbRow("  /help      Show available commands", 80),
-		panelRow("  /login     Log in to a model provider with oh-my-pi's login flows"),
-		panelRow("  /logout    Remove a stored credential"),
-		panelRow("  /model     Show or switch this thread's model"),
-		panelRow("  /new       Start a new thread"),
+		rule(80, "15"),
+		thumbRow("> /agents      Open a subagent's conversation", 80),
+		thumbRow("  /background  Screen background: solid or transparent (the terminal show...", 80),
+		thumbRow("  /choose      Answer the open question with choices", 80),
+		thumbRow("  /dag         Show the DAG run's nodes", 80),
+		panelRow("  /help        Show available commands"),
+		panelRow("  /login       Log in to a model provider with oh-my-pi's login flows"),
+		panelRow("  /logout      Remove a stored credential"),
+		panelRow("  /model       Show or switch this thread's model"),
 		rule(80),
 		boxTop(80),
 		boxRow("/", 80),
@@ -258,7 +260,7 @@ test("dropdown at 80x30 and 60 columns: same rows narrower, descriptions truncat
 	]);
 	const narrow = plain(prompt.render(60));
 	fits(prompt.render(60), 60);
-	expect(narrow[5]).toBe(panelRow("  /login     Log in to a model provider with oh-my-pi..."));
+	expect(narrow[6]).toBe(panelRow("  /login       Log in to a model provider with oh-my-..."));
 	type(prompt, "lo");
 	const filtered = plain(prompt.render(80));
 	expect(filtered.slice(0, 4)).toEqual([
@@ -553,6 +555,7 @@ test("app: Esc during a prompt cancels it and aborts the run; unknown commands s
 	terminal.onInput?.("\r");
 	expect(notices().at(-1)?.split("\n")).toEqual([
 		"/agents [id]               Open a subagent's conversation",
+		"/background [mode]         Screen background: solid or transparent (the terminal shows through)",
 		"/choose                    Answer the open question with choices",
 		"/dag                       Show the DAG run's nodes",
 		"/help                      Show available commands",

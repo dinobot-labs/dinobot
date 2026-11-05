@@ -1,11 +1,11 @@
 import { mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, isAbsolute, join } from "node:path";
-import { type IconSetName, isIconSetName, isThemeName, type ThemeName } from "./theme.ts";
+import { type BackgroundMode, type IconSetName, isBackgroundMode, isIconSetName, isThemeName, type ThemeName } from "./theme.ts";
 
 /** `icons` is absent until the user picks a set; absent means `auto` (see `chooseIconSet`). `theme` is absent until
  * the user picks a dinosaur theme with /theme; absent means the T-rex (see `chooseTheme`). */
-export type TuiPreferences = { readonly toolsExpanded: boolean; readonly icons?: IconSetName; readonly theme?: ThemeName };
+export type TuiPreferences = { readonly toolsExpanded: boolean; readonly icons?: IconSetName; readonly theme?: ThemeName; readonly background?: BackgroundMode };
 export type TuiPreferencesStore = { load(): TuiPreferences; save(preferences: TuiPreferences): void };
 
 /** Per-user display preferences, independent of conversation, manifest and daemon. */
@@ -24,7 +24,8 @@ export class FileTuiPreferences implements TuiPreferencesStore {
 				const toolsExpanded = "toolsExpanded" in value && typeof value.toolsExpanded === "boolean" ? value.toolsExpanded : false;
 				const icons = "icons" in value && isIconSetName(value.icons) ? value.icons : undefined;
 				const theme = "theme" in value && isThemeName(value.theme) ? value.theme : undefined;
-				return { toolsExpanded, ...(icons === undefined ? {} : { icons }), ...(theme === undefined ? {} : { theme }) };
+				const background = "background" in value && isBackgroundMode(value.background) ? value.background : undefined;
+				return { toolsExpanded, ...(icons === undefined ? {} : { icons }), ...(theme === undefined ? {} : { theme }), ...(background === undefined ? {} : { background }) };
 			}
 		} catch {
 			// Missing, unreadable or malformed preferences must never prevent opening the TUI.
@@ -37,7 +38,7 @@ export class FileTuiPreferences implements TuiPreferencesStore {
 		mkdirSync(dirname(this.path), { recursive: true, mode: 0o700 });
 		const temporary = `${this.path}.${process.pid}.${crypto.randomUUID()}.tmp`;
 		try {
-			writeFileSync(temporary, `${JSON.stringify({ version: 1, toolsExpanded: preferences.toolsExpanded, ...(preferences.icons === undefined ? {} : { icons: preferences.icons }), ...(preferences.theme === undefined ? {} : { theme: preferences.theme }) }, null, 2)}\n`, { mode: 0o600, flag: "wx" });
+			writeFileSync(temporary, `${JSON.stringify({ version: 1, toolsExpanded: preferences.toolsExpanded, ...(preferences.icons === undefined ? {} : { icons: preferences.icons }), ...(preferences.theme === undefined ? {} : { theme: preferences.theme }), ...(preferences.background === undefined ? {} : { background: preferences.background }) }, null, 2)}\n`, { mode: 0o600, flag: "wx" });
 			renameSync(temporary, this.path);
 		} finally {
 			try {
@@ -82,4 +83,16 @@ export function chooseTheme(preferences: TuiPreferences, env: NodeJS.ProcessEnv 
 	if (isThemeName(override)) return { theme: override, source: "env" };
 	if (preferences.theme !== undefined) return { theme: preferences.theme, source: "preference" };
 	return { theme: "rex", source: "default" };
+}
+
+export type BackgroundSource = "env" | "preference" | "default";
+export type BackgroundChoice = { readonly background: BackgroundMode; readonly source: BackgroundSource };
+
+/** `DINOBOT_TUI_BACKGROUND` overrides for one run, then the saved /background choice, then the solid Signal surface. */
+export function chooseBackground(preferences: TuiPreferences, env: NodeJS.ProcessEnv = process.env): BackgroundChoice {
+	const override = env.DINOBOT_TUI_BACKGROUND?.trim().toLowerCase();
+	if (override === "transparent" || override === "none" || override === "off") return { background: "transparent", source: "env" };
+	if (override === "solid" || override === "on") return { background: "solid", source: "env" };
+	if (preferences.background !== undefined) return { background: preferences.background, source: "preference" };
+	return { background: "solid", source: "default" };
 }

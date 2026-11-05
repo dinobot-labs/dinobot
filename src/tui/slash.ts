@@ -64,6 +64,7 @@ export async function readResearchReport(context: ResearchReportContext, mission
 /** Commands the TUI runs itself; they never reach the daemon but show in the dropdown and in /help. */
 export const LOCAL_COMMANDS: readonly CommandInfo[] = [
 	{ name: "agents", description: "Open a subagent's conversation", usage: "[id]" },
+	{ name: "background", description: "Screen background: solid or transparent (the terminal shows through)", usage: "[mode]" },
 	{ name: "choose", description: "Answer the open question with choices" },
 	{ name: "dag", description: "Show the DAG run's nodes" },
 	{ name: "new", description: "Start a new thread", usage: "[name]" },
